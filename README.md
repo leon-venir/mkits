@@ -28,9 +28,13 @@ mkits is a python written tool containing many helpful initial- or post-processi
  |----vasp_post
  |
  |
+ |----wien_init
+ |
+ |
+ |----fdmnes
  ```
 
-# 2. release history
+# 3. release history
 
 + version 0.1 (August 19th 2022)
   
