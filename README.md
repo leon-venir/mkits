@@ -17,7 +17,7 @@ mkits is a python written tool containing many helpful initial- or post-processi
   pip3 install dist/thebuild.whl
   ```
  
- # 2. Available functionals
+ # 2. available functionals
  
  ```
  mkits
