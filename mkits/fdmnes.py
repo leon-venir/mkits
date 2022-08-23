@@ -4,7 +4,7 @@ from mkits.sysfc import *
 from mkits.database import *
 
 """
-:func 
+:func fdmnes_gen_inp: generate
 """
 
 def fdmnes_gen_inp(struct_inp, fpath="./", index=0, params=""):
@@ -37,9 +37,9 @@ def fdmnes_gen_inp(struct_inp, fpath="./", index=0, params=""):
     param_default.pop("element", None)
     
     if "element" in params:
-        param_default["Absorber_Z"] = symbol_map[params["element"]]
+        param_default["Z_Absorber"] = symbol_map[params["element"]]
     else:
-        param_default["Absorber_Z"] = "n"
+        param_default["Z_Absorber_Z"] = atom_list[0]
 
     
     fdmnes_inp_head = """! Fdmnes indata file
@@ -53,6 +53,7 @@ def fdmnes_gen_inp(struct_inp, fpath="./", index=0, params=""):
   -8. 0.5  10. 1.  18. 2. 60.        ! first energy, step, intermediary energy, step ..., last energy
  !-8. 0.2  13. 0.5 18. 1. 50. 2 120. ! first energy, step, intermediary energy, step ..., last energy    
 
+ Crystal
 """
 
     with open(fpath+"/"+compound+"_inp_"+str(index)+".txt", "w") as f:
@@ -70,5 +71,3 @@ def fdmnes_gen_inp(struct_inp, fpath="./", index=0, params=""):
                 f.write(key+"\n")
                 f.write(str(param_default[key])+"\n\n")
         f.write("END\n")
-
-
