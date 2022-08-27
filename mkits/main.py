@@ -1,5 +1,4 @@
 import argparse
-from re import S
 from mkits.fdmnes import fdmnes_gen_inp
 from mkits.vasp import *
 from mkits.globle import *
