@@ -2,7 +2,8 @@ import numpy as np
 import xml.etree.ElementTree as ET
 import os
 import re
-import ase
+import ase.io
+import ase.geometry
 import subprocess
 from mkits.globle import *
 from mkits.sysfc import *
@@ -76,12 +77,13 @@ def vasp_dos_extractor(xmlfile="vasprun.xml"):
             f.write(dos_partial[_])
 
 
-def vasp_band_extractor(eign='EIGENVAL', poscar="POSCAR"):
+def vasp_band_extractor(eign='EIGENVAL', poscar="POSCAR", kpoint:str="KPOINTS"):
     """
     get eigen value from EIGNVAL
     electron num; kpoints; states
-    :param eign     : string, input file EIGENVAL
-    :param poscar   : string, input file POSCAR
+    :param eign: string, input file EIGENVAL
+    :param poscar: string, input file POSCAR
+    :param kpoint: string, the input file of KPOINTS for band structure calculation, "line mode" need to be used in KPOINTS
     """
     try:
         kpoints_states_num = np.loadtxt(eign, skiprows=5, max_rows=1, usecols=[0,1,2])
@@ -91,8 +93,8 @@ def vasp_band_extractor(eign='EIGENVAL', poscar="POSCAR"):
         lexit("Cannot find eigen value: ", eign)
     
     try:
-        kpoints_high_sym = np.loadtxt("./KPOINTS", skiprows=4, usecols=[0,1,2])
-        kpoints_line = np.loadtxt("./KPOINTS", skiprows=1, max_rows=1)
+        kpoints_high_sym = np.loadtxt(kpoint, skiprows=4, usecols=[0,1,2])
+        kpoints_line = np.loadtxt(kpoint, skiprows=1, max_rows=1)
         #print(kpoints_line)
     except:
         lexit("Cannot find KPOINTS")
@@ -102,7 +104,7 @@ def vasp_band_extractor(eign='EIGENVAL', poscar="POSCAR"):
         ucell = ase.io.read(poscar)
         recip = ase.geometry.Cell.reciprocal(ucell.cell)
     except:
-        lexit("Cannot find: ", poscar)
+        lexit("Cannot find ", poscar)
 
     # get kpath 
     kpath_abs = np.array([0])
@@ -649,13 +651,9 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
         subprocess.run(cmd, shell=True, cwd=wdir)
         
             
-
-
     # =================================================================================
     # finalizing
     # =================================================================================
-    
-
 
 
 def struct_diff(structname1, structname2):
@@ -708,10 +706,15 @@ def xdatcar_parser(xdatcar):
     """ 
     with open(xdatcar, "r") as f:
         xdatcar_lines = f.readlines()
+        
     coe = float(xdatcar_lines[1].split()[0])
     tot_atoms = int(np.sum(np.loadtxt(xdatcar, skiprows=6, max_rows=1)))
     lattice = np.loadtxt(xdatcar, skiprows=2, max_rows=3) * coe
-    tot_struct = int(xdatcar_lines[-1-tot_atoms].split()[-1])
+    tot_struct = 0
+    for _ in range(len(xdatcar_lines)-1, 1, -1):
+        if "Direct" in xdatcar_lines[_]:
+            tot_struct = int(xdatcar_lines[_].split()[-1])
+            break
 
     skiprow_ = 8
     frac_pos_ = np.loadtxt(xdatcar, skiprows=skiprow_, max_rows=tot_atoms)
@@ -720,7 +723,7 @@ def xdatcar_parser(xdatcar):
 
     for _ in range(tot_struct-1):
         frac_pos_ = np.loadtxt(xdatcar, skiprows=skiprow_, max_rows=tot_atoms)
-        xdatcar_cart = np.dstack((xdatcar_cart, np.where(frac_pos_<0, 1+frac_pos_, frac_pos_)))
+        xdatcar_cart = np.dstack((xdatcar_cart, frac2cart(lattice, np.where(frac_pos_<0, 1+frac_pos_, frac_pos_))))
         skiprow_ += tot_atoms+1
 
     return xdatcar_cart
@@ -763,7 +766,7 @@ def extract_xdatcar(xdatcar:str, idx:list, fpath:str="./"):
             np.savetxt(f, frac_pos[:, :, _-1], fmt="%20.16f")
     
 
-def mse_xdatcar(crys_struct, xdatcar):
+def mse_xdatcar(crys_struct:str, xdatcar:str, fpath:str="./"):
     """
     :param crys_struct: the original structure file
     :param xdatcar: XDATCAR file
@@ -773,11 +776,11 @@ def mse_xdatcar(crys_struct, xdatcar):
     crys_cart = frac2cart(crystal_["lattice"], crystal_["pos_frac"])
     xdatcar = xdatcar_parser(xdatcar)
 
-    mse_ = np.array([])
+    mse = np.array([])
     for _ in range(len(xdatcar[0,0,:])):
-        mse_ = np.append(mse_, np.sum(np.square(xdatcar[:,:,_]-crys_cart), axis=1).mean())
+        mse = np.append(mse, np.sum(np.square(xdatcar[:,:,_]-crys_cart), axis=1).mean())
     
-    return mse_ 
+    np.savetxt("%s/mse.dat" % fpath, np.vstack((np.linspace(1, len(mse), len(mse)), mse)).T, fmt="%20.10f")
 
 
 def extract_conv_test(wdir="./"):
