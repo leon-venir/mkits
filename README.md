@@ -84,9 +84,14 @@ mkits is a python written tool containing many helpful initial- or post-processi
 
 # 3. release history
 
++ version 0.3 (August 27th 2022)
+
+  1. fix some errors
+
 + version 0.2 (August 23rd 2022)
 
   1. add layered structures generator: structgen
+  2. fix some errors
 
 + version 0.1 (August 19th 2022)
   
