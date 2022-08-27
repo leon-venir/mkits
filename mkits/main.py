@@ -1,16 +1,18 @@
 import argparse
+from re import S
 from mkits.fdmnes import fdmnes_gen_inp
 from mkits.vasp import *
 from mkits.globle import *
 from mkits.sysfc import *
 from mkits.critic2 import *
 from mkits.wien import *
+from mkits.structgen import *
 
 def vasp_init_parser(args):
     try:
         parameter = parser_inputpara(args.param)
     except:
-        pass
+        parameter = {}
     if args.gen2d:
         vasp_build_low_dimension(parameter[0], parameter[1], parameter[2], parameter[3])
     elif args.pot:
@@ -27,8 +29,9 @@ def vasp_post_parser(args):
     try:
         parameter = parser_inputpara(args.param)
     except:
-        pass
+        parameter = {}
     if args.extract_band:
+        vasp_band_extractor(eign=parameter["eignval"] if "eignval" in parameter else "EIGENVAL", poscar=parameter["poscar"] if "poscar" in parameter else "POSCAR", kpoint=parameter["kpoints"] if "kpoints" in parameter else "KPOINTS")
         vasp_band_extractor("EIGENVAL", "POSCAR")
     elif args.extract_dos:
         vasp_dos_extractor(args.extract_dos)
@@ -38,9 +41,14 @@ def vasp_post_parser(args):
         extract_conv_test(args.wpath)
     elif args.extract_xdatcar:
         extract_xdatcar(xdatcar=args.extract_xdatcar, fpath=args.wpath if args.wpath else "./", idx=[int(_) for _ in parameter["list"].split("-")])
+    elif args.mse_xdatcar:
+        mse_xdatcar(xdatcar=args.mse_xdatcar, crys_struct=args.fname, fpath=args.wpath)
 
 def structgen_parser(args):
-    pass
+    if args.node_num and args.node_type and args.fix_block:
+        gen_struct_fix_block(args.node_num, args.node_type, args.block_type)
+    elif args.test_strgen:
+        test_struct()
 
 def boltz_parser(args):
     pass
@@ -72,8 +80,8 @@ def parse_arguments():
     parser.add_argument(
         "--version",
         action="version",
-        version="0.1",
-        help="print version infoamation"
+        version="0.3",
+        help="print version information"
     )
     subparser = parser.add_subparsers(
         help="sub command:"
@@ -192,9 +200,15 @@ def parse_arguments():
         help="The additional options, more details can be found in specific argument."
     )
     parser_vasp_post.add_argument(
+        "--fname",
+        action="store",
+        type=str,
+        help="Input file."
+    )
+    parser_vasp_post.add_argument(
         "--extract_band",
         action="store_true",
-        help="Extract eigen value from EIGENVAL, and export to plotable data."
+        help="Extract eigen value from EIGENVAL, and export to gnuplot format data. Need [POSCAR, EIGENVAL, KPOINTS], or specify the input files with --param eigenval=EIGENVAL_band,poscar=POSCAR_init,kpoints=KPOINTS_band"
     )
     parser_vasp_post.add_argument(
         "--extract_dos",
@@ -223,6 +237,12 @@ def parse_arguments():
         action="store",
         type=str,
         help="Extract the i-th strucutre from XDATCAR, need to specify the working directory with --wpath, and the index list of target structure. eg: --wpath ./ --param list=500-1000"
+    )
+    parser_vasp_post.add_argument(
+        "--mse_xdatcar",
+        action="store",
+        type=str,
+        help="Calculate the mean squared error for MD simulation. need to specify the original crytal with --fname. eg: --mse_xdatcar XDATCAR_2000fs --fname POSCAR_init --wpath ./"
     )
 
     # ==========================================================================
@@ -276,12 +296,12 @@ def parse_arguments():
         help="trigonal: layered structure\n"
     )
 
-    '''parser_structgen.add_argument(
+    parser_structgen.add_argument(
         "--block_num",
         type=str,
         action="store",
         help="give the block number seperated with comma without space: 2,3,5"
-    )'''
+    )
 
     parser_structgen.add_argument(
         "--fix_block",
@@ -294,6 +314,25 @@ def parse_arguments():
         type=str,
         action="store",
         help="Specify the block seperated with comma without space: Bi-Bi,Te-Bi-Te,Te-Bi-Te-Bi-Te"
+    )
+
+    parser_structgen.add_argument(
+        "--random_kation",
+        type=str,
+        action="store",
+        help="Give the kation seperated with comma: Pb,Bi"
+    )
+
+    parser_structgen.add_argument(
+        "--random_anion",
+        type=str,
+        action="store",
+        help="Give the kation seperated with comma: Te,Se"
+    )
+
+    parser_structgen.add_argument(
+        "--test_strgen",
+        action="store_true"
     )
 
     # ==========================================================================
@@ -355,7 +394,6 @@ def parse_arguments():
         action="store",
         help="Additional setting parameters."
     )
-
 
 
     # ==========================================================================
