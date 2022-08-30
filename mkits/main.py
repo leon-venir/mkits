@@ -6,6 +6,7 @@ from mkits.sysfc import *
 from mkits.critic2 import *
 from mkits.wien import *
 from mkits.structgen import *
+from mkits.boltz import *
 
 def vasp_init_parser(args):
     try:
@@ -42,6 +43,8 @@ def vasp_post_parser(args):
         extract_xdatcar(xdatcar=args.extract_xdatcar, fpath=args.wpath if args.wpath else "./", idx=[int(_) for _ in parameter["list"].split("-")])
     elif args.mse_xdatcar:
         mse_xdatcar(xdatcar=args.mse_xdatcar, crys_struct=args.fname, fpath=args.wpath)
+    elif args.getvbmcbm:
+        getvbmcbm(args.getvbmcbm)
 
 def structgen_parser(args):
     if args.node_num and args.node_type and args.fix_block:
@@ -49,8 +52,11 @@ def structgen_parser(args):
     elif args.test_strgen:
         test_struct()
 
-def boltz_parser(args):
-    pass
+def boltz2_parser(args):
+    if args.gnuplot and args.argpara:
+        split_boltz_dope(args.inputdata, parser_inputpara(args.argpara))
+    elif args.gnuplot:
+        split_boltz_dope(args.inputdata)
 
 def critic2_parser(args):
     if args.extract_gvh:
@@ -103,7 +109,7 @@ def parse_arguments():
     parser_wien_init.set_defaults(func=wien_init_parser)
     parser_wien_post.set_defaults(func=wien_post_parser)
     parser_structgen.set_defaults(func=structgen_parser)
-    parser_boltz2.set_defaults(func=boltz_parser)
+    parser_boltz2.set_defaults(func=boltz2_parser)
     parser_critic2.set_defaults(func=critic2_parser)
     parser_fdmnes.set_defaults(func=fdmnes_parser)
 
@@ -243,6 +249,12 @@ def parse_arguments():
         type=str,
         help="Calculate the mean squared error for MD simulation. need to specify the original crytal with --fname. eg: --mse_xdatcar XDATCAR_2000fs --fname POSCAR_init --wpath ./"
     )
+    parser_vasp_post.add_argument(
+        "--getvbmcbm",
+        action="store",
+        type=str,
+        help="Extract VBM and CBM from vasprun.xml file. eg --getvbmcbm vasprun_dos_pbesol.xml"
+    )
 
     # ==========================================================================
     # vasp init argument
@@ -337,6 +349,23 @@ def parse_arguments():
     # ==========================================================================
     # BoltzTraP2 post-processing argument
     # ==========================================================================
+    parser_boltz2.add_argument(
+        "--gnuplot",
+        action="store_true",
+        help='Export data with gnuplot format. Need following arguments: --inputdata, --argpara. The additional parameters of doped file are give as following: "nmin": "17", # n-type minimum; "nmax": "22", # n-type maximum; "nnum": "51", # number of n-type doping level; "pmin": "17", # p-type minimum; "pmax": "22", # p-type maximum; "pnum": "51", # number of p-type doping level. And The additional parameters for integrated file are: '
+    )
+
+    parser_boltz2.add_argument(
+        "--inputdata",
+        action="store",
+        help="input file: trace or condtens for --gnuplot."
+    )
+
+    parser_boltz2.add_argument(
+        "--argpara",
+        action="store",
+        help='Additional parameters.'
+    )
 
 
     # ==========================================================================
