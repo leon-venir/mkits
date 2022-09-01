@@ -1,4 +1,4 @@
-matplotlib>=2.2
-numpy>=1.18.0, <1.21.0
+matplotlib
+numpy
 ase
 pandas
