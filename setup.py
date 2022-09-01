@@ -4,17 +4,15 @@ setup(
     name="mkits",
     description="multi-DFT codes assistant program.",
     long_description=
-    """mkits 
+    """mkits is a python written tool containing many helpful initial- or post-processing commands for some popular first-principles calculation codes.
     """,
-    version="0.1",
+    version="0.3",
     author="Leon Ma",
     author_email="blustery.med@hotmail.com",
     license="GPLv3+",
     classifiers=[
-        "Development Status :: 1 - Beta",
-        "Programming Language :: Python :: 3.6",
-        "License :: OSI Approved :: GNU General Public License v3 or"
-        " later (GPLv3+)",
+        "Development Status :: 2 - Pre-Alpha",
+        "Programming Language :: Python :: 3.10",
         "Topic :: Scientific/Engineering :: Physics",
     ],
     keywords="DFT code assistant",
@@ -22,11 +20,11 @@ setup(
     entry_points={"console_scripts": ["mkits = mkits.main:mkits_main"]},
     
     install_requires=[
-        "spglib", "numpy", "ase"
+        "spglib", "numpy", "ase", "pandas"
     ],
     python_requires=">=3.5",
-    url="https://xxxx",
+    url="https://github.com/leon-venir/mkits",
     download_url=(
-        "https://xxxxx"
+        "https://github.com/leon-venir/mkits"
     )
 )
