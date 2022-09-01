@@ -23,7 +23,8 @@ def vasp_init_parser(args):
         vasp_kpoints_gen(poscar_dict, args.kgen, parameter["kmesh"])
     elif args.vasp_gen_input:
         vasp_gen_input(args.dft if args.dft else "scf", args.potpath if args.potpath else "./", args.poscar if args.poscar else "POSCAR", args.dryrun if args.dryrun else False, args.prec if args.prec else "Normal", args.wpath if args.wpath else "./", args.execode if args.execode else "mpirun -np $SLURM_NTASKS vasp_std", args.param if args.param else "gga=pbelda")
- 
+    elif args.gen_arb_klist:
+        arbitrary_klist(kend=args.gen_arb_klist, kmesh=parameter["kmesh"] if "kmesh" in parameter else "7", fpath=parameter["fpath"] if "fpath" in parameter else "./", fname=parameter["fname"] if "fname" in parameter else "KPOINTS")
 
 def vasp_post_parser(args):
     try:
@@ -31,8 +32,8 @@ def vasp_post_parser(args):
     except:
         parameter = {}
     if args.extract_band:
-        vasp_band_extractor(eign=parameter["eignval"] if "eignval" in parameter else "EIGENVAL", poscar=parameter["poscar"] if "poscar" in parameter else "POSCAR", kpoint=parameter["kpoints"] if "kpoints" in parameter else "KPOINTS")
-        vasp_band_extractor("EIGENVAL", "POSCAR")
+        #vasp_band_extractor(eign=parameter["eignval"] if "eignval" in parameter else "EIGENVAL", poscar=parameter["poscar"] if "poscar" in parameter else "POSCAR", kpoint=parameter["kpoints"] if "kpoints" in parameter else "KPOINTS")
+        vasp_band_extractor(fpath=parameter["fpath"] if "fpath" in parameter else "./", fname=parameter["fname"] if "fname" in parameter else "BANDCAR", xmlfile=args.extract_band)
     elif args.extract_dos:
         vasp_dos_extractor(args.extract_dos)
     elif args.structdiff:
@@ -44,7 +45,7 @@ def vasp_post_parser(args):
     elif args.mse_xdatcar:
         mse_xdatcar(xdatcar=args.mse_xdatcar, crys_struct=args.fname, fpath=args.wpath)
     elif args.getvbmcbm:
-        getvbmcbm(args.getvbmcbm)
+        [print(key, " : ", value) for key, value in getvbmcbm(args.getvbmcbm).items()]
 
 def structgen_parser(args):
     if args.node_num and args.node_type and args.fix_block:
@@ -191,6 +192,12 @@ def parse_arguments():
         default=False,
         help="write POTCAR based on POSCAR, specify path to POTCAR database with --potpath"
     )
+    parser_vasp_init.add_argument(
+        "--gen_arb_klist",
+        action="store",
+        type=str,
+        help="Generate arbitrary klist for effective mass calculation. --gen_arb_klist [0,0,0,0.03,0.03,0.0 for cuboid center_x_y_z and length of side, for line start and end coordinates] --param kmesh=7-7-7,fpath=./,fname=KPOINTS."
+    )
     
 
 
@@ -212,8 +219,8 @@ def parse_arguments():
     )
     parser_vasp_post.add_argument(
         "--extract_band",
-        action="store_true",
-        help="Extract eigen value from EIGENVAL, and export to gnuplot format data. Need [POSCAR, EIGENVAL, KPOINTS], or specify the input files with --param eigenval=EIGENVAL_band,poscar=POSCAR_init,kpoints=KPOINTS_band"
+        action="store",
+        help="Extract eigen value from vasprun, and export to gnuplot format data. eg --extract_band vasprun_band.xml or specify the input files with --param fpath=./,fname=BANDCAR"
     )
     parser_vasp_post.add_argument(
         "--extract_dos",

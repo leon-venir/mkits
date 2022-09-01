@@ -191,7 +191,7 @@ def frac2cart(cart_lattice, fraction_pos):
     cart_ = np.array([0,0,0])
     for _ in range(len(fraction_pos)):
         cart_ = np.vstack((cart_, np.sum(cart_lattice*fraction_pos[_], axis=0)))
-    return cart_[1:].T
+    return cart_[1:]
 
 
 def cart2frac(cart_lattice, cart_pos):

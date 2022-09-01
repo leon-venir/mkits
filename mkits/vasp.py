@@ -27,14 +27,22 @@ from mkits.database import *
 :func mse_xdatcar               : Mean squared error of structure compared with crystalline structure during md process
 :func extract_conv_test         : extract data from convergence test calculation, [input files are generated from
                                 : func vasp_gen_input, ie encut, kmesh, ]
+:func getvbmcbm                 : extract the valence maximum band and conduction minimum band
+:func arbitrary_klist           : Generate arbitrary klist for effective mass calculation
 """
 
 
-def vaspxml_parser(select_attrib, xmlfile="vasprun.xml"):
+def vaspxml_parser(select_attrib:str, xmlfile:str="vasprun.xml"):
     """
     
-    :param select_arrib : optional choice ("tdos", "pdos", "eign", "final_ene")
-    :                   : final_ene, the 
+    :param select_arrib : optional [tdos, pdos, eigen, final_ene, paramters, incar]
+    :return final_ene: the 
+    :return klist: array like kpoints list and the the accumulative k length [frac_reciprocal_x,y,z, kpath_length]
+    :return highsympoint: 
+    :return eigen: return two eigenval arrays with a shape of (kpoint, eigenvalues, occupation)
+    :return paramters: parameters_dict key  : NELECT
+                                            : NBANDS
+    :return incar: incar_dict: 
     """ 
     try:
         vaspxml = ET.parse(xmlfile)
@@ -46,6 +54,9 @@ def vaspxml_parser(select_attrib, xmlfile="vasprun.xml"):
 
     # parser
     if select_attrib == "dos":
+        calculation = vasproot.find("calculation")
+        atominfo = vasproot.find("atominfo")
+
         dos = calculation.find("dos")
         # fermi : dos[0]
         # total dos: dos[1] -> data: dos[1][0][5][0]
@@ -59,10 +70,105 @@ def vaspxml_parser(select_attrib, xmlfile="vasprun.xml"):
         ion_num = int(atominfo[0].text)
         # partial dos
         dos_lines_partial = [ "#" + col_field + "%s" % fermi + "".join(dos[2][0][-1][_][0].itertext()) for _ in range(ion_num) ]
-
         return dos_lines_tot, dos_lines_partial, ion_num
     elif select_attrib == "final_ene":
+        calculation = vasproot.find("calculation")
         return float(calculation.find("energy")[-1].text)
+    elif select_attrib == "eigen":
+        calculation = vasproot.find("calculation")
+        eigenvalues = calculation.find("eigenvalues")
+
+        eigen_spin1 = []
+        eigen_spin2 = []
+        for k in range(len(eigenvalues[0][5][0])):
+            for e in range(len(eigenvalues[0][5][0][k])):
+                eigen_spin1.append([float(i) for i in eigenvalues[0][5][0][k][e].text.split()])
+        return np.array(eigen_spin1).reshape(-1, len(eigenvalues[0][5][0][0]), 2), np.array(eigen_spin2(-1, len(eigenvalues[0][5][0][0]), 2)) if eigen_spin2 else eigen_spin2
+    elif select_attrib == "klist":
+        kpoints = vasproot.find("kpoints")
+        klist = []
+        kpoints = kpoints.findall("varray")
+        attributes = [_.attrib["name"] for _ in kpoints]
+        kpoints = kpoints[attributes.index("kpointlist")]
+        for _ in range(len(kpoints)):
+            klist.append([float(i) for i in kpoints[_].text.split()])
+        klist = np.array(klist)
+        reciprocal = vaspxml_parser(select_attrib="cell", xmlfile=xmlfile)["rec_basis_end"]
+        kpath_abs = [0]
+        cartesian_reciprocal = frac2cart(reciprocal, klist)
+        for _ in range(1, len(klist)):
+            kpath_abs.append(kpath_abs[_-1]+np.sqrt(np.dot(cartesian_reciprocal[_]-cartesian_reciprocal[_-1], cartesian_reciprocal[_]-cartesian_reciprocal[_-1])))
+        return np.hstack((klist, cartesian_reciprocal, np.array(kpath_abs[:]).reshape(-1,1)))
+    elif select_attrib == "highsympoints":
+        kpoints = vasproot.find("kpoints")
+        highsympoints_frac = []
+        highsympoints = kpoints.findall("generation")
+        attributes = [_.attrib["param"] for _ in highsympoints]
+        highsympoints = kpoints[attributes.index("listgenerated")]
+        for _ in range(1, len(highsympoints)):
+            highsympoints_frac.append([float(i) for i in highsympoints[_].text.split()])
+        reciprocal = vaspxml_parser(select_attrib="cell", xmlfile=xmlfile)["rec_basis_end"]
+        cartesian_reciprocal = frac2cart(reciprocal, np.array(highsympoints_frac))
+        highsympoints_abs = [0]
+        for _ in range(1, len(highsympoints_frac)):
+            highsympoints_abs.append(highsympoints_abs[_-1]+np.square(np.dot(cartesian_reciprocal[_]-cartesian_reciprocal[_-1], cartesian_reciprocal[_]-cartesian_reciprocal[_-1])))
+        return np.array(highsympoints_abs)
+    elif select_attrib == "parameters":
+        parameters = vasproot.find("parameters")
+        parameters = parameters.findall("separator")
+        attributes = [_.attrib["name"] for _ in parameters]
+        parameters_electronic = parameters[attributes.index("electronic")]
+        attributes_electronic = [_.attrib["name"] for _ in parameters_electronic]
+
+        parameters_dict = {}
+        parameters_dict["NELECT"] = float(parameters_electronic[attributes_electronic.index("NELECT")].text)
+        parameters_dict["NBANDS"] = float(parameters_electronic[attributes_electronic.index("NBANDS")].text)
+        return parameters_dict
+    elif select_attrib == "incar":
+        incars = vasproot.find("incar")
+        attributes = [_.attrib["name"] for _ in incars]
+        incars_dict = {}
+        for _ in attributes:
+            incars_dict[_] = incars[attributes.index(_)].text
+        return incars_dict
+    elif select_attrib == "cell":
+        structure = vasproot.findall("structure")
+        structure_beg = structure[0]
+        structure_end = structure[-1]
+        basis_beg = []
+        basis_end = []
+        for _ in range(len(structure_beg[0][0])):
+            basis_beg.append([float(i) for i in structure_beg[0][0][_].text.split()])
+        for _ in range(len(structure_end[0][0])):
+            basis_end.append([float(i) for i in structure_end[0][0][_].text.split()])
+
+        rec_basis_beg = []
+        rec_basis_end = []
+        for _ in range(len(structure_beg[0][2])):
+            rec_basis_beg.append([float(i) for i in structure_beg[0][2][_].text.split()])
+        for _ in range(len(structure_end[0][2])):
+            rec_basis_end.append([float(i) for i in structure_end[0][2][_].text.split()])
+
+        position_beg = []
+        position_end = []
+        for _ in range(len(structure_beg[1])):
+            position_beg.append([float(i) for i in structure_beg[1][_].text.split()])
+        for _ in range(len(structure_end[0][2])):
+            position_end.append([float(i) for i in structure_end[1][_].text.split()])
+
+        volum_beg = float(structure_beg[0][1].text)
+        volum_end = float(structure_end[0][1].text)
+
+        return {
+            "basis_beg": np.array(basis_beg),
+            "basis_end": np.array(basis_end),
+            "volum_beg": np.array(volum_beg),
+            "volum_end": np.array(volum_end),
+            "rec_basis_beg": np.array(rec_basis_beg),
+            "rec_basis_end": np.array(rec_basis_end),
+            "position_beg": np.array(position_beg),
+            "position_end": np.array(position_end)
+        }
     else:
         lexit("Cannot find selected attribution of %s.")
 
@@ -77,7 +183,7 @@ def vasp_dos_extractor(xmlfile="vasprun.xml"):
             f.write(dos_partial[_])
 
 
-def vasp_band_extractor(eign='EIGENVAL', poscar="POSCAR", kpoint:str="KPOINTS"):
+def vasp_band_extractor_previous(eign='EIGENVAL', poscar="POSCAR", kpoint:str="KPOINTS"):
     """
     get eigen value from EIGNVAL
     electron num; kpoints; states
@@ -129,6 +235,28 @@ def vasp_band_extractor(eign='EIGENVAL', poscar="POSCAR", kpoint:str="KPOINTS"):
             states_2_write = np.hstack((kpath_abs_T, kpoints_states[:, i+1, 1:]))
             np.savetxt(f, states_2_write)
             f.write('\n\n')
+
+
+def vasp_band_extractor(fpath:str="./", fname:str="BANDCAR", xmlfile:str="vasprun.xml"):
+    """
+    get eigen value from EIGNVAL
+    electron num; kpoints; states
+    :param fpath: string, input file EIGENVAL
+    :param fname: string, input file POSCAR
+    :param xmlfile: string, the input file of KPOINTS for band structure calculation, "line mode" need to be used in KPOINTS
+    """
+    kpoint_high_sym = vaspxml_parser(select_attrib="highsympoints", xmlfile=xmlfile)
+    kpath = vaspxml_parser(select_attrib="klist", xmlfile=xmlfile)[:, -1]
+    eigen1, eigen2 = vaspxml_parser(select_attrib="eigen", xmlfile=xmlfile)
+
+    # write file
+    with open(fpath+"/"+fname, "w") as f:
+        f.write('# high symmetry points: \n')
+        f.write('# %s\n' % ''.join("{:15.8f}".format(i) for i in kpoint_high_sym))
+        for _ in range(len(eigen1[0,:,0])):
+            f.write('# %s \n' % str(_+1))
+            np.savetxt(f, np.hstack((kpath.reshape(-1, 1), eigen1[:,_,:])), fmt="%12.8f" "%10.4f" "%10.4f")
+            f.write('\n\n')  
 
 
 def parse_vasp_incar(fpath="./", fname="INCAR"):
@@ -806,4 +934,86 @@ def extract_conv_test(wdir="./"):
         np.savetxt(wdir+"/kmesh-ene.dat", (np.vstack((np.array(kmesh), np.array(ene))).T)[np.argsort(kmesh)[::-1], :], header="k-mesh ene(eV)")
         with open(wdir+"/kmesh-ene.gnu", "w") as f:
             f.write(gnu2dline % ("kmesh-ene.png", "Convergence test of k-mesh", "K-Spacing", "Total energy(eV)", "kmesh-ene.dat"))
+    
+
+def getvbmcbm(xmlfile:str="vasprun.xml"):
+    """
+    extract the valence maximum band and conduction minimum band
+    :param xmlfile: string, input file
+    :return 
+    """
+    klist = vaspxml_parser(select_attrib="klist", xmlfile=xmlfile)
+    eigen1, eigen2 = vaspxml_parser(select_attrib="eigen", xmlfile=xmlfile)
+    electron = vaspxml_parser(select_attrib="parameters", xmlfile=xmlfile)["NELECT"]
+    incars = vaspxml_parser(select_attrib="incar", xmlfile=xmlfile)
+
+    # check occupation: SO, 
+    if "LSORBIT" in incars or "lsorbit" in incars:
+        if "T" in incars["LSORBIT"] or "t" in incars["LSORBIT"] or "T" in incars["lsorbit"] or "t" in incars["lsorbit"]:
+            vbm_index = int(electron)
+            cbm_index = int(vbm_index + 1)
+    else:
+        vbm_index = int(electron/2)
+        cbm_index = int(vbm_index + 1)
+    
+    vbm_band = eigen1[:,int(vbm_index-1),0]
+    cbm_band = eigen1[:,int(cbm_index-1),0]
+    vbm_kindex = np.argsort(vbm_band)[-1:-6:-1]
+    cbm_kindex = np.argsort(cbm_band)[:5]
+
+    return {
+        "vbm_kindex": vbm_kindex,
+        "vbm_kpoint": klist[vbm_kindex, :3],
+        "vbm_ene": eigen1[vbm_kindex, vbm_index-1, 0],
+        "cbm_kindex": cbm_kindex,
+        "cbm_kpoint": klist[cbm_kindex, :3],
+        "cbm_ene": eigen1[cbm_kindex, cbm_index-1, 0]
+    }
+
+    
+def arbitrary_klist(kend:str, kmesh:str="7-7-7", fpath:str="./", fname:str="KPOINTS"):
+    """
+    Generate arbitrary klist for effective mass calculation
+    :param kend: string,    "0.5,0.5,0.5,0.01,0.01,0.01" --> the center of the kmesh cuboid with the length of the sides
+    :                       "0.0,0.0,0.0,0.0,0.0,0.5  --> two ends of the klist line
+    :param kmesh: int, 
+    :param fpath: str, 
+    :param fname: str, 
+    """
+    kend = [float(_) for _ in kend.split(",")]
+    kmesh = [int(_) for _ in kmesh.split("-")]
+    khead = """Automatic generation
+%d
+Reciprocal lattice
+"""
+
+    # cube mesh
+    if len(kmesh) == 3:
+        x_ = np.linspace(kend[0]-kend[3]/2, kend[0]+kend[3]/2, num=kmesh[0])
+        y_ = np.linspace(kend[1]-kend[4]/2, kend[1]+kend[4]/2, num=kmesh[1])
+        z_ = np.linspace(kend[2]-kend[5]/2, kend[2]+kend[5]/2, num=kmesh[2])
+        xx, yy, zz = np.meshgrid(x_, y_, z_, indexing='ij')
+        x, y, z = xx.flatten(), yy.flatten(), zz.flatten()
+        
+        with open(fpath+"/"+fname, "w") as f:
+            f.write(khead % int(kmesh[0]*kmesh[1]*kmesh[2]))
+            for _ in range(int(kmesh[0]*kmesh[1]*kmesh[2])):
+                f.write("%15.9f%15.9f%15.9f%10.6f\n" % (x[_], y[_], z[_], 1))
+
+    # line mesh
+    elif len(kmesh) == 1:
+        if kmesh[0] == 7:
+            kmesh[0] = 51
+        x_ = np.linspace(kend[0], kend[3], num=kmesh[0])
+        y_ = np.linspace(kend[1], kend[4], num=kmesh[0])
+        z_ = np.linspace(kend[2], kend[5], num=kmesh[0])
+
+        with open(fpath+"/"+fname, "w") as f:
+            f.write(khead % int(kmesh[0]))
+            for _ in range(int(kmesh[0])):
+                f.write("%15.9f%15.9f%15.9f%10.6f\n" % (x_[_], y_[_], z_[_], 1))
+
+    else:
+        lexit("Make sure the parameter of kend with correct format: 0.5,0.5,0.5 for cube mesh or 0.0,0.0,0.0,0.0,0.0,0.5 for line mesh")
+    
     

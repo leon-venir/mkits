@@ -23,7 +23,7 @@ def fdmnes_gen_inp(struct_inp, fpath="./", index=0, params=""):
     atom_list = np.array([])
     for _ in range(len(struct_inp["atoms_type"])):
         atom_list = np.hstack((atom_list, [symbol_map[struct_inp["atoms_type"][_]]]*int(struct_inp["atoms_num"][_])))
-    #default setting
+    #default setting to write
     param_default = {
         "Radius": "7.0",
         "Green": "n",
@@ -33,14 +33,16 @@ def fdmnes_gen_inp(struct_inp, fpath="./", index=0, params=""):
     }
     if params:
         params = parser_inputpara(params)
+    else:
+        params = {}
     param_default.update(params)
     param_default.pop("element", None)
     
     if "element" in params:
         param_default["Z_Absorber"] = symbol_map[params["element"]]
     else:
-        param_default["Z_Absorber_Z"] = atom_list[0]
-
+        param_default["Z_Absorber"] = str(int(atom_list[0]))
+        params["element"] = atom_data[int(atom_list[0])][1]
     
     fdmnes_inp_head = """! Fdmnes indata file
 ! Calculation for the %s K-edge in %s
@@ -49,7 +51,7 @@ def fdmnes_gen_inp(struct_inp, fpath="./", index=0, params=""):
  Filout
 ./out/%s_%s
 
- Range                              ! Energy range of calculation (eV)
+ Range                               ! Energy range of calculation (eV)
   -8. 0.5  10. 1.  18. 2. 60.        ! first energy, step, intermediary energy, step ..., last energy
  !-8. 0.2  13. 0.5 18. 1. 50. 2 120. ! first energy, step, intermediary energy, step ..., last energy    
 
