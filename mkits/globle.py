@@ -333,6 +333,7 @@ class struct:
             struct_dict["atoms_rmt"] = []
             struct_dict["atoms_index"] = []
             struct_dict["atoms_r0"] = []
+            struct_dict["calculator"] = "wien"
 
             # the file with "ATOM"
             line_idx = 4
