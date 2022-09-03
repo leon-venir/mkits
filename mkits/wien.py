@@ -32,4 +32,43 @@ def gen_wien_born(structure: str, atom_list_index:list, direction:list, displace
 
                 structure_class.update_struct_dict(structure_dict)
                 structure_class.write_struct(fpath, "%s_%d_%s_%s_%.3f.struct" % (structure.replace(".struct", ""), idx, structure_dict["atoms_type"][idx-1], direc, disp))
-                
+
+
+def wien_parse_energy(energy:str="case.energy"):
+    """
+    wien2k case.energy and case.energyso parser
+    :param energy: input file
+    :return klist(kx3 array), energy(k x states x 2 array): 
+    """
+    with open(energy, "r") as f:
+        enelines = f.readlines()
+    
+    # find the begin line index
+    beg_index = 0
+    for line in enelines:
+        if line[90:100] != "":
+            beg_index += 1
+        else:
+            break
+    
+    # line_index_of_1st_kpoints  the_index_of_1st_states_num
+    numline = len(enelines)
+    kpoint_line_index = []
+    for _ in range(beg_index, numline):
+        if len(enelines[_]) > 50: 
+            kpoint_line_index.append(_)
+
+    kpoint_lines = [enelines[_] for _ in kpoint_line_index]
+    kpoint_lines = [_.split() for _ in kpoint_lines]
+    kpoint_lines = np.array(kpoint_lines, dtype=float)
+    min_states = np.min(kpoint_lines[:,-2])
+
+    # make sure the coordinates of k are always smaller than 1.0
+    energy_lines = np.loadtxt(energy, skiprows=beg_index, usecols=[0,1])
+    energy_lines = energy_lines[energy_lines[:, 0]<=min_states]
+    
+    return kpoint_lines[:,:3], energy_lines.reshape(-1,int(min_states)+1, 2)[:, 1:, :]
+    
+
+def wien_fermi_surface(structure:str="case.struct", energy:str="ase.energy"):
+    pass
