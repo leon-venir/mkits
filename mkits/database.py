@@ -1,5 +1,25 @@
 import numpy as np
 
+
+"""
+:constants
+"""
+cons_hbar = 1.0545718e-34  # m^2kg/s
+cons_kb = 1.38064852e-23  # m^2kg/(Ks^2)
+cons_pi = 3.14159265359
+cons_emass = 9.10938356e-31  # electron mass kg
+cons_echarge = 1.60217662e-19  # electron charge
+
+
+
+"""
+:units convertor
+"""
+uc_ev2j = 1.602176634e-19  # electonic volt to Joule
+uc_gpa2nm2 = 1e9  # GPa to N/m^2
+uc_bohr2ang = 0.529177 # bohr to angstrom
+
+
 """
 :database 
 """

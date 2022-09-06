@@ -1,11 +1,14 @@
 import numpy as np
 from mkits.sysfc import lexit
 from mkits.database import *
+import ase.geometry
 import spglib as spg
 import os
 import math
 
 """
+:func klist_kpath           : convert a list of kpoints to a kpath in units of reciprocal of angstrom
+:func convert_3decimal_to_4 : convert 3 decimal numbers to 4 integer fraction: (0.625, 0.15625, 0.125) --> (4, 10, 8, 64)
 :func np_ployfit            : 
 :func round_even_odd        : round input varieties to nearest even number or odd number
 :func vector_angle          : calculate the angle between two vectors
@@ -17,6 +20,29 @@ import math
 :func cart2frac             : 
 :class struct               : 
 """
+
+
+def klist_kpath(klist, recip):
+    """
+    convert a list of kpoints to a kpath in units of reciprocal of angstrom for band plotting or analyzing
+    :param klist: array, x3 shape array
+    :param recip: array, 3x3 shape array containing reciprocal lattice vector
+    :return x shape array with kpath
+    """
+    kpath_abs = [0]
+    cartesian_reciprocal = frac2cart(recip, klist)
+    for _ in range(1, len(klist)):
+        kpath_abs.append(kpath_abs[_-1]+np.sqrt(np.dot(cartesian_reciprocal[_]-cartesian_reciprocal[_-1], cartesian_reciprocal[_]-cartesian_reciprocal[_-1])))
+    return np.hstack((klist, cartesian_reciprocal, np.array(kpath_abs[:]).reshape(-1,1)))
+
+
+def convert_3decimal_to_4integer_fractioin(x:float, y:float, z:float):
+    """
+    convert 3 decimal numbers to 4 integer fraction: (0.625, 0.15625, 0.125) --> (4, 10, 8, 64)
+    maximum 10 digits 
+    :return tuple
+    """
+    return (int(x*1e8), int(y*1e8), int(z*1e8), 1e8)
 
 
 def np_ployfit(x, y, n, d):
@@ -100,16 +126,15 @@ def lattice_conversion(give_lattice):
     # vector -> cartesian
     elif len(give_lattice) == 6:
         # convert arc to degree
-        give_lattice[3:] = give_lattice[3:]/180*np.pi
+        new_lattice = np.hstack((give_lattice[:3], give_lattice[3:]/180*np.pi))
         # a in x-axis; b in xy-plane
-        vector_x = np.array([give_lattice[0], 0, 0])
-        vector_y = np.array([np.cos(give_lattice[5]), np.sin(give_lattice[5]), 0])*give_lattice[1]
-        x = np.cos(give_lattice[3])
-        y = (np.linalg.norm(vector_y)*np.cos(give_lattice[4])-vector_y[0]*np.cos(give_lattice[3]))/vector_y[1]
+        vector_x = np.array([new_lattice[0], 0, 0])
+        vector_y = np.array([np.cos(new_lattice[5]), np.sin(new_lattice[5]), 0])*new_lattice[1]
+        x = np.cos(new_lattice[3])
+        y = (np.linalg.norm(vector_y)*np.cos(new_lattice[4])-vector_y[0]*np.cos(new_lattice[3]))/vector_y[1]
         z = np.sqrt(1-x**2-y**2)
-        print(x,y,z)
         vector_z_direction = np.array([x,y,z])
-        vector_z = vector_z_direction/ np.linalg.norm(vector_z_direction) * give_lattice[2]
+        vector_z = vector_z_direction/ np.linalg.norm(vector_z_direction) * new_lattice[2]
         return np.array([vector_x, vector_y, vector_z])
         
     else:
@@ -235,10 +260,14 @@ class struct:
         return "This is a Class containing structures information: \n" + "Lattice:\n{}\n".format(str(self.struct_dict["lattice"]*self.struct_dict["ratio"]))
     
     def return_dict(self):
-        return self.struct_dict    
+        return self.struct_dict
+    
+    def return_recip(self):
+        return ase.geometry.Cell.fromcellpar([self.struct_dict["lattice_direct"][0], self.struct_dict["lattice_direct"][1], self.struct_dict["lattice_direct"][2], self.struct_dict["lattice_direct"][3], self.struct_dict["lattice_direct"][4], self.struct_dict["lattice_direct"][5]]).reciprocal()
 
     def parse_calculator(self, struct_lines):
-        """ return calculator
+        """ 
+        return calculator
         :return vasp_dyn:  
         :return vasp_direct:
         :return vasp_cart:
@@ -275,6 +304,7 @@ class struct:
             struct_dict["title"] = struct_lines[0][:-1]
             struct_dict["ratio"] = float(struct_lines[1][:-1])
             struct_dict["lattice"] = np.array([list(map(float, struct_lines[2].split())), list(map(float, struct_lines[3].split())), list(map(float, struct_lines[4].split()))])
+            struct_dict["lattice_direct"] = lattice_conversion(struct_dict["lattice"])
             struct_dict["atoms_type"] = struct_lines[5].split()
             struct_dict["atoms_num"] = np.array(list(map(int, struct_lines[6].split())))
             struct_dict["atoms_index"] = [symbol_map[_] for _ in struct_dict["atoms_type"]]
@@ -284,6 +314,7 @@ class struct:
             struct_dict["title"] = struct_lines[0][:-1]
             struct_dict["ratio"] = float(struct_lines[1][:-1])
             struct_dict["lattice"] = np.array([list(map(float, struct_lines[2].split())), list(map(float, struct_lines[3].split())), list(map(float, struct_lines[4].split()))])
+            struct_dict["lattice_direct"] = lattice_conversion(struct_dict["lattice"])
             struct_dict["atoms_type"] = struct_lines[5].split()
             struct_dict["atoms_num"] = np.array(list(map(int, struct_lines[6].split())))
             struct_dict["atoms_index"] = [symbol_map[_] for _ in struct_dict["atoms_type"]]
@@ -328,7 +359,8 @@ class struct:
             struct_dict["title"] = struct_lines[0][:-1]
             #struct_dict["sym_type"] = struct_lines[1][:1]
             struct_dict["sym_type"] = "P"
-            struct_dict["lattice"] = np.array([float(struct_lines[3][0:10]), float(struct_lines[3][10:20]), float(struct_lines[3][20:30]), float(struct_lines[3][30:40]), float(struct_lines[3][40:50]), float(struct_lines[3][50:60])])
+            struct_dict["lattice_direct"] = np.array([float(struct_lines[3][0:10])*uc_bohr2ang, float(struct_lines[3][10:20])*uc_bohr2ang, float(struct_lines[3][20:30])*uc_bohr2ang, float(struct_lines[3][30:40]), float(struct_lines[3][40:50]), float(struct_lines[3][50:60])])
+            struct_dict["lattice"] = lattice_conversion(struct_dict["lattice_direct"])
             struct_dict["atoms_alias"] = []
             struct_dict["atoms_rmt"] = []
             struct_dict["atoms_index"] = []
@@ -413,6 +445,7 @@ class struct:
                     f.write("                     0.0000000 1.0000000 0.0000000                             \n")
                     f.write("                     0.0000000 0.0000000 1.0000000                             \n")
                 f.write("   1      NUMBER OF SYMMETRY OPERATIONS                                        \n 1 0 0 0.00000000                                                              \n 0 1 0 0.00000000                                                              \n 0 0 1 0.00000000                                                              \n       1\n")
+                
     def gen_potcar(self, potpath: str = "./", fpath: str ="./", fname: str ="POTCAR"):
         # VASP] generate POTCAR
         atoms = self.struct_dict["atoms_type"]
