@@ -16,8 +16,10 @@ cons_echarge = 1.60217662e-19  # electron charge
 :units convertor
 """
 uc_ev2j = 1.602176634e-19  # electonic volt to Joule
+uc_ry2j = 2.179874099E-18  # Ry
 uc_gpa2nm2 = 1e9  # GPa to N/m^2
 uc_bohr2ang = 0.529177 # bohr to angstrom
+uc_ang2m = 1e-10
 
 
 """

@@ -7,6 +7,9 @@ import os
 import math
 
 """
+:func effective_mass        : calculate effective mass based on parabolic band approximation, unit: m, J
+:func best_polyfit_range    : find best fit range
+:func globe_polyfit         : poly-fitting with numpy for r square
 :func klist_kpath           : convert a list of kpoints to a kpath in units of reciprocal of angstrom
 :func convert_3decimal_to_4 : convert 3 decimal numbers to 4 integer fraction: (0.625, 0.15625, 0.125) --> (4, 10, 8, 64)
 :func np_ployfit            : 
@@ -22,6 +25,71 @@ import math
 """
 
 
+def effective_mass_calculator(kpath, eigen):
+    """
+    Calculate effective mass from single-band parabolic approximation
+    :param kpath: a list or array like kpath (unit: angstrom^{-1})
+    :param eigen: a list or array like eigen values of VBM or CBM band coorresponding to kpath dimension
+    :return effective_mass, r square
+    """
+    if type(kpath) == list:
+        kpath = np.array(kpath, dtype=float)
+    if type(eigen) == list:
+        eigen = np.array(eigen, dtype=float)
+    
+    coef1 = np.polyfit(kpath, eigen, 2)
+
+    effective_mass = cons_hbar*cons_hbar/coef1[0]/2/cons_emass
+    ssreg, sstot, rsquares = rsquare(kpath, eigen, 2)
+
+    return effective_mass, rsquares
+
+
+def best_polyfit_range(x, y, degree:int, center_index:int, init_range:int=5):
+    """
+    Search the best polyfitting range, by minimize the residuals
+    :param center_index: the index of the chosen center, from 1
+    :return array [[slice_left, slice_right, polynomial coefficients, r square],...[]]
+    """
+    
+    leftrange_init = np.vstack((np.arange(center_index-init_range-1, -1, -1), np.arange(center_index-init_range-1, -1, -1))).T.flatten()[1:]
+    rightrange_init = np.vstack((np.arange(center_index+init_range, len(y)), np.arange(center_index+init_range, len(y)))).T.flatten()
+
+    # filling the range array
+    rangediff = len(rightrange_init) - len(leftrange_init)
+    if rangediff > 0:
+        fittingrange = np.vstack(( np.hstack((leftrange_init, np.zeros(rangediff))), rightrange_init ))
+    elif rangediff < 0:
+        fittingrange = np.vstack(( leftrange_init, np.hstack(( rightrange_init, np.full(-rangediff, rightrange_init[-1]) )) ))
+    
+    fitparam = np.array([])
+    for _ in fittingrange.T:
+        fitparam = np.hstack((fitparam, np.array(_), rsquare(x[int(_[0]):int(_[1])], y[int(_[0]):int(_[1])], degree)))
+    
+    return fitparam.reshape(-1, degree+5)
+
+
+def rsquare(x, y, degree):
+    """
+    :            (0     , 1:degree+2             , degree+3 or -1)
+    :return ssregression, sstot, rsquare
+    """
+    results = [degree]
+
+    coeffs = np.polyfit(x, y, degree)
+
+    # r-squared
+    p = np.poly1d(coeffs)
+    yhat = p(x)
+    ybar = np.sum(y)/len(y) 
+    ssreg = np.sum((y - yhat)**2)
+    sstot = np.sum((y - ybar)**2) 
+    rsquare = 1 - ssreg/sstot
+    
+
+    return ssreg, sstot, rsquare
+
+
 def klist_kpath(klist, recip):
     """
     convert a list of kpoints to a kpath in units of reciprocal of angstrom for band plotting or analyzing
@@ -33,8 +101,8 @@ def klist_kpath(klist, recip):
     cartesian_reciprocal = frac2cart(recip, klist)
     for _ in range(1, len(klist)):
         kpath_abs.append(kpath_abs[_-1]+np.sqrt(np.dot(cartesian_reciprocal[_]-cartesian_reciprocal[_-1], cartesian_reciprocal[_]-cartesian_reciprocal[_-1])))
-    return np.hstack((klist, cartesian_reciprocal, np.array(kpath_abs[:]).reshape(-1,1)))
-
+    
+    return np.array(kpath_abs)
 
 def convert_3decimal_to_4integer_fractioin(x:float, y:float, z:float):
     """
@@ -257,13 +325,13 @@ class struct:
 
     def __repr__(self) -> str:
         """"""
-        return "This is a Class containing structures information: \n" + "Lattice:\n{}\n".format(str(self.struct_dict["lattice"]*self.struct_dict["ratio"]))
+        return "This is a Class containing structures information: \n" + "Lattice:\n{}\n".format(str(self.struct_dict["lattice"]))
     
     def return_dict(self):
         return self.struct_dict
     
     def return_recip(self):
-        return ase.geometry.Cell.fromcellpar([self.struct_dict["lattice_direct"][0], self.struct_dict["lattice_direct"][1], self.struct_dict["lattice_direct"][2], self.struct_dict["lattice_direct"][3], self.struct_dict["lattice_direct"][4], self.struct_dict["lattice_direct"][5]]).reciprocal()
+        return ase.geometry.Cell.fromcellpar([self.struct_dict["lattice_direct"][0], self.struct_dict["lattice_direct"][1], self.struct_dict["lattice_direct"][2], self.struct_dict["lattice_direct"][3], self.struct_dict["lattice_direct"][4], self.struct_dict["lattice_direct"][5]]).reciprocal()*2*np.pi
 
     def parse_calculator(self, struct_lines):
         """ 

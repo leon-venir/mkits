@@ -38,7 +38,7 @@ def wien_parse_energy(structure:str="case.struct", energy:str="case.energy"):
     """
     wien2k case.energy and case.energyso parser
     :param energy: input file
-    :return klist(kx4 array), energy(k x states x 2 array): 
+    :return klist(kx4 array: ), energy(k x states x 2 array): 
     """
     with open(energy, "r") as f:
         enelines = f.readlines()
@@ -77,7 +77,7 @@ def wien_parse_energy(structure:str="case.struct", energy:str="case.energy"):
     energy_lines = np.array(energy_lines, dtype=float)
     energy_lines = energy_lines[energy_lines[:, 0]<=min_states]
     
-    return np.hstack((kpoint_lines[:,:3], kpath)), energy_lines.reshape(-1,int(min_states), 2)[:, :, :]
+    return np.hstack((kpoint_lines[:,:3], kpath.reshape(-1, 1))), energy_lines.reshape(-1,int(min_states), 2)[:, :, :]
 
 
 def wien_merge_energy(energy_head:str="case.energy", energy_num:int=4, fpath:str="./"):
