@@ -502,7 +502,7 @@ class struct:
         elif self.calculator == "wien":
             with open(fpath+"/"+fname, "w") as f:
                 f.write("generate by mkits\n")
-                f.write("%-4sLATTICE,NONEQUIV.ATOMS%4d%11s\n" % ("H", self.struct_dict["atoms_tot"], "P1"))
+                f.write("%-4sLATTICE,NONEQUIV.ATOMS%4d%11s\n" % ("P", self.struct_dict["atoms_tot"], "P1"))
                 f.write("MODE OF CALC=RELA unit=bohr                                                    \n")
                 f.write("%10.6f%10.6f%10.6f%10.6f%10.6f%10.6f\n" % (self.struct_dict["lattice_direct"][0]/0.529177, self.struct_dict["lattice_direct"][1]/0.529177, self.struct_dict["lattice_direct"][2]/0.529177, self.struct_dict["lattice_direct"][3], self.struct_dict["lattice_direct"][4], self.struct_dict["lattice_direct"][5]))
                 for _ in range(self.struct_dict["atoms_tot"]):
@@ -512,7 +512,7 @@ class struct:
                     f.write("LOCAL ROT MATRIX:    1.0000000 0.0000000 0.0000000                             \n")
                     f.write("                     0.0000000 1.0000000 0.0000000                             \n")
                     f.write("                     0.0000000 0.0000000 1.0000000                             \n")
-                f.write("   1      NUMBER OF SYMMETRY OPERATIONS                                        \n 1 0 0 0.00000000                                                              \n 0 1 0 0.00000000                                                              \n 0 0 1 0.00000000                                                              \n       1\n")
+                f.write("   0      NUMBER OF SYMMETRY OPERATIONS                                        \n")
                 
     def gen_potcar(self, potpath: str = "./", fpath: str ="./", fname: str ="POTCAR"):
         # VASP] generate POTCAR
