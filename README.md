@@ -84,6 +84,9 @@ mkits is a python written tool containing many helpful initial- or post-processi
 
 # 3. release history
 
++ version 0.5 (September 14th 2022)
+  1. fix the error when write wien2k structure
+
 + version 0.3 (August 27th 2022)
 
   1. fix some errors
