@@ -504,7 +504,7 @@ class struct:
                 f.write("generate by mkits\n")
                 f.write("%-4sLATTICE,NONEQUIV.ATOMS%4d%11s\n" % ("H", self.struct_dict["atoms_tot"], "P1"))
                 f.write("MODE OF CALC=RELA unit=bohr                                                    \n")
-                f.write("%10.6f%10.6f%10.6f%10.6f%10.6f%10.6f\n" % (self.struct_dict["lattice"][0], self.struct_dict["lattice"][1], self.struct_dict["lattice"][2], self.struct_dict["lattice"][3], self.struct_dict["lattice"][4], self.struct_dict["lattice"][5]))
+                f.write("%10.6f%10.6f%10.6f%10.6f%10.6f%10.6f\n" % (self.struct_dict["lattice_direct"][0]/0.529177, self.struct_dict["lattice_direct"][1]/0.529177, self.struct_dict["lattice_direct"][2]/0.529177, self.struct_dict["lattice_direct"][3], self.struct_dict["lattice_direct"][4], self.struct_dict["lattice_direct"][5]))
                 for _ in range(self.struct_dict["atoms_tot"]):
                     f.write("ATOM%4d: X=%-10.8f Y=%-10.8f Z=%-10.8f\n" % (_+1, self.struct_dict["pos_frac"][_,0], self.struct_dict["pos_frac"][_,1], self.struct_dict["pos_frac"][_,2]))
                     f.write("          MULT= 1          ISPLIT= 4                                           \n")
