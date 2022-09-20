@@ -52,7 +52,7 @@ def fdmnes_gen_inp(struct_inp, fpath="./", index=0, params=""):
 ./out/%s_%s
 
  Range                               ! Energy range of calculation (eV)
-  -8. 0.5  10. 1.  18. 2. 60.        ! first energy, step, intermediary energy, step ..., last energy
+  -8. 0.5  10. 1.  18. 2. 100.       ! first energy, step, intermediary energy, step ..., last energy
  !-8. 0.2  13. 0.5 18. 1. 50. 2 120. ! first energy, step, intermediary energy, step ..., last energy    
 
  Crystal
