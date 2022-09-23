@@ -16,11 +16,9 @@ def vasp_init_parser(args):
     if args.gen2d:
         vasp_build_low_dimension(parameter[0], parameter[1], parameter[2], parameter[3])
     elif args.pot:
-        poscar_dict = struct("POSCAR").return_dict()
-        vasp_potcar_gen(poscar_dict, args.pot_path)
-    elif args.kgen != 0:
-        poscar_dict = struct("POSCAR").return_dict()
-        vasp_kpoints_gen(poscar_dict, args.kgen, parameter["kmesh"])
+        vasp_potcar_gen(struct(args.poscar).return_dict() if args.poscar else struct("POSCAR").return_dict(), args.pot_path)
+    elif args.kgen:
+        vasp_kpoints_gen(struct(args.poscar).return_dict() if args.poscar else struct("POSCAR").return_dict(), args.kgen, parameter["kmesh"] if args.param else "odd")
     elif args.vasp_gen_input:
         vasp_gen_input(args.dft if args.dft else "scf", args.potpath if args.potpath else "./", args.poscar if args.poscar else "POSCAR", args.dryrun if args.dryrun else False, args.prec if args.prec else "Normal", args.wpath if args.wpath else "./", args.execode if args.execode else "mpirun -np $SLURM_NTASKS vasp_std", args.param if args.param else "gga=pbelda")
     elif args.gen_arb_klist:
