@@ -11,6 +11,7 @@ from mkits.database import *
 
 
 """
+:func add_selective_dyn         : add the 4-, 5-, 6th columns for selective dynamic POSCAR
 :func vaspxml_parser            : parse the vasprun.xml file
 :func vasp_dos_extractor        : extract data from vasprun.xml and create a gnuplot format dos_num.dat
 :func vasp_band_extractor       : extract data from EIGNVAL and create a gnuplot format BANDCAR
@@ -30,6 +31,10 @@ from mkits.database import *
 :func getvbmcbm                 : extract the valence maximum band and conduction minimum band
 :func arbitrary_klist           : Generate arbitrary klist for effective mass calculation
 """
+
+
+def add_selective_dyn(inp:str="POSCAR", out:str="POSCAR_init", ):
+    """"""
 
 
 def vaspxml_parser(select_attrib:str, xmlfile:str="vasprun.xml"):
@@ -111,7 +116,7 @@ def vaspxml_parser(select_attrib:str, xmlfile:str="vasprun.xml"):
         cartesian_reciprocal = frac2cart(reciprocal, np.array(highsympoints_frac))
         highsympoints_abs = [0]
         for _ in range(1, len(highsympoints_frac)):
-            highsympoints_abs.append(highsympoints_abs[_-1]+np.square(np.dot(cartesian_reciprocal[_]-cartesian_reciprocal[_-1], cartesian_reciprocal[_]-cartesian_reciprocal[_-1])))
+            highsympoints_abs.append(highsympoints_abs[_-1]+np.sqrt(np.dot(cartesian_reciprocal[_]-cartesian_reciprocal[_-1], cartesian_reciprocal[_]-cartesian_reciprocal[_-1])))
         return np.array(highsympoints_abs)
     elif select_attrib == "parameters":
         parameters = vasproot.find("parameters")
@@ -422,7 +427,8 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
                       :                     ->    kmesh = [0.1, 0.15, ...]
                       : [dft=opt]           ->    mulisif [263], can using with mulprec [Low-Normal-Normal]
                       : [dft=scf]           ->    
-                      : [dft=conv_encut]    ->    encut [200-300-400-500], kmesh [0.05-0.1-0.2]
+                      : [dft=band]          ->    NBAND=200, 
+                      : [dft=conv_encut]    ->    ENCUT=200-300-400-500, kmesh [0.05-0.1-0.2]
                       : [dft=conv_kmesh]    ->    kspacing [0.05-0.07-0.1-0.15-0.2-0.3]
                       : [dft=xanes]         ->    hole [1s,2s,2p,...]
                       : [dft=born]          ->    
@@ -512,6 +518,9 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
         incar.update(incar_opt)
         update_incar(incar, params, ["ENCUT", "PREC", "POTIM"])
         incar = ch_functional(incar)
+
+        vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.3, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_opt")
+
         # for multi-isif
         if "mulisif" in params:
             if "mulprec" in params:
@@ -535,13 +544,21 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
                 os.chmod(wdir+"/run.sh", 0o775)
         else:
             write_incar(incar, fpath=wdir, fname="INCAR_%s_%s_isif%s" %(dft, gga, incar["ISIF"]))
+            poscar.write_struct(fpath=wdir, fname="POSCAR_init")
             dftgga = dft+"_"+gga+"_isif"+incar["ISIF"]
             cmd = "# opt isif=%s calculation\n"
             cmd += "cp INCAR_%s INCAR\n" % dftgga
+            cmd += "cp POSCAR_init POSCAR\n"
+            cmd += "cp KPOINTS_opt KPOINTS\n"
+            cmd += "for step in 1 2; do\n"
             cmd += execode + "\n"
-            cmd += "cp OUTCAR OUTCAR_%s\n" % dftgga
-            cmd += "cp vasprun.xml vasprun_%s.xml\n" % dftgga
+            cmd += "cp OUTCAR OUTCAR_$step\n"
+            cmd += "cp vasprun.xml vasprun_$step.xml\n"
+            cmd += "cp XDATCAR XDATCAR_$step\n"
+            cmd += "cp OSZICAR OSZICAR_$step\n"
+            cmd += "cp CONTCAR CONTCAR_$step\n"
             cmd += "cp CONTCAR POSCAR\n" 
+            cmd += "done\n"
             write_runsh(wdir+"/run.sh", cmd)
             os.chmod(wdir+"/run.sh", 0o775)
 
@@ -574,6 +591,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
         cmd += "sed -e s/xxx/$encut/g INCAR_%s > INCAR\n" % dftgga
         cmd += execode + "\n"
         cmd += "cp vasprun.xml vasprun_%s_encut$encut.xml\n" % (dftgga)
+        cmd += "rm CHGCAR WAVECAR\n"
         cmd += "done\n"
         write_runsh(wdir+"/run.sh", cmd)
         os.chmod(wdir+"/run.sh", 0o775)
@@ -625,9 +643,49 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
     else:
         dfstates_="n"
     
+    if dft == "band":
+        """ """
+        print("Make sure WAVECAR_scf and CHGCAR_scf are in the same directory, otherwise, the calculation will be perfomed with dense k-mesh and comsume more time.")
+        print("Gnerate the k-path by yourself and named as KPOINTS_band")
+        incar.update(incar_glob)
+        incar.update(incar_band)
+        update_incar(incar, params, ["ENCUT", "PREC", "NBAND"])
+        incar = ch_functional(incar)
+
+        dftgga = dft+"_"+gga
+        write_incar(incar, fpath=wdir, fname="INCAR_%s" % dftgga)
+        cmd = "# scf calculation\n"
+        cmd += "cp INCAR_%s INCAR\n" % dftgga
+        cmd += "cp KPOINTS_band KPOINTS\n"
+        cmd += "cp WAVECAR_%s WAVECAR\n" % ("scf_"+gga)
+        cmd += "cp CHGCAR_%s CHGCAR\n" % ("scf_"+gga)
+        cmd += execode + "\n"
+        cmd += "cp vasprun.xml vasprun_%s.xml\n" % dftgga
+        write_runsh(wdir+"/run_band.sh", cmd)
+        os.chmod(wdir+"/run_band.sh", 0o775)
+    
     if dft == "dos":
         """ """
         print("Make sure WAVECAR_scf and CHGCAR_scf are in the same directory, otherwise, the calculation will be perfomed with dense k-mesh and comsume more time.")
+        print("Gnerate the k-path by yourself and named as KPOINTS_band")
+        incar.update(incar_glob)
+        incar.update(incar_band)
+        update_incar(incar, params, ["ENCUT", "PREC", "NBAND"])
+        incar = ch_functional(incar)
+
+        vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.1, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_dos")
+
+        dftgga = dft+"_"+gga
+        write_incar(incar, fpath=wdir, fname="INCAR_%s" % dftgga)
+        cmd = "# scf calculation\n"
+        cmd += "cp INCAR_%s INCAR\n" % dftgga
+        cmd += "cp KPOINTS_dos KPOINTS\n"
+        cmd += "cp WAVECAR_%s WAVECAR\n" % ("scf_"+gga)
+        cmd += "cp CHGCAR_%s CHGCAR\n" % ("scf_"+gga)
+        cmd += execode + "\n"
+        cmd += "cp vasprun.xml vasprun_%s.xml\n" % dftgga
+        write_runsh(wdir+"/run_dos.sh", cmd)
+        os.chmod(wdir+"/run_dos.sh", 0o775)
 
 
     # =================================================================================

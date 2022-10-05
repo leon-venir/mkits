@@ -29,9 +29,9 @@ uc_ang2m = 1e-10
 # :database vasp: VASP input tempelates ====================== #
 incar_glob = {
     "PREC": "Normal",
-    "ENCUT": "450",
+    "ENCUT": "600",
     "EDIFF": "1e-6",
-    "NCORE": "4",
+    "NCORE": "8",
     "NELM": "150"
 }
 incar_opt = {
@@ -39,7 +39,8 @@ incar_opt = {
     "ISIF": "3",
     "NSW": "500",
     "ISMEAR": "0",
-    "SIGMA": "0.1",
+    "EDIFFG": "-1e-4",
+    "SIGMA": "0.05",
     "POTIM": "0.5"
 }
 incar_scf = {
@@ -57,7 +58,17 @@ incar_dos = {
     "SIGMA": "0.1", 
     "NEDOS": "2500", 
     "NBANDS": "36", 
-    "LMAXMIX": "4"
+    #"LMAXMIX": "4"
+}
+incar_band = {
+    "ICHARG": "11", 
+    "LORBIT": "11", 
+    "IBRION": "-1", 
+    "NSW": "0", 
+    "ISMEAR": "0", 
+    "SIGMA": "0.05", 
+    "NBANDS": "36", 
+    #"LMAXMIX": "4"
 }
 incar_md = {}
 
