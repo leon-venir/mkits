@@ -158,7 +158,7 @@ def vaspxml_parser(select_attrib:str, xmlfile:str="vasprun.xml"):
         position_end = []
         for _ in range(len(structure_beg[1])):
             position_beg.append([float(i) for i in structure_beg[1][_].text.split()])
-        for _ in range(len(structure_end[0][2])):
+        for _ in range(len(structure_end[0][1])):
             position_end.append([float(i) for i in structure_end[1][_].text.split()])
 
         volum_beg = float(structure_beg[0][1].text)
