@@ -24,6 +24,33 @@ import math
 :class struct               : 
 """
 
+def carrier_mobility(cii, ed, T, dimension:str="3d"):
+    """
+    Calculate relaxation time based on Deformation Potential theory 
+    :param cii: elastic constants in Pa
+    :param effect_mass: effective mass 
+    :param ed: deformation potenital
+    :param T: temperature in K
+    :param dimension: [3d, 2d]
+    """
+    if dimension == "3d":
+        mu = 2 * np.sqrt(2*np.pi) * cons_echarge * cons_hbar**4 * cii / (3 * cons_emass**(5/2) * (cons_kb*T)**(3/2) * ed**2)
+    return mu
+
+
+def relaxation_time(cii, effect_mass, ed, T, dimension:str="3d"):
+    """
+    Calculate relaxation time based on Deformation Potential theory 
+    :param cii: elastic constants in Pa
+    :param effect_mass: effective mass 
+    :param ed: deformation potenital
+    :param T: temperature in K
+    :param dimension: [3d, 2d]
+    """
+    if dimension == "3d":
+        tau = 2 * np.sqrt(2*np.pi) * cons_hbar**4 * cii * effect_mass / (3 * cons_emass**(3/2) * (cons_kb*T)**(3/2) * ed**2)
+    return tau
+
 
 def effective_mass_calculator(kpath, eigen):
     """

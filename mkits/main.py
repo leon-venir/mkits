@@ -20,7 +20,7 @@ def vasp_init_parser(args):
     elif args.kgen:
         vasp_kpoints_gen(struct(args.poscar).return_dict() if args.poscar else struct("POSCAR").return_dict(), args.kgen, parameter["kmesh"] if args.param else "odd")
     elif args.vasp_gen_input:
-        vasp_gen_input(args.dft if args.dft else "scf", args.potpath if args.potpath else "./", args.poscar if args.poscar else "POSCAR", args.dryrun if args.dryrun else False, args.prec if args.prec else "Normal", args.wpath if args.wpath else "./", args.execode if args.execode else "mpirun -np $SLURM_NTASKS vasp_std", args.param if args.param else "gga=pbelda")
+        vasp_gen_input(args.dft if args.dft else "scf", args.potpath if args.potpath else "./", args.poscar if args.poscar else "POSCAR", args.dryrun if args.dryrun else False, args.prec if args.prec else "Normal", args.wpath if args.wpath else "./", args.execode if args.execode else "mpirun -np $SLURM_NTASKS vasp_std", args.param if "gga=" in args.param else "gga=pbelda")
     elif args.gen_arb_klist:
         arbitrary_klist(kend=args.gen_arb_klist, kmesh=parameter["kmesh"] if "kmesh" in parameter else "7", fpath=parameter["fpath"] if "fpath" in parameter else "./", fname=parameter["fname"] if "fname" in parameter else "KPOINTS")
 

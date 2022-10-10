@@ -32,7 +32,8 @@ incar_glob = {
     "ENCUT": "600",
     "EDIFF": "1e-6",
     "NCORE": "8",
-    "NELM": "150"
+    "NELM": "150",
+    "LMAXMIX": "2"
 }
 incar_opt = {
     "IBRION": "2",

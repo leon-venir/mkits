@@ -432,7 +432,8 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
                       : [dft=conv_kmesh]    ->    kspacing [0.05-0.07-0.1-0.15-0.2-0.3]
                       : [dft=xanes]         ->    hole [1s,2s,2p,...]
                       : [dft=born]          ->    
-                      : [dft=if3-phono3py]  ->    dim = ["2 2 2", ...]; 
+                      : [dft=if3-phono3py]  ->    dim = ["2 2 2", ...]
+                      : [dft=dp]            ->    direct=[a b c], step=0.05, range=0.1, e.g. --param direct=ac,step=0.05,range=0.1
     """
     if dryrun:
         print(func_help)
@@ -471,6 +472,16 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
         f.writelines(potcar_lines)
     #for _ in poscar.return_dict()["atoms_type"]:
     #    subprocess.run("cat %s/POTCAR_%s* >> %s/POTCAR" %(potpath, _, wdir), shell=True)
+
+    # global incar
+    incar.update(incar_glob)
+    # update setting: "d" for d-elements, "f" for f-elements; set the LMAXMIX=2/4/6
+    if max(poscar.return_dict()["atoms_index"]) > 57:
+        incar["LMAXMIX"] = "6"
+    elif max(poscar.return_dict()["atoms_index"]) > 20:
+        incar["LMAXMIX"] = "4"
+    else:
+        incar["LMAXMIX"] = "2"
     
     def write_runsh(runsh, cmd):
         with open(runsh, "a") as f:
@@ -484,9 +495,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
     # =================================================================================
     # scf
     # =================================================================================
-    if dft == "scf":
-        """  """
-        incar.update(incar_glob)
+    def dft_scf(incar=incar):
         incar.update(incar_scf)
         update_incar(incar, params, ["ENCUT", "PREC"])
         incar = ch_functional(incar)
@@ -508,13 +517,11 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
         cmd += "cp vasprun.xml vasprun_%s.xml\n" % dftgga
         write_runsh(wdir+"/run.sh", cmd)
         os.chmod(wdir+"/run.sh", 0o775)
-
+    
     # =================================================================================
     # opt
     # =================================================================================
-    if dft == "opt":
-        """  """
-        incar.update(incar_glob)
+    def dft_opt(incar=incar):
         incar.update(incar_opt)
         update_incar(incar, params, ["ENCUT", "PREC", "POTIM"])
         incar = ch_functional(incar)
@@ -544,13 +551,13 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
                 os.chmod(wdir+"/run.sh", 0o775)
         else:
             write_incar(incar, fpath=wdir, fname="INCAR_%s_%s_isif%s" %(dft, gga, incar["ISIF"]))
-            poscar.write_struct(fpath=wdir, fname="POSCAR_init")
+            poscar.write_struct(fpath=wdir, fname="POSCAR_opt_init")
             dftgga = dft+"_"+gga+"_isif"+incar["ISIF"]
             cmd = "# opt isif=%s calculation\n"
             cmd += "cp INCAR_%s INCAR\n" % dftgga
-            cmd += "cp POSCAR_init POSCAR\n"
+            cmd += "cp POSCAR_opt_init POSCAR\n"
             cmd += "cp KPOINTS_opt KPOINTS\n"
-            cmd += "for step in 1 2; do\n"
+            cmd += "for step in 1 2 ; do\n"
             cmd += execode + "\n"
             cmd += "cp OUTCAR OUTCAR_$step\n"
             cmd += "cp vasprun.xml vasprun_$step.xml\n"
@@ -561,13 +568,12 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
             cmd += "done\n"
             write_runsh(wdir+"/run.sh", cmd)
             os.chmod(wdir+"/run.sh", 0o775)
-
+    
     # =================================================================================
     # convergence test: conv_encut
     # =================================================================================
-    if dft == "conv_encut":
+    def dft_conv_encut(incar=incar):
         """ generate input files for encut convergence test """
-        incar.update(incar_glob)
         incar.update(incar_scf)
         update_incar(incar, params, ["PREC"])
         incar = ch_functional(incar)
@@ -596,9 +602,8 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
         write_runsh(wdir+"/run.sh", cmd)
         os.chmod(wdir+"/run.sh", 0o775)
 
-    if dft == "conv_kmesh":
+    def dft_conv_kmesh(incar=incar):
         """ generate input files for kmesh convergence test """
-        incar.update(incar_glob)
         incar.update(incar_scf)
         update_incar(incar, params, ["ENCUT", "PREC"])
         incar = ch_functional(incar)
@@ -625,29 +630,20 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
         write_runsh(wdir+"/run.sh", cmd)
         os.chmod(wdir+"/run.sh", 0o775)
     
-    if dft == "conv_vacuum":
+    def dft_conv_vacuum(incar=incar): 
         """ generate input files for vacuum convergence test (2d matertials)"""
     
-    if dft == "conv_layer":
+    def dft_conv_layer(incar=incar): 
         """ generate input files for atomic layers convergence test (2d matertials)"""
 
     # =================================================================================
     # dos, band, effective mass
     # =================================================================================
-
-    # update setting: "d" for d-elements, "f" for f-elements; set the LMAXMIX=2/4/6
-    if max(poscar.return_dict()["atoms_index"]) > 57:
-        dfstates_="f"
-    elif max(poscar.return_dict()["atoms_index"]) > 20:
-        dfstates_="d"
-    else:
-        dfstates_="n"
     
-    if dft == "band":
+    def dft_band(incar=incar):
         """ """
         print("Make sure WAVECAR_scf and CHGCAR_scf are in the same directory, otherwise, the calculation will be perfomed with dense k-mesh and comsume more time.")
         print("Gnerate the k-path by yourself and named as KPOINTS_band")
-        incar.update(incar_glob)
         incar.update(incar_band)
         update_incar(incar, params, ["ENCUT", "PREC", "NBAND"])
         incar = ch_functional(incar)
@@ -664,11 +660,10 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
         write_runsh(wdir+"/run_band.sh", cmd)
         os.chmod(wdir+"/run_band.sh", 0o775)
     
-    if dft == "dos":
+    def dft_dos(incar=incar):
         """ """
         print("Make sure WAVECAR_scf and CHGCAR_scf are in the same directory, otherwise, the calculation will be perfomed with dense k-mesh and comsume more time.")
         print("Gnerate the k-path by yourself and named as KPOINTS_band")
-        incar.update(incar_glob)
         incar.update(incar_band)
         update_incar(incar, params, ["ENCUT", "PREC", "NBAND"])
         incar = ch_functional(incar)
@@ -686,6 +681,73 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
         cmd += "cp vasprun.xml vasprun_%s.xml\n" % dftgga
         write_runsh(wdir+"/run_dos.sh", cmd)
         os.chmod(wdir+"/run_dos.sh", 0o775)
+
+    def dft_dp(incar=incar):
+        incar.update(incar_scf)
+        update_incar(incar, params, ["ENCUT", "PREC"])
+        incar = ch_functional(incar)
+        vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.15, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_scf")
+
+        # generate structure
+        struct_dict_new = poscar.return_dict()
+        struct_dict_lattice = poscar.return_dict()["lattice"]
+        dp_step = np.linspace(1-float(params["range"]), 1+float(params["range"]), int(((1+float(params["range"]))-(1-float(params["range"])))/(float(params["step"]))+1))
+        
+        for step in dp_step:
+            if "a" in params["direct"]:
+                struct_dict_new["lattice"] = struct_dict_lattice*np.array([[step],[1],[1]])
+                poscar.update_struct_dict(struct_dict_new)
+                poscar.write_struct(fpath=wdir, fname="POSCAR_%s_%.3f" % ("a", step))
+            if "b" in params["direct"]:
+                struct_dict_new["lattice"] = struct_dict_lattice*np.array([[1],[step],[1]])
+                poscar.update_struct_dict(struct_dict_new)
+                poscar.write_struct(fpath=wdir, fname="POSCAR_%s_%.3f" % ("b", step))
+            if "c" in params["direct"]:
+                struct_dict_new["lattice"] = struct_dict_lattice*np.array([[1],[1],[step]])
+                poscar.update_struct_dict(struct_dict_new)
+                poscar.write_struct(fpath=wdir, fname="POSCAR_%s_%.3f" % ("c", step))
+
+        dftgga = dft+"_"+gga
+        write_incar(incar, fpath=wdir, fname="INCAR_%s" % dftgga)
+        cmd = "# deformation potential calculation\n"
+        cmd += "for pos in POSCAR_*; do \n"
+        cmd += "cp INCAR_%s INCAR\n" % dftgga
+        cmd += "cp $pos POSCAR\n"
+        cmd += "cp KPOINTS_scf KPOINTS\n"
+        cmd += execode + "\n"
+        cmd += "cp OUTCAR OUTCAR_$pos\n" 
+        cmd += "cp vasprun.xml vasprun_$pos.xml\n" 
+        cmd += "done\n"
+        write_runsh(wdir+"/run.sh", cmd)
+        os.chmod(wdir+"/run.sh", 0o775)
+
+
+    if dft == "scf":
+        dft_scf()  
+    elif dft == "opt":
+        dft_opt()
+    elif dft == "conv_encut":
+        dft_conv_encut()
+    elif dft == "conv_kmesh":
+        dft_conv_kmesh()
+    elif dft == "band":
+        dft_band()
+    elif dft == "dos":
+        dft_dos()
+    elif dft == "dp":
+        dft_dp()
+    elif dft == "elecall":
+        """ opt + scf + band + dos """
+        vasp_gen_input(dft="opt", potpath=potpath, poscar=poscar, dryrun=False, prec=prec, wpath="./elecall", execode=execode, params=params)
+        vasp_gen_input(dft="scf", potpath=potpath, poscar=poscar, dryrun=False, prec=prec, wpath="./elecall", execode=execode, params=params)
+        vasp_gen_input(dft="band", potpath=potpath, poscar=poscar, dryrun=False, prec=prec, wpath="./elecall", execode=execode, params=params)
+        vasp_gen_input(dft="dos", potpath=potpath, poscar=poscar, dryrun=False, prec=prec, wpath="./elecall", execode=execode, params=params)
+        
+    # =================================================================================
+    # dos, band, effective mass
+    # =================================================================================
+
+    
 
 
     # =================================================================================
