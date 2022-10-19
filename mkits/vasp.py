@@ -412,17 +412,20 @@ def update_incar(incar_dict, new_dict, new_key):
     return incar_dict
 
 
-def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec="Normal", wpath="./", execode="mpirun -np $SLURM_NTASKS vasp_std", params="gga=pbelda"):
+def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath="./", execode="mpirun -np $SLURM_NTASKS vasp_std", params="gga=pbelda"):
     func_help = """
     generate inputs for vasp
-    :param dft        : string, optional [opt, scf, scfband, conv_encut, conv_kmesh, conv_sigma, xanes, ifc3-phono3py, born]
-    :param potpath    : string, the path containing potpaw_LDA.54, potpaw_PBE.54, put all required POTCAR in one directory, and renames it as POTCAR_Ti_sv or POTCAR_Bi
+    :param dft        : opt
+                      : scf
+                      : band
+                      : conv_encut, conv_kmesh, conv_sigma, xanes, ifc3-phono3py, born]
+    :param potpath    : string, the path containing potpaw_LDA.54, potpaw_PBE.54, put all required POTCAR in one directory, and renames them as POTCAR_Ti_sv or POTCAR_Bi
     :param poscar     : 
     :param dryrun     :
-    :param prec       : string, optional [low, normal, accurate, l, n, a],
     :param wpath      : working directory
     :param params     : addtitional parameters for calculation, example: gga=ps,gga=rev-vdw-DF2,...
                       : [dft=any]           ->    gga = [pbelda, pbesol, hse06, hsesol, rev-vdW-DF2, optB88, optPBE] default PBE
+                      :                     ->    PREC
                       :                     ->    oddeven = [odd, even]
                       :                     ->    kmesh = [0.1, 0.15, ...]
                       : [dft=opt]           ->    mulisif [263], can using with mulprec [Low-Normal-Normal]
@@ -434,6 +437,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
                       : [dft=born]          ->    
                       : [dft=if3-phono3py]  ->    dim = ["2 2 2", ...]
                       : [dft=dp]            ->    direct=[a b c], step=0.05, range=0.1, e.g. --param direct=ac,step=0.05,range=0.1
+                      : [dft=ml_heat]       -> 
     """
     if dryrun:
         print(func_help)
@@ -487,7 +491,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
         with open(runsh, "a") as f:
             f.write(cmd)
 
-    def ch_functional(incar):
+    def ch_functional(incar, wdir=wdir):
         """change functional from parameters"""
         update_incar(incar, incar_functionals[gga], list(incar_functionals[gga].keys()))
         return incar
@@ -559,11 +563,11 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
             cmd += "cp KPOINTS_opt KPOINTS\n"
             cmd += "for step in 1 2 ; do\n"
             cmd += execode + "\n"
-            cmd += "cp OUTCAR OUTCAR_$step\n"
-            cmd += "cp vasprun.xml vasprun_$step.xml\n"
-            cmd += "cp XDATCAR XDATCAR_$step\n"
-            cmd += "cp OSZICAR OSZICAR_$step\n"
-            cmd += "cp CONTCAR CONTCAR_$step\n"
+            cmd += "cp OUTCAR OUTCAR_%s_$step\n" % dftgga
+            cmd += "cp vasprun.xml vasprun_%s_$step.xml\n" % dftgga
+            cmd += "cp XDATCAR XDATCAR_%s_$step\n" % dftgga
+            cmd += "cp OSZICAR OSZICAR_%s_$step\n" % dftgga
+            cmd += "cp CONTCAR CONTCAR_%s_$step\n" % dftgga
             cmd += "cp CONTCAR POSCAR\n" 
             cmd += "done\n"
             write_runsh(wdir+"/run.sh", cmd)
@@ -720,6 +724,12 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
         cmd += "done\n"
         write_runsh(wdir+"/run.sh", cmd)
         os.chmod(wdir+"/run.sh", 0o775)
+    
+    # =================================================================================
+    # machine learning part
+    # =================================================================================
+    def ml_heat(incar=incar):
+        """ """
 
 
     if dft == "scf":
@@ -738,10 +748,10 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, prec=
         dft_dp()
     elif dft == "elecall":
         """ opt + scf + band + dos """
-        vasp_gen_input(dft="opt", potpath=potpath, poscar=poscar, dryrun=False, prec=prec, wpath="./elecall", execode=execode, params=params)
-        vasp_gen_input(dft="scf", potpath=potpath, poscar=poscar, dryrun=False, prec=prec, wpath="./elecall", execode=execode, params=params)
-        vasp_gen_input(dft="band", potpath=potpath, poscar=poscar, dryrun=False, prec=prec, wpath="./elecall", execode=execode, params=params)
-        vasp_gen_input(dft="dos", potpath=potpath, poscar=poscar, dryrun=False, prec=prec, wpath="./elecall", execode=execode, params=params)
+        vasp_gen_input(dft="opt", potpath=potpath, poscar=poscar, dryrun=False, wpath="./elecall", execode=execode, params=params)
+        vasp_gen_input(dft="scf", potpath=potpath, poscar=poscar, dryrun=False, wpath="./elecall", execode=execode, params=params)
+        vasp_gen_input(dft="band", potpath=potpath, poscar=poscar, dryrun=False, wpath="./elecall", execode=execode, params=params)
+        vasp_gen_input(dft="dos", potpath=potpath, poscar=poscar, dryrun=False, wpath="./elecall", execode=execode, params=params)
         
     # =================================================================================
     # dos, band, effective mass

@@ -71,8 +71,21 @@ incar_band = {
     "NBANDS": "36", 
     #"LMAXMIX": "4"
 }
-incar_md = {}
-
+incar_md = {
+    "MDALGO": "0",
+    "ISIF": "2",
+    "SMASS": "1.0",
+    "ISYM": "0",
+    "ALGO": "FAST",
+    "TEBEG": "300",
+    "POTIM": "1.0",
+    "NSW": "2000",
+    "NELMIN": "4"
+}
+incar_ml_heat = {
+    "ML_LMLFF": ".TRUE.",
+    " ": ""
+}
 
 incar_prop = {
     "xanes": {
