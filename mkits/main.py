@@ -16,7 +16,7 @@ def vasp_init_parser(args):
     if args.gen2d:
         vasp_build_low_dimension(parameter[0], parameter[1], parameter[2], parameter[3])
     elif args.pot:
-        vasp_potcar_gen(struct(args.poscar).return_dict() if args.poscar else struct("POSCAR").return_dict(), args.pot_path)
+        vasp_potcar_gen(struct(args.poscar).return_dict() if args.poscar else struct("POSCAR").return_dict(), args.potpath)
     elif args.kgen:
         vasp_kpoints_gen(struct(args.poscar).return_dict() if args.poscar else struct("POSCAR").return_dict(), args.kgen, parameter["kmesh"] if args.param else "odd")
     elif args.vasp_gen_input:

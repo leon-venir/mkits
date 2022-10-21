@@ -41,7 +41,7 @@ def split_boltz_dope(dopefile, para_dict={"key1":"attrib1"}):
         # Sigma                       Seebeck/tau                   
         # xx xy xz yx yy yz zx zy zz  xx xy xz yx yy yz zx zy zz
         # 3  4  5  6  7  8  9  10 11  12 13 14 15 16 17 18 18 20
-        pf = data[:,3:12]**2*data[:,12:21]
+        pf = data[:,3:12]*data[:,12:21]**2
         data = np.hstack((data, pf))
         unitheads = "# doping[cm-3]  T[K]  N[e/uc]  sigma/tau0[1/(ohm*m*s)] xx xy xz yx yy yz zx zy zz  S[V/K] xx xy xz yx yy yz zx zy zz  kappae/tau0[W/(m*K*s)]  xx xy xz yx yy yz zx zy zz  powerfactor/tau0 xx xy xz yx yy yz zx zy zz\n" 
     else:

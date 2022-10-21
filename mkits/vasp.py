@@ -331,7 +331,7 @@ def vasp_potcar_gen(poscar_dict, potpath, fpath="./"):
     potcar = []
     for atom in atoms:
         try:
-            potcar += open(str(potpath)+"/"+atom+"/POTCAR", "r").readlines()
+            potcar += open(str(potpath)+"/POTCAR_"+atom, "r").readlines()
         except:
             lexit("The POTCAR of " + atom + " doesn't exit.")
     if os.path.exists(fpath+"/POTCAR"):
