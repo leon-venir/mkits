@@ -7,6 +7,7 @@ import os
 import math
 
 """
+:func del_list_dupli_neighbor: Removing neighboring duplicates in list
 :func effective_mass        : calculate effective mass based on parabolic band approximation, unit: m, J
 :func best_polyfit_range    : find best fit range
 :func globe_polyfit         : poly-fitting with numpy for r square
@@ -23,6 +24,17 @@ import math
 :func cart2frac             : 
 :class struct               : 
 """
+
+
+def del_list_dupli_neighbor(inp_list:list):
+    """ Removing neighboring duplicates in list """
+    res = [inp_list[0]]
+    for i, c in enumerate(inp_list[1:]):
+        if c != inp_list[i]:
+            res.append(c)
+    return res
+
+
 
 def carrier_mobility(cii, ed, T, dimension:str="3d"):
     """

@@ -11,6 +11,7 @@ from mkits.database import *
 
 
 """
+:func gen_gnu_bandcar           : generate gnuplot scripts 
 :func add_selective_dyn         : add the 4-, 5-, 6th columns for selective dynamic POSCAR
 :func vaspxml_parser            : parse the vasprun.xml file
 :func vasp_dos_extractor        : extract data from vasprun.xml and create a gnuplot format dos_num.dat
@@ -40,13 +41,13 @@ def add_selective_dyn(inp:str="POSCAR", out:str="POSCAR_init", ):
 def vaspxml_parser(select_attrib:str, xmlfile:str="vasprun.xml"):
     """
     
-    :param select_arrib : optional [tdos, pdos, eigen, final_ene, paramters, incar]
-    :return final_ene: the 
-    :return klist: array like kpoints list and the the accumulative k length [frac_reciprocal_x,y,z, kpath_length]
-    :return highsympoint: 
-    :return eigen: return two eigenval arrays with a shape of (kpoint, eigenvalues, occupation)
-    :return paramters: parameters_dict key  : NELECT
-                                            : NBANDS
+    :param select_arrib     : optional [tdos, pdos, eigen, final_ene, paramters, incar]
+    :return final_ene       : the 
+    :return klist           : array like kpoints list and the the accumulative k length [frac_reciprocal_x,y,z, kpath_length]
+    :return highsympoint    : 
+    :return eigen           : return two eigenval arrays with a shape of (kpoint, eigenvalues, occupation)
+    :return paramters       : parameters_dict key  : NELECT
+                                                   : NBANDS
     :return incar: incar_dict: 
     """ 
     try:
@@ -125,9 +126,17 @@ def vaspxml_parser(select_attrib:str, xmlfile:str="vasprun.xml"):
         parameters_electronic = parameters[attributes.index("electronic")]
         attributes_electronic = [_.attrib["name"] for _ in parameters_electronic]
 
+        calculation = vasproot.find("calculation")
+        dos = calculation.find("dos")
+        efermi = float(dos[0].text)
+
         parameters_dict = {}
         parameters_dict["NELECT"] = float(parameters_electronic[attributes_electronic.index("NELECT")].text)
         parameters_dict["NBANDS"] = float(parameters_electronic[attributes_electronic.index("NBANDS")].text)
+        parameters_dict["efermi"] = efermi
+
+
+
         return parameters_dict
     elif select_attrib == "incar":
         incars = vasproot.find("incar")
@@ -1146,4 +1155,58 @@ Reciprocal lattice
     else:
         lexit("Make sure the parameter of kend with correct format: 0.5,0.5,0.5 for cube mesh or 0.0,0.0,0.0,0.0,0.0,0.5 for line mesh")
     
+
+def gen_gnu_bandcar(xml:str, bandcar:str="BANDCAR", kpoints:str="KPOINTS_band"):
+    """"""
+    nelect = vaspxml_parser("parameters", xml)["NELECT"]
+    efermi = vaspxml_parser("parameters", xml)["efermi"]
+    incar = vaspxml_parser("incar", xml)
+    if "LSORBIT" in incar:
+        valence_index = int(nelect)
+        conduction_index = valence_index + 1
+    else:
+        valence_index = int(nelect/2)
+        conduction_index = valence_index + 1
+    print(valence_index)
+    print(conduction_index)
+
+    with open(bandcar, "r") as f:
+        bandcar_lines = f.readlines()
+    with open(kpoints, "r") as f:
+        kpoints_lines = f.readlines() 
     
+    highpoints_value = [float(i) for i in bandcar_lines[1][1:].split()]
+    print(highpoints_value)
+    highpoints_label = []
+    for i in range(4, len(kpoints_lines)):
+        if len(kpoints_lines[i].split()) != 0:
+            highpoints_label.append(kpoints_lines[i].split()[-1])
+    highpoints_label = del_list_dupli_neighbor(highpoints_label)
+    print(highpoints_label)
+
+    xtics = ""
+    for i in range(len(highpoints_value)):
+        xtics += '"%s" %s, ' % (highpoints_label[i], str(highpoints_value[i]))
+    
+    midhigh = " ".join([str(i) for i in highpoints_value[1:-1]])
+
+    # get band gap
+    vbm_index = 0
+    cbm_index = 0
+    for i in range(len(bandcar_lines)):
+        if "# "+str(valence_index) in bandcar_lines[i]:
+            vbm_index = i + 1
+        elif "# "+str(conduction_index) in bandcar_lines[i]:
+            cbm_index = i + 1
+    vbm_band = np.loadtxt(bandcar, skiprows=vbm_index, max_rows=cbm_index-vbm_index-3, usecols=[1])
+    cbm_band = np.loadtxt(bandcar, skiprows=cbm_index, max_rows=cbm_index-vbm_index-3, usecols=[1])
+    band_gap = np.min(cbm_band) - np.max(vbm_band)
+    # print(band_gap)
+
+
+    gnuscripts = gnubandcar % (bandcar, highpoints_value[-1]+0.0001, xtics, midhigh, bandcar, str(efermi))
+    
+    with open("plot.gnu", "w") as f:
+        f.write(gnuscripts)
+    
+        
