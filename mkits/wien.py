@@ -31,7 +31,7 @@ def gen_wien_born(structure: str, atom_list_index:list, direction:list, displace
                     structure_dict["pos_frac"][idx-1][direc_idx] = new_pos
 
                 structure_class.update_struct_dict(structure_dict)
-                structure_class.write_struct(fpath, "%s_%d_%s_%s_%.3f.struct" % (structure.replace(".struct", ""), idx, structure_dict["atoms_type"][idx-1], direc, disp))
+                structure_class.write_struct(fpath=fpath, fname="%s_%d_%s_%s_%.3f.struct" % (structure.replace(".struct", ""), idx, structure_dict["atoms_type"][idx-1], direc, disp))
 
 
 def wien_parse_energy(structure:str="case.struct", energy:str="case.energy"):

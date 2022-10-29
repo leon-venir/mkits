@@ -396,7 +396,7 @@ def vasp_build_low_dimension(poscar="POSCAR", direction="z", vacuum=20, type="ad
     struct_dict["lattice"] = lattice_para
     struct_dict["pos_frac"] = new_fraction
     poscar.update_struct_dict(struct_dict)
-    poscar.write_struct("./", "POSCAR_vacuum.vasp")
+    poscar.write_struct(fpath="./", fname="POSCAR_vacuum.vasp")
 
 
 def write_incar(incar_dict, fpath="./", fname="INCAR"):

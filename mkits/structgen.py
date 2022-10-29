@@ -237,7 +237,7 @@ def gen_struct_fix_block(node_num, node_type, block_type, bond_abs_c=False):
         except:
             lexit("Cannot create layered folder, pls check it.")
         poscar.get_refined_struct()
-        poscar.write_struct("./layered/chains%s/" % str(node_num[0]), filename1+filename2+".vasp")
+        poscar.write_struct(fpath="./layered/chains%s/" % str(node_num[0]), fname=filename1+filename2+".vasp")
     
     ch = open("./layered/chains%s/chains%s.data" % (str(node_num[0]), str(node_num[0])), "w")
     ch.write("Total structures: "+str(len(chains))+"\n")

@@ -508,6 +508,10 @@ class struct:
             struct_dict["pos_frac"] = struct_dict["pos_frac"][1:, :]
             struct_dict["atoms_type"] = [atom_data[_][1] for _ in struct_dict["atoms_index"]]
             struct_dict["atoms_tot"] = len(struct_dict["atoms_type"])
+
+            # some vasp keys
+            struct_dict["ratio"] = 1.0
+            #struct_dict["atoms_num"]
             
         return struct_dict
     
@@ -537,8 +541,14 @@ class struct:
             self.struct_dict["ratio"] = 1.0
         self.calculator = new_calculator
     
-    def write_struct(self, fpath="./", fname="POSCAR"):
-        if self.calculator == "vasp_direct" or self.calculator == "vasp_cart":
+    def write_struct(self, fpath:str="./", fname:str="POSCAR", calculator:str="none"):
+        if calculator == "none":
+            calculator = self.calculator
+        else:
+            if calculator not in ("vasp_direct", "vasp_cart"):
+                lexit("Unsupport calculators, now struct writor only supports calculators of vasp_direct, vasp_cart, vasp_dyn, wien")
+
+        if calculator == "vasp_direct" or calculator == "vasp_cart":
             with open(fpath+"/"+fname, "w") as f:
                 f.write(self.struct_dict["title"]+"\n")
                 f.write("{:<.5f}".format(self.struct_dict["ratio"])+"\n")
@@ -548,7 +558,7 @@ class struct:
                 np.savetxt(f, self.struct_dict["atoms_num"].reshape((1,-1)), fmt="%5d")
                 f.write("Direct\n")
                 np.savetxt(f, self.struct_dict["pos_frac"][:int(sum(self.struct_dict["atoms_num"]))], fmt="%20.16f")
-        elif self.calculator == "vasp_dyn":
+        elif calculator == "vasp_dyn":
             with open(fpath+"/"+fname, "w") as f:
                 f.write(self.struct_dict["title"]+"\n")
                 f.write("{:<.5f}".format(self.struct_dict["ratio"])+"\n")
@@ -558,7 +568,7 @@ class struct:
                 np.savetxt(f, self.struct_dict["atoms_num"].reshape((1,-1)), fmt="%5d")
                 f.write("Selective dynamics\nDirect\n")
                 np.savetxt(f, np.hstack((self.struct_dict["pos_frac"], self.struct_dict["pos_move"])) , fmt="%20s %20s %20s %6s %6s %6s")
-        elif self.calculator == "wien":
+        elif calculator == "wien":
             with open(fpath+"/"+fname, "w") as f:
                 f.write("generate by mkits\n")
                 f.write("%-4sLATTICE,NONEQUIV.ATOMS%4d%11s\n" % ("P", self.struct_dict["atoms_tot"], "P1"))
