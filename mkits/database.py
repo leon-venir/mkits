@@ -477,8 +477,24 @@ set title '%s'
 set xlabel "%s" font "Times,28"
 set ylabel "%s" font "Times,28"
 set grid
-set colorsequence default
-set style line 1 dt 1 lt 1 lw 0.8 pt 2 ps 3
+set colorsequence default # [default, classic]
+
+set style line 1 dt 1 lt 1 lw 0.8 pt 6 ps 3
+set style line 2 dt 1 lt 2 lw 0.8 pt 7 ps 3
+set style line 3 dt 1 lt 3 lw 0.8 pt 8 ps 3
+set style line 4 dt 1 lt 4 lw 0.8 pt 9 ps 3
+set style line 5 dt 1 lt 5 lw 0.8 pt 10 ps 3
+set style line 6 dt 1 lt 6 lw 0.8 pt 11 ps 3
+set style line 7 dt 1 lt 7 lw 0.8 pt 12 ps 3
+
+set style line 11 dt 3 lt 1 lw 0.3 pt 6 ps 3
+set style line 12 dt 3 lt 2 lw 0.3 pt 7 ps 3
+set style line 13 dt 3 lt 3 lw 0.3 pt 8 ps 3
+set style line 14 dt 3 lt 4 lw 0.3 pt 9 ps 3
+set style line 15 dt 3 lt 5 lw 0.3 pt 10 ps 3
+set style line 16 dt 3 lt 6 lw 0.3 pt 11 ps 3
+set style line 17 dt 3 lt 7 lw 0.3 pt 12 ps 3
+
 plot "%s" with linespoints ls 1 notitle
 """
 

@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 import xml.etree.ElementTree as ET
 import os
 import re
@@ -11,6 +12,8 @@ from mkits.database import *
 
 
 """
+:func vasp_dp_effect_mass       : 
+:func vasp_defomation_potential : generate structures for deformation potential calculation
 :func gen_gnu_bandcar           : generate gnuplot scripts 
 :func add_selective_dyn         : add the 4-, 5-, 6th columns for selective dynamic POSCAR
 :func vaspxml_parser            : parse the vasprun.xml file
@@ -34,21 +37,141 @@ from mkits.database import *
 """
 
 
-def add_selective_dyn(inp:str="POSCAR", out:str="POSCAR_init", ):
+def vasp_dp_effect_mass(fpath:str="./", xmlfile:str="vasprun.xml", carrier:str="electron"):
+    """
+    1, Read a xml file with a line-like kpoints, and calculate the effective mass with parabolic approximation.
+    :param fpath:
+    :param xmlfile:
+    :param carrier: str, optional [electron, hole]
+    """
+    vbm_index, cbm_index = vasp_cbmvbm_index(xmlfile="%s/%s" % (fpath, xmlfile))
+    if carrier == "electron":
+        # get eigen states, kpath
+        eigen, eigen2 = vaspxml_parser(select_attrib="eigen", xmlfile="%s/%s" % (fpath, xmlfile))
+        kpath = vaspxml_parser(select_attrib="klist", xmlfile="%s/%s" % (fpath, xmlfile))[:, -1]
+        cbm_band = eigen[:, cbm_index, 0]
+        # get best-fitting range
+        bestfitting = best_polyfit_range(kpath, cbm_band, 2, 7, 20)
+        # data to write and units conversion
+        print(bestfitting)
+        dat_to_write = np.vstack((kpath[int(bestfitting[0,0]):int(bestfitting[0,1])]/uc_ang2m, cbm_band[int(bestfitting[0,0]):int(bestfitting[0,1])]*uc_ev2j))
+        with open("%s/%s" % (fpath, "effect_electron.dat"), "w") as f:
+            f.write("# kpath(angstrom^-1)    eigen_states(J)\n")
+            f.write("# rsqures: %15.9f\n" % bestfitting[0, 2])
+            np.savetxt(f, dat_to_write.reshape(-1, 2))
+
+    elif carrier == "hole":
+        pass
+    else:
+        lexit("Carrier type: electron or hole")
+
+
+def vasp_cbmvbm_index(xmlfile:str="vasprun.xml"):
+    """
+    1, get the index number of conduction bottom band and valence top band
+    :param xmlfile: the input file
+    :return two integers vbm_index, cbm_index
+    """
+    nelect = vaspxml_parser(select_attrib="parameters", xmlfile=xmlfile)["NELECT"]
+    incar = vaspxml_parser(select_attrib="incar", xmlfile=xmlfile)
+    if "LSORBIT" in incar:
+        cbm_index = int(nelect)
+        vbm_index = int(nelect-1)
+    else:
+        cbm_index = int(np.ceil(nelect/2.))
+        vbm_index = int(np.ceil(nelect/2.-1))
+    return vbm_index, cbm_index
+
+
+def vasp_defomation_potential(fpath:str="./", poscar_file:str="POSCAR", direction:str="ac", step:float=0.005, num:int=5, init_analy:str="init"):
+    """
+    :param poscar:
+    :param direction:
+    :param step:
+    :param num:
+    :param init_analy: str, optional [init, analysis]
+    """
+    if init_analy == "init": 
+        deformation = center_array(center=1, step=step, total_num=num)
+        if "a" in direction:
+            for _ in deformation:
+                poscar = struct(fpath + "/" + poscar_file)
+                poscar_dict = poscar.return_dict()
+                poscar_dict["lattice"] = poscar_dict["lattice"]*np.array([[_], [1], [1]])
+                poscar.update_struct_dict(poscar_dict)
+                poscar.write_struct(fpath=fpath, fname="POSCAR_a_%5.3f" % _)
+        if "c" in direction:
+            for _ in deformation:
+                poscar = struct(fpath + "/" + poscar_file)
+                poscar_dict = poscar.return_dict()
+                poscar_dict["lattice"] = poscar_dict["lattice"]*np.array([[1], [1], [_]])
+                poscar.update_struct_dict(poscar_dict)
+                poscar.write_struct(fpath=fpath, fname="POSCAR_c_%5.3f" % _)
+
+    elif init_analy == "analysis":
+        xml_file_list = subprocess.getoutput("ls %s/*.xml" % fpath).split()
+        if "a" in direction:
+            with open("%s/dp_a.dat" % fpath, "w") as f:
+                f.write("%5s%15s%15s\n" % ("#dp(%)", "VBM", "CBM"))
+                for _ in xml_file_list:
+                    if "_a_" in _:
+                        vbm_index, cbm_index = vasp_cbmvbm_index(xmlfile=_)
+                        eigen, eigen2 = vaspxml_parser(select_attrib="eigen", xmlfile=_)
+                        cbm = np.min(eigen[:, cbm_index, 0])
+                        vbm = np.max(eigen[:, vbm_index, 0])
+                        f.write("%5s%15.5f%15.5f\n" % (_[-9:-4], vbm, cbm))
+            dp_dat_a = np.loadtxt("%s/dp_a.dat" % fpath)
+            dp_vbm = np.polyfit(dp_dat_a[:, 0], dp_dat_a[:, 1], deg=1)[0]
+            dp_cbm = np.polyfit(dp_dat_a[:, 0], dp_dat_a[:, 2], deg=1)[0]
+            plt.plot(dp_dat_a[:, 0], dp_dat_a[:, 1], c="red", marker="x", label="VBM, dp=%7.3f" % dp_vbm)
+            plt.plot(dp_dat_a[:, 0], dp_dat_a[:, 2], c="blue", marker="x", label="CBM, dp=%7.3f" % dp_cbm)
+            plt.legend(frameon=False)
+            plt.xlabel("Strain in a-axis (%)")
+            plt.ylabel("Energy (eV)")
+            plt.savefig("%s/dp_a.png" % fpath)
+            plt.close()
+        if "c" in direction:
+            with open("%s/dp_c.dat" % fpath, "w") as f:
+                f.write("%5s%15s%15s\n" % ("#dp(%)", "VBM", "CBM"))
+                for _ in xml_file_list:
+                    if "_c_" in _:
+                        vbm_index, cbm_index = vasp_cbmvbm_index(xmlfile=_)
+                        eigen, eigen2 = vaspxml_parser(select_attrib="eigen", xmlfile=_)
+                        cbm = np.min(eigen[:, cbm_index, 0])
+                        vbm = np.max(eigen[:, vbm_index, 0])
+                        f.write("%5s%15.5f%15.5f\n" % (_[-9:-4], vbm, cbm))
+            dp_dat_c = np.loadtxt("%s/dp_c.dat" % fpath)
+            dp_vbm = np.polyfit(dp_dat_c[:, 0], dp_dat_c[:, 1], deg=1)[0]
+            dp_cbm = np.polyfit(dp_dat_c[:, 0], dp_dat_c[:, 2], deg=1)[0]
+            plt.plot(dp_dat_c[:, 0], dp_dat_c[:, 1], c="red", marker="x", label="VBM, dp=%7.3f" % dp_vbm)
+            plt.plot(dp_dat_c[:, 0], dp_dat_c[:, 2], c="blue", marker="x", label="CBM, dp=%7.3f" % dp_cbm)
+            plt.legend(frameon=False)
+            plt.xlabel("Strain in c-axis (%)")
+            plt.ylabel("Energy (eV)")
+            plt.savefig("%s/dp_c.png" % fpath)
+            plt.close()
+
+    else:
+        lexit("Available choice of init_analy: init, analysis")
+
+
+
+def add_selective_dyn(inp:str="POSCAR", out:str="POSCAR_init" ):
     """"""
+    pass
 
 
 def vaspxml_parser(select_attrib:str, xmlfile:str="vasprun.xml"):
     """
     
-    :param select_arrib     : optional [tdos, pdos, eigen, final_ene, paramters, incar]
-    :return final_ene       : the 
-    :return klist           : array like kpoints list and the the accumulative k length [frac_reciprocal_x,y,z, kpath_length]
-    :return highsympoint    : 
-    :return eigen           : return two eigenval arrays with a shape of (kpoint, eigenvalues, occupation)
-    :return paramters       : parameters_dict key  : NELECT
-                                                   : NBANDS
-    :return incar: incar_dict: 
+    :param select_arrib       : optional [tdos, pdos, eigen, final_ene, paramters, incar]
+    :return final_ene         : the 
+    :return klist             : array like kpoints list and the the accumulative k length [frac_reciprocal_x,y,z, abs_reciprocal_x,y,z, kpath_length]
+    :return highsympoint      : 
+    :return eigen             : return two eigenval arrays with a shape of (kpoint, [eigenvalues, occupation])
+    :return paramters         : parameters_dict key  : NELECT
+                                                     : NBANDS
+    :return incar: incar_dict : 
     """ 
     try:
         vaspxml = ET.parse(xmlfile)

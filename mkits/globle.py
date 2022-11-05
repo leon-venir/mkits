@@ -1,12 +1,16 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from mkits.sysfc import lexit
 from mkits.database import *
 import ase.geometry
 import spglib as spg
 import os
 import math
+import sys
 
 """
+:func progressbar           : draw processing bar
+:func center_array          : generate an array with specific center value, step and total number
 :func del_list_dupli_neighbor: Removing neighboring duplicates in list
 :func effective_mass        : calculate effective mass based on parabolic band approximation, unit: m, J
 :func best_polyfit_range    : find best fit range
@@ -24,6 +28,32 @@ import math
 :func cart2frac             : 
 :class struct               : 
 """
+
+
+def progressbar(total_step:int, current_step:int):
+    """
+    draw progressing bar
+    """
+    # percent
+    i = int(current_step/total_step*50)
+
+    sys.stdout.write('\r')
+    sys.stdout.write("[%-50s] %d%%" % ('='*i, 2*i))
+    sys.stdout.flush()
+
+    #for i in range(21):
+    #    sys.stdout.write('\r')
+    #    sys.stdout.write("[%-100s] %d%%" % ('='*i, 1*i))
+    #    sys.stdout.flush()
+
+
+def center_array(center:float=1.0, step:float=0.005, total_num:int=5):
+    """
+    """
+    if total_num%2 == 1:
+        return np.linspace(center-step*(total_num-1)/2, center+step*(total_num-1)/2, total_num, endpoint=True)
+    elif total_num % 2 == 0:
+        return np.linspace(center-step*total_num/2, center+step*(total_num-1)/2, total_num, endpoint=True)
 
 
 def del_list_dupli_neighbor(inp_list:list):
@@ -64,7 +94,7 @@ def relaxation_time(cii, effect_mass, ed, T, dimension:str="3d"):
     return tau
 
 
-def effective_mass_calculator(kpath, eigen):
+def effective_mass_calculator(kpath, eigen, fpath:str="./", fname="fitting.png", plot:bool=True):
     """
     Calculate effective mass from single-band parabolic approximation
     :param kpath: a list or array like kpath (unit: angstrom^{-1})
@@ -81,31 +111,44 @@ def effective_mass_calculator(kpath, eigen):
     effective_mass = cons_hbar*cons_hbar/coef1[0]/2/cons_emass
     ssreg, sstot, rsquares = rsquare(kpath, eigen, 2)
 
+    if plot:
+        plt.plot(kpath, eigen, marker="o")
+
     return effective_mass, rsquares
 
 
-def best_polyfit_range(x, y, degree:int, center_index:int, init_range:int=5):
+def best_polyfit_range(x, y, degree:int, min_points:int=10, max_points:int=20):
     """
     Search the best polyfitting range, by minimize the residuals
-    :param center_index: the index of the chosen center, from 1
-    :return array [[slice_left, slice_right, polynomial coefficients, r square],...[]]
+    :param x:
+    :param y:
+    :return array [[best_beg_index, best_end_index, best_rsqure], [all fitting data]]
     """
-    
-    leftrange_init = np.vstack((np.arange(center_index-init_range-1, -1, -1), np.arange(center_index-init_range-1, -1, -1))).T.flatten()[1:]
-    rightrange_init = np.vstack((np.arange(center_index+init_range, len(y)), np.arange(center_index+init_range, len(y)))).T.flatten()
+    if len(x) != len(y):
+        lexit("Input x and y must be 1-dimensional array and process same length,")
+    if max_points < min_points:
+        lexit("max_points mush be larger than min_points.")
+    if max_points > len(x):
+        lexit("The number of max_points should be smaller than the length of x.")
+    ssreg, sstot, rsquares = rsquare(x, y, degree=degree)
+    fit_history = np.array([0, len(x)-1, rsquares])
 
-    # filling the range array
-    rangediff = len(rightrange_init) - len(leftrange_init)
-    if rangediff > 0:
-        fittingrange = np.vstack(( np.hstack((leftrange_init, np.zeros(rangediff))), rightrange_init ))
-    elif rangediff < 0:
-        fittingrange = np.vstack(( leftrange_init, np.hstack(( rightrange_init, np.full(-rangediff, rightrange_init[-1]) )) ))
-    
-    fitparam = np.array([])
-    for _ in fittingrange.T:
-        fitparam = np.hstack((fitparam, np.array(_), rsquare(x[int(_[0]):int(_[1])], y[int(_[0]):int(_[1])], degree)))
-    
-    return fitparam.reshape(-1, degree+5)
+    # to 
+    step = 0
+    total_step = int((2*len(y) - min_points - max_points)/2*(max_points-min_points+1))
+    print("Searching the best fitting range: ")
+    for points in range(min_points, max_points+1):
+        beg_index = 0
+        while beg_index + points <= len(y):
+            ssreg, sstot, rsquares = rsquare(x[beg_index:beg_index+points], y[beg_index:beg_index+points], degree=degree)
+            fit_history = np.vstack((fit_history, np.array([beg_index, beg_index+points, rsquares])))
+            beg_index += 1
+            # progressing bar
+            progressbar(total_step=total_step, current_step=step)
+            step += 1
+    max_rsqures_index = np.argmax(fit_history[:, 2])
+
+    return np.vstack((fit_history[max_rsqures_index], fit_history))
 
 
 def rsquare(x, y, degree):
@@ -125,7 +168,6 @@ def rsquare(x, y, degree):
     sstot = np.sum((y - ybar)**2) 
     rsquare = 1 - ssreg/sstot
     
-
     return ssreg, sstot, rsquare
 
 
