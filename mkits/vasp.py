@@ -37,7 +37,7 @@ from mkits.database import *
 """
 
 
-def vasp_dp_effect_mass(fpath:str="./", xmlfile:str="vasprun.xml", carrier:str="electron"):
+def vasp_dp_effect_mass(fpath:str="./", xmlfile:str="vasprun.xml", carrier:str="electron", specifyrange=False):
     """
     1, Read a xml file with a line-like kpoints, and calculate the effective mass with parabolic approximation.
     :param fpath:
@@ -45,13 +45,19 @@ def vasp_dp_effect_mass(fpath:str="./", xmlfile:str="vasprun.xml", carrier:str="
     :param carrier: str, optional [electron, hole]
     """
     vbm_index, cbm_index = vasp_cbmvbm_index(xmlfile="%s/%s" % (fpath, xmlfile))
+    print("The number of valence bands top is %d." % vbm_index)
+    print("The number of conduction bands bottom is %d." % cbm_index)
     if carrier == "electron":
         # get eigen states, kpath
         eigen, eigen2 = vaspxml_parser(select_attrib="eigen", xmlfile="%s/%s" % (fpath, xmlfile))
         kpath = vaspxml_parser(select_attrib="klist", xmlfile="%s/%s" % (fpath, xmlfile))[:, -1]
         cbm_band = eigen[:, cbm_index, 0]
         # get best-fitting range
-        bestfitting = best_polyfit_range(kpath, cbm_band, 2, 7, 20)
+        if specifyrange:
+            bestfitting = np.array([[specifyrange[0], specifyrange[1], 0]])
+        else:
+            bestfitting = best_polyfit_range(kpath, cbm_band, 2, 5, 20)
+        
         # data to write and units conversion
         print(bestfitting)
         dat_to_write = np.vstack((kpath[int(bestfitting[0,0]):int(bestfitting[0,1])]/uc_ang2m, cbm_band[int(bestfitting[0,0]):int(bestfitting[0,1])]*uc_ev2j))
@@ -59,6 +65,10 @@ def vasp_dp_effect_mass(fpath:str="./", xmlfile:str="vasprun.xml", carrier:str="
             f.write("# kpath(angstrom^-1)    eigen_states(J)\n")
             f.write("# rsqures: %15.9f\n" % bestfitting[0, 2])
             np.savetxt(f, dat_to_write.reshape(-1, 2))
+        # calculate effective mass
+        print(kpath[int(bestfitting[0,0]):int(bestfitting[0,1])])
+        print(cbm_band[int(bestfitting[0,0]):int(bestfitting[0,1])])
+        effective_mass_calculator(kpath=kpath[int(bestfitting[0,0]):int(bestfitting[0,1])]/uc_ang2m, eigen=cbm_band[int(bestfitting[0,0]):int(bestfitting[0,1])]*uc_ev2j, fpath=fpath, fname="eff_mass_electron.png", plot=True)
 
     elif carrier == "hole":
         pass
@@ -74,6 +84,8 @@ def vasp_cbmvbm_index(xmlfile:str="vasprun.xml"):
     """
     nelect = vaspxml_parser(select_attrib="parameters", xmlfile=xmlfile)["NELECT"]
     incar = vaspxml_parser(select_attrib="incar", xmlfile=xmlfile)
+    if nelect % 2 == 1:
+        nelect += 1
     if "LSORBIT" in incar:
         cbm_index = int(nelect)
         vbm_index = int(nelect-1)

@@ -94,6 +94,20 @@ def relaxation_time(cii, effect_mass, ed, T, dimension:str="3d"):
     return tau
 
 
+def mean_free_path(cii, ed, T, dimension:str="3d"):
+    """
+    Calculate relaxation time based on Deformation Potential theory 
+    :param cii: elastic constants in Pa
+    :param effect_mass: effective mass 
+    :param ed: deformation potenital
+    :param T: temperature in K
+    :param dimension: [3d, 2d]
+    """
+    if dimension == "3d":
+        mean_free_path = np.pi * cons_hbar**4 * cii / ( cons_emass**2 * ed**2 * cons_kb * T)
+    return mean_free_path
+
+
 def effective_mass_calculator(kpath, eigen, fpath:str="./", fname="fitting.png", plot:bool=True):
     """
     Calculate effective mass from single-band parabolic approximation
@@ -113,6 +127,11 @@ def effective_mass_calculator(kpath, eigen, fpath:str="./", fname="fitting.png",
 
     if plot:
         plt.plot(kpath, eigen, marker="o")
+        plt.xlabel("Reciprocal space (agstrom$^{-1}$)")
+        plt.ylabel("Energy (J)")
+        plt.title("effective mass: %10.5f; rsquare: %15.9f" % (effective_mass, rsquares))
+        plt.savefig("%s/%s" %(fpath, fname))
+        plt.close()
 
     return effective_mass, rsquares
 
