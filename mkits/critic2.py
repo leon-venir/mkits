@@ -54,6 +54,38 @@ def get_auto_cp(output):
     for i in data:
         if len(i) != 12: i.append("nan")
 
+    # get data from "Analysis of system bonds"
+    data2 = [["bcp_ncp", "bcp_end", "bcp_r1_bohr", "bcp_r2_bohr", "bcp_r1or2", "bcp_degree"]]
+    bcp_analysis = 0
+    bcp_analysis_beg = 0
+    bcp_analysis_end = 0
+    for i in range(start, end):
+        if "* Analysis of system bonds" in output[i]:
+            bcp_analysis = i
+    for i in range(500):
+        if output[i+bcp_analysis][0] != "#" and output[i+bcp_analysis][0] != "*":
+            bcp_analysis_beg = i+bcp_analysis
+            break
+    for i in range(500):
+        if not output[i+bcp_analysis].split():
+            bcp_analysis_end = i+bcp_analysis
+            break
+
+    total_cp = int(data[-1][0])
+    for i in range(bcp_analysis_beg, bcp_analysis_end):
+        #data2.append([str(int(output[i][0:4])), output[i][4:15].replace(" ", "")[:2] + "-" + output[i][13:22].replace(" ", "")[:2], str(float(output[i][22:31])), str(float(output[i][31:40])), str(float(output[i][40:49])), str(float(output[i][49:57]))])
+        dataline = output[i].split()
+        data2.append([dataline[0], dataline[1]+dataline[3], dataline[5], dataline[6], dataline[7], dataline[8]])
+    ncp_bcp_beg = int(data2[1][0])
+    ncp_bcp_end = int(data2[-1][0])
+    nan1 = [["nan"] * 7] * (ncp_bcp_beg - 1)
+    nan2 = [["nan"] * 7] * (total_cp - ncp_bcp_end)
+    data_bond_analysis = [data2[0]]
+    data_bond_analysis += nan1
+    data_bond_analysis += data2[1:]
+    data_bond_analysis += nan2
+    data = hstack_append_list(data, data_bond_analysis)
+
     return data
 
 
@@ -89,6 +121,12 @@ def critc2_extract_data(inputfile:str="more.cro", outfile:str="more.crx"):
     cp_data = get_auto_cp(inputlines)
     qt_data = get_cpreport(inputlines)
     datatowrite = hstack_append_list(qt_data, cp_data)
+
+    # delete spurious bond critical points, ie bond angle < 160
+    for _ in range(len(datatowrite)-1, 0, -1):
+        if "(3,-1)" in datatowrite[_]:
+            if float(datatowrite[_][-1]) < 160:
+                del(datatowrite[_])
 
     # add slash n 
     datatowrite = hstack_append_list(datatowrite, [["\n"]]*len(datatowrite))
