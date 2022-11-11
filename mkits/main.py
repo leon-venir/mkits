@@ -92,7 +92,7 @@ def parse_arguments():
     parser.add_argument(
         "--version",
         action="version",
-        version="0.5",
+        version="0.6",
         help="print version information"
     )
     subparser = parser.add_subparsers(

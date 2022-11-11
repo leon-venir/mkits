@@ -78,8 +78,8 @@ def get_auto_cp(output):
         data2.append([dataline[0], dataline[1]+dataline[3], dataline[5], dataline[6], dataline[7], dataline[8]])
     ncp_bcp_beg = int(data2[1][0])
     ncp_bcp_end = int(data2[-1][0])
-    nan1 = [["nan"] * 7] * (ncp_bcp_beg - 1)
-    nan2 = [["nan"] * 7] * (total_cp - ncp_bcp_end)
+    nan1 = [["nan"] * 6] * (ncp_bcp_beg - 1)
+    nan2 = [["nan"] * 6] * (total_cp - ncp_bcp_end)
     data_bond_analysis = [data2[0]]
     data_bond_analysis += nan1
     data_bond_analysis += data2[1:]

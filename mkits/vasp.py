@@ -1235,13 +1235,21 @@ def getvbmcbm(xmlfile:str="vasprun.xml"):
     vbm_kindex = np.argsort(vbm_band)[-1:-6:-1]
     cbm_kindex = np.argsort(cbm_band)[:5]
 
+    vbm_cbm_kpoints_distance = np.dot(klist[cbm_kindex[0], :3] - klist[vbm_kindex[0], :3], klist[cbm_kindex[0], :3] - klist[vbm_kindex[0], :3])
+    if vbm_cbm_kpoints_distance < 0.001:
+        gaptype = "Direct"
+    else:
+        gaptype = "Indirect"
+
     return {
         "vbm_kindex": vbm_kindex,
         "vbm_kpoint": klist[vbm_kindex, :3],
         "vbm_ene": eigen1[vbm_kindex, vbm_index-1, 0],
         "cbm_kindex": cbm_kindex,
         "cbm_kpoint": klist[cbm_kindex, :3],
-        "cbm_ene": eigen1[cbm_kindex, cbm_index-1, 0]
+        "cbm_ene": eigen1[cbm_kindex, cbm_index-1, 0],
+        "ene_gap": eigen1[cbm_kindex[0], cbm_index-1, 0] - eigen1[vbm_kindex[0], vbm_index-1, 0],
+        "gap_type": gaptype
     }
 
     
