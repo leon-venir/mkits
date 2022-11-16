@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from mkits.sysfc import lexit
 from mkits.database import *
 import ase.geometry
+import ase.io
 import spglib as spg
 import os
 import math
@@ -22,11 +23,13 @@ import sys
 :func vector_angle          : calculate the angle between two vectors
 :func lattice_conversion    : convert lattice between cartesian vector and base vector
 :func parser_inputpara      : get input parameters from string and return a dictionary, eg, oddkpoints:Ture;key2:attrib2 -> {"oddkpoints": "Ture"}
+:parser_inputlines          : get input parameters from file and return a dictionary
 :func hstack_append_list    : append list2 to list1 in the horizontal direction despite of the equality of the length, [[1,2,3],[2,3,4]]+[[5,6,7],[6,7,8],[7,8,9]]->[[1, 2, 3, 5, 6, 7], [2, 3, 4, 6, 7, 8], [7, 8, 9]]
 :func listcross             : get cross product of two list, [a, b, c]*[1,2,3]=[a, b, b, c, c, c]
 :func frac2cart             :  
 :func cart2frac             : 
 :class struct               : 
+:class struct_ase           : new class of structures based on ase library
 """
 
 
@@ -307,6 +310,30 @@ def lattice_conversion(give_lattice):
         
     else:
         lexit("Error, give the lattice with following format: array([a_x, a_y, a_z], [b_x, b_y, b_z], [c_x, c_y, c_z]) or array([a, b, c, alpha, beta, gamma])")
+
+
+
+def parser_inputlines(input_lines:list):
+    """
+    :param input_lines: list, input lines from readlines()
+    :return : dictionary
+    """
+    input_dict = {}
+    for line in input_lines:
+        line = line.replace(" ", "")
+        line = line.replace(",", "")
+        if "#" in line:
+            line = line[:line.index("#")]
+        else:
+            line = line[:-1]
+        if "=" in line:
+            line = line.split("=")
+            input_dict[line[0]] = line[1]
+        elif ":" in line:
+            line = line.split(":")
+            input_dict[line[0]] = line[1]
+            
+    return input_dict
 
 
 def parser_inputpara(inputstring):
@@ -606,8 +633,8 @@ class struct:
         if calculator == "none":
             calculator = self.calculator
         else:
-            if calculator not in ("vasp_direct", "vasp_cart"):
-                lexit("Unsupport calculators, now struct writor only supports calculators of vasp_direct, vasp_cart, vasp_dyn, wien")
+            if calculator not in ("vasp_direct", "vasp_cart", "qein"):
+                lexit("Unsupport calculators, now struct writor only supports calculators of vasp_direct, vasp_cart, vasp_dyn, wien, qein")
 
         if calculator == "vasp_direct" or calculator == "vasp_cart":
             with open(fpath+"/"+fname, "w") as f:
@@ -643,6 +670,8 @@ class struct:
                     f.write("                     0.0000000 1.0000000 0.0000000                             \n")
                     f.write("                     0.0000000 0.0000000 1.0000000                             \n")
                 f.write("   0      NUMBER OF SYMMETRY OPERATIONS                                        \n")
+        else:
+            pass
                 
     def gen_potcar(self, potpath: str = "./", fpath: str ="./", fname: str ="POTCAR"):
         # VASP] generate POTCAR
@@ -661,3 +690,4 @@ class struct:
         else:
             with open(fpath+"/"+fname, "w") as f:
                 f.writelines(potcar)
+

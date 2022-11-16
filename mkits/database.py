@@ -186,8 +186,10 @@ incar_functionals = {
     }
 }
 
+
 atom_data = [ 
-    [  0, "N", "Name", "atomic mass", ""], # 0
+    #  0   1    2       3             4
+    [  0, "N", "Name", "atomic mass", "qe_upf"], # 0
     [  1, "H", "Hydrogen", 1.00794, "1s1"], # 1
     [  2, "He", "Helium", 4.002602, "1s2"], # 2
     [  3, "Li", "Lithium", 6.941], # 3
