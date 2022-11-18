@@ -20,11 +20,57 @@ uc_ry2j = 2.179874099E-18  # Ry
 uc_gpa2nm2 = 1e9  # GPa to N/m^2
 uc_bohr2ang = 0.529177 # bohr to angstrom
 uc_ang2m = 1e-10
+uc_ry2ev = 13.6056980659 # Rydberg to electonic volt
 
 
 """
 :database 
 """
+
+# :database quantum: VASP input tempelates ====================== #
+qe_control_block = {
+    "calculation": '"scf"',
+    "restart_mode": '"from_scratch"',
+    "nstep": "100",
+    "outdir": '"./outdir"',
+    "max_seconds": "4.d+4",
+    "etot_conv_thr": "1.d-6",
+    "pseudo_dir": '"./"'
+}
+
+
+qe_system_block = {
+    "ecutwfc":  "50",
+}
+
+
+qe_electrons_block = {
+    "conv_thr": "1.d-7",
+    "mixing_beta": "0.2"
+}
+
+qe_ions_block = {
+    "ion_dynamics": '"bfgs"'
+}
+
+qe_cell_block = {
+    "cell_dynamics": '"bfgs"',
+    "press": "0.d0",
+    "press_conv_thr": "0.01d0",
+    "cell_factor": "2.0",
+    "cell_dofree": '"all"'
+}
+
+qe_control_key = ["calculation", "title", "verbosity", "restart_mode", "wf_collect", "nstep", "iprint", "tstress", "tprnfor", "dt", "outdir", "wfcdir", "prefix", "lkpoint_dir", "max_seconds", "etot_conv_thr", "forc_conv_thr", "disk_io", "pseudo_dir", "tefield", "dipfield", "lelfield", "nberrycyc", "lorbm", "lberry", "gdir", "nppstr", "gate", "lfcp", "trism"]
+
+qe_system_key = ["ibrav", "celldm", "A", "B", "C", "cosAB", "cosAC", "cosBC", "nat", "ntyp", "nbnd", "tot_charge", "starting_charge", "tot_magnetization", "starting_magnetization", "ecutwfc", "ecutrho", "ecutfock", "nr1", "nr2", "nr3", "nr1s", "nr2s", "nr3s", "nosym", "nosym_evc", "noinv", "no_t_rev", "force_symmorphic", "use_all_frac", "occupations", "one_atom_occupations", "starting_spin_angle", "degauss", "smearing", "nspin", "noncolin", "ecfixed", "qcutz", "q2sigma", "input_dft", "ace", "exx_fraction", "screening_parameter", "exxdiv_treatment", "x_gamma_extrapolation", "ecutvcut", "nqx1", "nqx2", "nqx3", "localization_thr", "Hubbard_occ", "Hubbard_alpha", "Hubbard_beta", "starting_ns_eigenvalue", "dmft", "dmft_prefix", "ensemble_energies", "edir", "emaxpos", "eopreg", "eamp", "angle1", "angle2", "lforcet", "constrained_magnetization", "fixed_magnetization", "lambda", "report", "lspinorb", "assume_isolated", "esm_bc", "esm_w", "esm_efield", "esm_nfit", "lgcscf", "gcscf_mu", "gcscf_conv_thr", "gcscf_beta", "vdw_corr", "london", "london_s6", "london_c6", "london_rvdw", "london_rcut", "dftd3_version", "dftd3_threebody", "ts_vdw_econv_thr", "ts_vdw_isolated", "xdm", "xdm_a1", "xdm_a2", "space_group", "uniqueb", "origin_choice", "rhombohedral", "zgate", "relaxz", "block", "block_1", "block_2", "block_height"]
+
+qe_electrons_key = ["electron_maxstep", "scf_must_converge", "conv_thr", "adaptive_thr", "conv_thr_init", "conv_thr_multi", "mixing_mode", "mixing_beta", "mixing_ndim", "mixing_fixed_ns", "diagonalization", "diago_thr_init", "diago_cg_maxiter", "diago_ppcg_maxiter", "diago_david_ndim", "diago_rmm_ndim", "diago_rmm_conv", "diago_gs_nblock", "diago_full_acc", "efield", "efield_cart", "efield_phase", "startingpot", "startingwfc", "tqr", "real_space"]
+
+qe_ions_key = ["ion_positions", "ion_velocities", "ion_dynamics", "pot_extrapolation", "wfc_extrapolation", "remove_rigid_rot", "ion_temperature", "tempw", "tolp", "delta_t", "nraise", "refold_pos", "upscale", "bfgs_ndim", "trust_radius_max", "trust_radius_min", "trust_radius_ini", "w_1", "w_2", "fire_alpha_init", "fire_falpha", "fire_nmin", "fire_f_inc", "fire_f_dec", "fire_dtmax"]
+
+qe_cell_key = ["cell_dynamics", "press", "wmass", "cell_factor", "press_conv_thr", "cell_dofree"]
+
 
 # :database vasp: VASP input tempelates ====================== #
 incar_glob = {

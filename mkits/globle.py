@@ -313,19 +313,25 @@ def lattice_conversion(give_lattice):
 
 
 
-def parser_inputlines(input_lines:list):
+def parser_inputlines(input_lines, comment_letter:str="#"):
     """
-    :param input_lines: list, input lines from readlines()
+    :param input_lines: list or filename, input lines from readlines()
     :return : dictionary
     """
+    if isinstance(input_lines, list):
+        pass
+    else:
+        with open(input_lines) as f:
+            input_lines = f.readlines()
+
     input_dict = {}
     for line in input_lines:
         line = line.replace(" ", "")
         line = line.replace(",", "")
-        if "#" in line:
-            line = line[:line.index("#")]
+        if comment_letter in line:
+            line = line[:line.index(comment_letter)]
         else:
-            line = line[:-1]
+            line = line.replace("\n", "")
         if "=" in line:
             line = line.split("=")
             input_dict[line[0]] = line[1]

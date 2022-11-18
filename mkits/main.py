@@ -53,6 +53,14 @@ def vasp_post_parser(args):
     elif args.getvbmcbm:
         [print(key, " : ", value) for key, value in getvbmcbm(args.getvbmcbm).items()]
 
+def qe_init_parser(args):
+    pass
+
+
+def qe_post_parser(args):
+    pass
+
+
 def structgen_parser(args):
     if args.node_num and args.node_type and args.fix_block:
         gen_struct_fix_block(args.node_num, args.node_type, args.block_type)
@@ -105,6 +113,8 @@ def parse_arguments():
     parser_vasp_post = subparser.add_parser("vasp_post", help="enable VASP post-processing interface")
     parser_wien_init = subparser.add_parser("wien_init", help="enable WIEN2k initial interface")
     parser_wien_post = subparser.add_parser("wien_post", help="enable WIEN2k post-processing interface")
+    parser_qe_init = subparser.add_parser("qe_init", help="enable QE initial interface")
+    parser_qe_post = subparser.add_parser("qe_post", help="enable QE post-processing interface")
     parser_structgen = subparser.add_parser("structgen", help="generate layer structure")
     parser_boltz2     = subparser.add_parser("boltz2", help="enable BoltzTraP2 post-processing iterface")
     parser_critic2    = subparser.add_parser("critic2", help="enable Critic2 post-processing iterface")
@@ -113,6 +123,8 @@ def parse_arguments():
     # option2function
     parser_vasp_init.set_defaults(func=vasp_init_parser)
     parser_vasp_post.set_defaults(func=vasp_post_parser)
+    parser_qe_init.set_defaults(func=qe_init_parser)
+    parser_qe_post.set_defaults(func=qe_post_parser)
     parser_wien_init.set_defaults(func=wien_init_parser)
     parser_wien_post.set_defaults(func=wien_post_parser)
     parser_structgen.set_defaults(func=structgen_parser)
@@ -270,7 +282,7 @@ def parse_arguments():
     )
 
     # ==========================================================================
-    # vasp init argument
+    # wien init argument
     # ==========================================================================
     parser_wien_init.add_argument(
         "--fpath",
@@ -301,6 +313,16 @@ def parse_arguments():
         action="store_true",
         help="generate the structure file for BORN effective charge calculation; use with --struct and --params; parameters need to be specified are\n1. direction=[xyz],\n2. atomlist=[1-4-12],\n the optional parameter is displacement=0.01\n example: --params direction=xz,atomlist=1-3-5,displacement=0.01."
     )
+
+
+    # ==========================================================================
+    # qe init argument
+    # ==========================================================================
+
+
+    # ==========================================================================
+    # qe post argument
+    # ==========================================================================
 
 
     # ==========================================================================
