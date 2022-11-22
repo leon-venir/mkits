@@ -334,10 +334,10 @@ def parser_inputlines(input_lines, comment_letter:str="#"):
             line = line.replace("\n", "")
         if "=" in line:
             line = line.split("=")
-            input_dict[line[0]] = line[1]
+            input_dict[line[0]] = str(line[1])
         elif ":" in line:
             line = line.split(":")
-            input_dict[line[0]] = line[1]
+            input_dict[line[0]] = str(line[1])
             
     return input_dict
 
@@ -420,12 +420,60 @@ def frac2cart(cart_lattice, fraction_pos):
     return cart_[1:]
 
 
+def cart2frac_single(lattice, cart_pos):
+    """
+    fractional coordinates to cartesian coordinates
+    """
+    lattice_a = 0
+    lattice_b = 0
+    lattice_c = 0
+    alpha = 0
+    beta = 0
+    gamma = 0
+
+    if len(lattice) == 3:
+        cart_lattice = lattice
+        cart_lattice_angle = lattice_conversion(give_lattice=lattice)
+        lattice_a = cart_lattice_angle[0]
+        lattice_b = cart_lattice_angle[1]
+        lattice_c = cart_lattice_angle[2]
+        alpha = cart_lattice_angle[3]
+        beta = cart_lattice_angle[4]
+        gamma = cart_lattice_angle[5]
+    elif len(lattice) == 6:
+        cart_lattice = lattice_conversion(give_lattice=lattice)
+        cart_lattice_angle = lattice
+        lattice_a = cart_lattice_angle[0]
+        lattice_b = cart_lattice_angle[1]
+        lattice_c = cart_lattice_angle[2]
+        alpha = cart_lattice_angle[3]
+        beta = cart_lattice_angle[4]
+        gamma = cart_lattice_angle[5]
+    
+    # for o
+    frac_a, frac_b, frac_c = 0, 0, 0
+    if abs(cart_lattice_angle[3]-90) < 0.1 and abs(cart_lattice_angle[4]-90) < 0.1:
+        frac_a = (cart_pos[0] + cart_pos[1]*np.tan((gamma-90)*uc_d2a))/lattice_a
+        frac_b = (cart_pos[1]/np.cos((gamma-90)*uc_d2a))/lattice_b
+        frac_c = cart_pos[2]/lattice_c
+
+    return frac_a, frac_b, frac_c
+
+
 def cart2frac(cart_lattice, cart_pos):
     """
     fractional coordinates to cartisian coordinates
     """
 
-    return np.matmul(cart_pos, np.matrix(cart_lattice.T).I)
+    #return np.matmul(cart_pos, np.matrix(cart_lattice.T).I)
+    frac_pos = np.zeros((len(cart_pos), 3))
+    for i in range(len(cart_pos)):
+        frac_a, frac_b, frac_c = cart2frac_single(cart_lattice, cart_pos[i])
+        frac_pos[i, 0] = frac_a
+        frac_pos[i, 1] = frac_b
+        frac_pos[i, 2] = frac_c
+    
+    return frac_pos
 
 
 class struct:

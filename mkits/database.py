@@ -21,6 +21,7 @@ uc_gpa2nm2 = 1e9  # GPa to N/m^2
 uc_bohr2ang = 0.529177 # bohr to angstrom
 uc_ang2m = 1e-10
 uc_ry2ev = 13.6056980659 # Rydberg to electonic volt
+uc_d2a = np.pi/180 # degree to radian
 
 
 """

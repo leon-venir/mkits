@@ -12,6 +12,7 @@ from mkits.database import *
 
 
 """
+:func vasp_split_IBZKPT         : split IBZKPT for huge kpoints calculations
 :func vasp_dp_effect_mass       : 
 :func vasp_defomation_potential : generate structures for deformation potential calculation
 :func gen_gnu_bandcar           : generate gnuplot scripts 
@@ -35,6 +36,53 @@ from mkits.database import *
 :func getvbmcbm                 : extract the valence maximum band and conduction minimum band
 :func arbitrary_klist           : Generate arbitrary klist for effective mass calculation
 """
+
+
+def vasp_split_IBZKPT(wkdir:str="./", ibzkpt:str="IBZKPT", kperibzkpt:int=30, split_merge:str="split"):
+    """
+    :param ibzkpt: 
+    """
+    if split_merge == "split" or split_merge == "s":
+        with open(ibzkpt, "r") as f:
+            lines = f.readlines()
+        total_k = int(lines[1].split()[0])
+        start_line_indx = 3
+        
+        group_num = total_k//kperibzkpt
+
+        for i in range(1, group_num+1):
+            with open(wkdir+"/IBZKPT_%d" % i, "w") as f:
+                f.write("Automatically generated mesh\n")
+                f.write("%8s\n" % kperibzkpt)
+                f.write("Reciprocal lattice\n")
+                f.writelines(lines[start_line_indx:start_line_indx+kperibzkpt])
+            start_line_indx += kperibzkpt
+        
+        if total_k%kperibzkpt != 0:
+            with open("%s/IBZKPT_%d" % (wkdir, int(group_num+1)), "w") as f:
+                f.write("Automatically generated mesh\n")
+                f.write("%8d\n" % int(total_k%kperibzkpt))
+                f.write("Reciprocal lattice\n")
+                f.writelines(lines[start_line_indx:])
+            group_num += 1
+        
+        cmd = "# split dos\n"
+        cmd += "for ibz in {1..%d}; do \n" % group_num
+        cmd += "        cp WAVECAR_scf_pbelda WAVECAR\n"
+        cmd += "        cp CHGCAR_scf_pbelda CHGCAR\n"
+        cmd += "        cp IBZKPT_$ibz KPOINTS \n"
+        cmd += "        mpirun -np $SLURM_NTASKS vasp_std\n"
+        cmd += "        mv vasprun.xml vasprun_IBZKPT_$ibz.xml\n"
+        cmd += "done\n"
+        with open("%s/run_IBZKPT_split.sh" % wkdir, "w") as f:
+            f.write(cmd)
+        os.chmod("%s/run_IBZKPT_split.sh" % wkdir, 0o775)
+        
+    elif split_merge == "merge" or split_merge == "m":
+        xmlfile_list = subprocess.getoutput("ls %s/vasprun_IBZKPT_*.xml" % wkdir).split()
+
+    else:
+        lexit("Only ")
 
 
 def vasp_dp_effect_mass(fpath:str="./", xmlfile:str="vasprun.xml", carrier:str="electron", specifyrange=False):
@@ -133,14 +181,46 @@ def vasp_defomation_potential(fpath:str="./", poscar_file:str="POSCAR", directio
                         vbm = np.max(eigen[:, vbm_index, 0])
                         f.write("%5s%15.5f%15.5f\n" % (_[-9:-4], vbm, cbm))
             dp_dat_a = np.loadtxt("%s/dp_a.dat" % fpath)
-            dp_vbm = np.polyfit(dp_dat_a[:, 0], dp_dat_a[:, 1], deg=1)[0]
-            dp_cbm = np.polyfit(dp_dat_a[:, 0], dp_dat_a[:, 2], deg=1)[0]
-            plt.plot(dp_dat_a[:, 0], dp_dat_a[:, 1], c="red", marker="x", label="VBM, dp=%7.3f" % dp_vbm)
-            plt.plot(dp_dat_a[:, 0], dp_dat_a[:, 2], c="blue", marker="x", label="CBM, dp=%7.3f" % dp_cbm)
+            dp_vbm = np.polyfit(dp_dat_a[:, 0], dp_dat_a[:, 1], deg=1)
+            dp_cbm = np.polyfit(dp_dat_a[:, 0], dp_dat_a[:, 2], deg=1)
+            dp_vbm_x = np.linspace(dp_dat_a[0, 0], dp_dat_a[-1, 0], num=100)
+            dp_cbm_x = np.linspace(dp_dat_a[0, 0], dp_dat_a[-1, 0], num=100)
+            dp_vbm_y = dp_vbm[0]*dp_vbm_x + dp_vbm[1]
+            dp_cbm_y = dp_cbm[0]*dp_cbm_x + dp_cbm[1]
+            plt.plot(dp_vbm_x, dp_vbm_y, c="red", label="VBM, dp=%7.3f" % dp_vbm[0])
+            plt.plot(dp_cbm_x, dp_cbm_y, c="blue", label="CBM, dp=%7.3f" % dp_cbm[0])
+            plt.scatter(dp_dat_a[:, 0], dp_dat_a[:, 1], c="red", marker="x")
+            plt.scatter(dp_dat_a[:, 0], dp_dat_a[:, 2], c="blue", marker="x")
             plt.legend(frameon=False)
             plt.xlabel("Strain in a-axis (%)")
             plt.ylabel("Energy (eV)")
             plt.savefig("%s/dp_a.png" % fpath)
+            plt.close()
+        if "b" in direction:
+            with open("%s/dp_b.dat" % fpath, "w") as f:
+                f.write("%5s%15s%15s\n" % ("#dp(%)", "VBM", "CBM"))
+                for _ in xml_file_list:
+                    if "_b_" in _:
+                        vbm_index, cbm_index = vasp_cbmvbm_index(xmlfile=_)
+                        eigen, eigen2 = vaspxml_parser(select_attrib="eigen", xmlfile=_)
+                        cbm = np.min(eigen[:, cbm_index, 0])
+                        vbm = np.max(eigen[:, vbm_index, 0])
+                        f.write("%5s%15.5f%15.5f\n" % (_[-9:-4], vbm, cbm))
+            dp_dat_b = np.loadtxt("%s/dp_b.dat" % fpath)
+            dp_vbm = np.polyfit(dp_dat_b[:, 0], dp_dat_b[:, 1], deg=1)
+            dp_cbm = np.polyfit(dp_dat_b[:, 0], dp_dat_b[:, 2], deg=1)
+            dp_vbm_x = np.linspace(dp_dat_b[0, 0], dp_dat_b[-1, 0], num=100)
+            dp_cbm_x = np.linspace(dp_dat_b[0, 0], dp_dat_b[-1, 0], num=100)
+            dp_vbm_y = dp_vbm[0]*dp_vbm_x + dp_vbm[1]
+            dp_cbm_y = dp_cbm[0]*dp_cbm_x + dp_cbm[1]
+            plt.plot(dp_vbm_x, dp_vbm_y, c="red", label="VBM, dp=%7.3f" % dp_vbm[0])
+            plt.plot(dp_cbm_x, dp_cbm_y, c="blue", label="CBM, dp=%7.3f" % dp_cbm[0])
+            plt.scatter(dp_dat_b[:, 0], dp_dat_b[:, 1], c="red", marker="x")
+            plt.scatter(dp_dat_b[:, 0], dp_dat_b[:, 2], c="blue", marker="x")
+            plt.legend(frameon=False)
+            plt.xlabel("Strain in b-axis (%)")
+            plt.ylabel("Energy (eV)")
+            plt.savefig("%s/dp_b.png" % fpath)
             plt.close()
         if "c" in direction:
             with open("%s/dp_c.dat" % fpath, "w") as f:
@@ -153,10 +233,16 @@ def vasp_defomation_potential(fpath:str="./", poscar_file:str="POSCAR", directio
                         vbm = np.max(eigen[:, vbm_index, 0])
                         f.write("%5s%15.5f%15.5f\n" % (_[-9:-4], vbm, cbm))
             dp_dat_c = np.loadtxt("%s/dp_c.dat" % fpath)
-            dp_vbm = np.polyfit(dp_dat_c[:, 0], dp_dat_c[:, 1], deg=1)[0]
-            dp_cbm = np.polyfit(dp_dat_c[:, 0], dp_dat_c[:, 2], deg=1)[0]
-            plt.plot(dp_dat_c[:, 0], dp_dat_c[:, 1], c="red", marker="x", label="VBM, dp=%7.3f" % dp_vbm)
-            plt.plot(dp_dat_c[:, 0], dp_dat_c[:, 2], c="blue", marker="x", label="CBM, dp=%7.3f" % dp_cbm)
+            dp_vbm = np.polyfit(dp_dat_c[:, 0], dp_dat_c[:, 1], deg=1)
+            dp_cbm = np.polyfit(dp_dat_c[:, 0], dp_dat_c[:, 2], deg=1)
+            dp_vbm_x = np.linspace(dp_dat_c[0, 0], dp_dat_c[-1, 0], num=100)
+            dp_cbm_x = np.linspace(dp_dat_c[0, 0], dp_dat_c[-1, 0], num=100)
+            dp_vbm_y = dp_vbm[0]*dp_vbm_x + dp_vbm[1]
+            dp_cbm_y = dp_cbm[0]*dp_cbm_x + dp_cbm[1]
+            plt.plot(dp_vbm_x, dp_vbm_y, c="red", label="VBM, dp=%7.3f" % dp_vbm[0])
+            plt.plot(dp_cbm_x, dp_cbm_y, c="blue", label="CBM, dp=%7.3f" % dp_cbm[0])
+            plt.scatter(dp_dat_c[:, 0], dp_dat_c[:, 1], c="red", marker="x")
+            plt.scatter(dp_dat_c[:, 0], dp_dat_c[:, 2], c="blue", marker="x")
             plt.legend(frameon=False)
             plt.xlabel("Strain in c-axis (%)")
             plt.ylabel("Energy (eV)")

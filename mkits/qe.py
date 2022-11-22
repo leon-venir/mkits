@@ -60,8 +60,9 @@ def qe_conv_extractor(wkdir:str="./"):
         final_ene = np.array([])
         for conv_f in conv_name_list:
             try:
+                if "degauss_" in conv_f:
+                    degauss = np.append(degauss, float(conv_f[8:-4]))
                 qe_out = qe_output_extractor(wkdir+"/"+conv_f)
-                degauss = np.append(degauss, qe_out["ecutwfc"])
                 final_ene = np.append(final_ene, qe_out["final_ene"])
             except:
                 continue
@@ -238,15 +239,16 @@ def qe_get_struct(file_inp:str, fractional_position:bool=True):
 
     # cartesian to fractional
     if fractional_position:
-        cell = crystals.get_cell().round(16)
+        #cell = crystals.get_cell().round(16)
+        cell = crystals.cell.cellpar().round(16)
         cart_pos = crystals.get_positions()
         atom_num = crystals.get_atomic_numbers()
-
         frac_pos = cart2frac(cart_lattice=cell, cart_pos=cart_pos)
 
         atomic_position_block = ["ATOMIC_POSITIONS crystal\n"]
         for i in range(len(atom_num)):
             atomic_position_block.append("%6s%20.16f%20.16f%20.16f\n" % (atom_data[atom_num[i]][1], frac_pos[i, 0], frac_pos[i, 1], frac_pos[i, 2]))
+    qe_struct["ATOMIC_POSITIONS"] = atomic_position_block
 
     return qe_struct
 
@@ -450,6 +452,7 @@ def qe_geninput(calculation:str="scf", wpath:str="./", struct_inp:str="cu.cif", 
     # ========================================== #
     def qe_scf(fpath:str=wkdir, fname:str="scf.in", control_block:dict=control_block, system_block:dict=system_block, electrons_block:dict=electrons_block, atomic_species_block:list=qe_struct["ATOMIC_SPECIES"], kpoints_block:list=kpoints_block, cell_parameters_block:list=qe_struct["CELL_PARAMETERS"], atomic_positions_block:list=qe_struct["ATOMIC_POSITIONS"]):
         """  """
+        control_block["calculation"] = '"scf"'
         qe_in_write(fpath=wkdir, fname=fname, control_block=control_block, system_block=system_block, electrons_block=electrons_block, atomic_species_block=atomic_species_block, kpoints_block=kpoints_block, cell_parameters_block=cell_parameters_block, atomic_positions_block=atomic_positions_block)
 
 
@@ -526,7 +529,7 @@ def qe_geninput(calculation:str="scf", wpath:str="./", struct_inp:str="cu.cif", 
         system_block["degauss"] = "xxxxx"
         qe_scf()
         cmd = "# conv test calculation \n"
-        cmd += "for degauss in 0.01 0.03 0.05 0.8 0.1 0.15 0.2 0.25 0.3; do\n"
+        cmd += "for degauss in 0.01 0.03 0.05 0.1 0.15 0.2 0.25 0.3; do\n"
         cmd += "        sed s/xxxxx/$degauss/g scf.in > inp\n"
         cmd += "        " + execcode % ("inp", "degauss_$degauss.out") + "\n"
         cmd += "        rm -rf ./outdir\n"
@@ -539,16 +542,19 @@ def qe_geninput(calculation:str="scf", wpath:str="./", struct_inp:str="cu.cif", 
         cal_detail = "caltype=qe_conv_kmesh"
         write_runsh(wkdir+"/caldetails", cal_detail)
 
-        for kmesh in [0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5]:
+        for kmesh in [0.15, 0.2, 0.25, 0.3, 0.4, 0.5]:
             kpoints_block = qe_kgen(struct_inp=struct_inp, kspacing=kmesh)
-            qe_scf(fpath=wkdir, fname="kspacing_%4.2f.in" % kmesh)
+            qe_scf(fpath=wkdir, fname="kspacing_%4.2f.in" % kmesh, kpoints_block=kpoints_block)
         
         cmd = "# conv test calculation \n"
-        cmd += "for kmesh in 0.10 0.15 0.20 0.25 0.30 0.40 0.50; do\n"
+        cmd += "for kmesh in 0.15 0.20 0.25 0.30 0.40 0.50; do\n"
         cmd += "        cp kspacing_$kmesh.in inp\n"
         cmd += "        " + execcode % ("inp", "kspacing_$kmesh.out") + "\n"
         cmd += "        rm -rf ./outdir\n"
         cmd += "done\n"
         write_runsh(wkdir+"/run.sh", cmd)
         os.chmod(wkdir+"/run.sh", 0o775)
+    
+    elif calculation == "conv_vacuum":
+        """"""
 
