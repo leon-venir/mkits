@@ -7,10 +7,25 @@ import subprocess
 
 
 """
+:func qe_add_ifpos: add
+:func qe_input_parser
 :func qe_conv_extractor: extract data from convergence test calculation, [input files are generated from func qe_gen_input, ie conv_encut, conv_kmesh
 :func qe_input_lines_parser: get 
 :func qe_get_struct: return a standard output for QE input file
 """
+
+
+def qe_add_ifpos():
+    """
+    :param wkdir: str
+    :param fname: str
+    :param qe_inp: str
+    :param coords: str : x_1=0,x_2=1,y_1=0,y_2=1,z_1=0,z_2=1
+    :param ifpos: str : "000"
+    :write 
+    write if_pos p
+    """
+
 
 
 def qe_conv_extractor(wkdir:str="./"):
@@ -102,7 +117,7 @@ def qe_output_extractor(output_file:str="tmp.out"):
 
 def qe_input_parser(qe_inp_file:str, block:str="control"):
     """
-    :param block: optional [control]
+    :param block: optional [control, system, electrons, ions, cell]
     """
     with open(qe_inp_file, "r") as f:
         lines = f.readlines()
@@ -115,9 +130,20 @@ def qe_input_parser(qe_inp_file:str, block:str="control"):
         return parser_inputlines(lines[qe_inp_control_indx["SYSTEM_beg"]:qe_inp_control_indx["SYSTEM_end"]], comment_letter="!")
     elif "electrons" in block or "ELECTRONS" in block:
         return parser_inputlines(lines[qe_inp_control_indx["ELECTRONS_beg"]:qe_inp_control_indx["ELECTRONS_end"]], comment_letter="!")
+    elif "ions" in block or "IONS" in block:
+        return parser_inputlines(lines[qe_inp_control_indx["IONS_beg"]:qe_inp_control_indx["IONS_end"]], comment_letter="!")
+    elif "cell" in block or "CELL" in block:
+        return parser_inputlines(lines[qe_inp_control_indx["CELL_beg"]:qe_inp_control_indx["CELL_end"]], comment_letter="!")
+    elif "k_points" in block or "K_POINTS" in block:
+        return parser_inputlines(lines[qe_inp_control_indx["K_POINTS_beg"]:qe_inp_control_indx["K_POINTS_end"]], comment_letter="!")
+    elif "cell_parameters" in block or "CELL_PARAMETERS" in block:
+        return parser_inputlines(lines[qe_inp_control_indx["CELL_PARAMETERS_beg"]:qe_inp_control_indx["CELL_PARAMETERS_end"]], comment_letter="!")
+    elif "atomic_positions" in block or "ATOMIC_POSITIONS" in block:
+        return parser_inputlines(lines[qe_inp_control_indx["ATOMIC_POSITIONS_beg"]:qe_inp_control_indx["ATOMIC_POSITIONS_end"]], comment_letter="!")
+    elif "temp" in block or "temp" in block:
+        return parser_inputlines(lines[qe_inp_control_indx["_beg"]:qe_inp_control_indx["_end"]], comment_letter="!")
     else:
         lexit("Wrong block name.")
-
 
 
 def qe_input_lines_parser(lines:list):
@@ -462,18 +488,16 @@ def qe_geninput(calculation:str="scf", wpath:str="./", struct_inp:str="cu.cif", 
         control_block["calculation"] = '"vc-relax"'
         control_block["forc_conv_thr"] = "1.0d-4"
 
-        print(electrons_block)
-
         qe_in_write(fpath=wkdir, fname="vcrelax.in", control_block=control_block, system_block=system_block, electrons_block=electrons_block, ions_block=ions_block, cell_block=cell_block, atomic_species_block=atomic_species_block, kpoints_block=kpoints_block, cell_parameters_block=cell_parameters_block, atomic_positions_block=atomic_positions_block)
     
 
-    def qe_relax(control_block:dict=control_block, system_block:dict=system_block, electrons_block:dict=electrons_block, ions_block:dict=ions_block, cell_block:dict=cell_block, atomic_species_block:list=qe_struct["ATOMIC_SPECIES"], kpoints_block:list=kpoints_block, cell_parameters_block:list=qe_struct["CELL_PARAMETERS"], atomic_positions_block:list=qe_struct["ATOMIC_POSITIONS"]):
+    def qe_relax(control_block:dict=control_block, system_block:dict=system_block, electrons_block:dict=electrons_block, ions_block:dict=ions_block, atomic_species_block:list=qe_struct["ATOMIC_SPECIES"], kpoints_block:list=kpoints_block, cell_parameters_block:list=qe_struct["CELL_PARAMETERS"], atomic_positions_block:list=qe_struct["ATOMIC_POSITIONS"]):
         """ """
         #
         control_block["calculation"] = '"relax"'
         control_block["forc_conv_thr"] = "1.0d-4"
 
-        qe_in_write(fpath=wkdir, fname="relax.in", control_block=control_block, system_block=system_block, electrons_block=electrons_block, ions_block=ions_block, cell_block=cell_block, atomic_species_block=atomic_species_block, kpoints_block=kpoints_block, cell_parameters_block=cell_parameters_block, atomic_positions_block=atomic_positions_block)
+        qe_in_write(fpath=wkdir, fname="relax.in", control_block=control_block, system_block=system_block, electrons_block=electrons_block, ions_block=ions_block, atomic_species_block=atomic_species_block, kpoints_block=kpoints_block, cell_parameters_block=cell_parameters_block, atomic_positions_block=atomic_positions_block)
 
 
     if calculation == "scf":

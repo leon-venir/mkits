@@ -12,6 +12,7 @@ from mkits.database import *
 
 
 """
+:func xml_block                 : search the block with specific block_name and return the block or the index
 :func vasp_split_IBZKPT         : split IBZKPT for huge kpoints calculations
 :func vasp_dp_effect_mass       : 
 :func vasp_defomation_potential : generate structures for deformation potential calculation
@@ -38,9 +39,42 @@ from mkits.database import *
 """
 
 
+def xml_block(xmlfile, block_name:str, block_indx:int=-1, block:bool=True):
+    """
+    :param xmlfile: str: absolute path to xml file or a list of xml lines
+    :param block_name: the target block name to search { <eigenvalues> }, the ending gives as { </eigenvalues> }
+    :param block_indx: default return the last block with an index of -1
+    :param block: return the block or just return the index of the target block
+    :return list: line list 
+    search the block with specific block_name and return the block or the index
+    """
+    if isinstance(xmlfile, str):
+        with open(xmlfile, "r") as f:
+            lines = f.readlines()
+    elif isinstance(xmlfile, list):
+        lines = xmlfile
+
+    beg_indx = []
+    end_indx = []
+    for i in range(len(lines)):
+        if "<%s" % block_name in lines[i]:
+            beg_indx.append(i)
+        if "</%s" % block_name in lines[i]:
+            end_indx.append(i)
+    
+    if block:
+        return lines[beg_indx[block_indx]:end_indx[block_indx]]
+    else:
+        return beg_indx[block_indx], end_indx[block_indx]
+
+
 def vasp_split_IBZKPT(wkdir:str="./", ibzkpt:str="IBZKPT", kperibzkpt:int=30, split_merge:str="split"):
     """
-    :param ibzkpt: 
+    :param wkdir:
+    :param ibzkpt:
+    :param kperibzkpt: 
+    :param split_merge:
+    
     """
     if split_merge == "split" or split_merge == "s":
         with open(ibzkpt, "r") as f:

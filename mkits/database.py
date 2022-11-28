@@ -89,7 +89,9 @@ incar_opt = {
     "ISMEAR": "0",
     "EDIFFG": "-1e-4",
     "SIGMA": "0.05",
-    "POTIM": "0.5"
+    "POTIM": "0.5",
+    "LWAVE": ".FALSE.",
+    "LCHARG": ".FALSE."
 }
 incar_scf = {
     "IBRION": "-1",
@@ -105,8 +107,7 @@ incar_dos = {
     "ISMEAR": "-5", 
     "SIGMA": "0.1", 
     "NEDOS": "2500", 
-    "NBANDS": "36", 
-    #"LMAXMIX": "4"
+    "NBANDS": "set_your_own_value"
 }
 incar_band = {
     "ICHARG": "11", 
@@ -115,8 +116,7 @@ incar_band = {
     "NSW": "0", 
     "ISMEAR": "0", 
     "SIGMA": "0.05", 
-    "NBANDS": "36", 
-    #"LMAXMIX": "4"
+    "NBANDS": "set_your_own_value" 
 }
 incar_md = {
     "MDALGO": "0",
@@ -701,5 +701,21 @@ import time
 from datetime import datetime
 
 """
+
+
+""" :script py_cif2vasp """
+py_cif2vasp = """%s
+import sys
+import ase.io
+import ase.io.vasp
+
+ciffile = sys.argv[1]
+
+if ciffile[-4:] != ".cif":
+    print("ERROR")
+else:
+    atoms = ase.io.read(ciffile)
+    #atoms.write(ciffile[:-4]+'.vasp', format = 'vasp')
+    ase.io.vasp.write_vasp(ciffile[:-4]+'.vasp', atoms, direct=True)"""
 
 
