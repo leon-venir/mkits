@@ -87,7 +87,7 @@ incar_opt = {
     "ISIF": "3",
     "NSW": "500",
     "ISMEAR": "0",
-    "EDIFFG": "-1e-4",
+    "EDIFFG": "-1e-3",
     "SIGMA": "0.05",
     "POTIM": "0.5",
     "LWAVE": ".FALSE.",

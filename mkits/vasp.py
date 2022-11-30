@@ -791,7 +791,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
     # =================================================================================
     def dft_opt(incar=incar):
         incar.update(incar_opt)
-        update_incar(incar, params, ["ENCUT", "PREC", "POTIM"])
+        update_incar(incar, params, ["ENCUT", "PREC", "POTIM", "ISIF"])
         incar = ch_functional(incar)
 
         vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.3, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_opt")
