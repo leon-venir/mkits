@@ -63,20 +63,24 @@ def xml_block(xmlfile, block_name:str, block_indx:int=-1, block:bool=True):
             end_indx.append(i)
     
     if block:
-        return lines[beg_indx[block_indx]:end_indx[block_indx]]
+        return lines[beg_indx[block_indx]:end_indx[block_indx]+1]
     else:
         return beg_indx[block_indx], end_indx[block_indx]
 
 
-def vasp_split_IBZKPT(wkdir:str="./", ibzkpt:str="IBZKPT", kperibzkpt:int=30, split_merge:str="split"):
+def vasp_split_IBZKPT(wkdir:str="./", fname:str="vasprun_merged.xml", ibzkpt:str="IBZKPT", kperibzkpt:int=30, split_merge:str="split"):
     """
-    :param wkdir:
-    :param ibzkpt:
-    :param kperibzkpt: 
-    :param split_merge:
+    :param wkdir: absolute path to the working folder
+    :param fname: the name of the merged xml file
+    :param ibzkpt: the IBZKPT file
+    :param kperibzkpt: the number of k-points in each sub-calculation
+    :param split_merge: [split,merge] "split" the IBZKPT to several files, make sure you have all the INPUTs, including INCAR with ICHARG=11, POSCAR, POTCAR, CHGCAR_scf_pbelda and WAVECAR_scf_pbelda (optional) from previous SCF calculation. Please modify the run_IBZKPT_split.sh file with your own settings. "merge" the splitted vasprun.xml into an unitary one.
     
+    split a huge k-points calculation to several smaller ones and merge the results into an unitary vasprun_merged.xml file.
     """
     if split_merge == "split" or split_merge == "s":
+        print("Make sure you have all the required INPUTs, including INCAR with ICHARG=11, POSCAR, POTCAR, CHGCAR_scf_pbelda and WAVECAR_scf_pbelda (optional) from previous SCF calculation. Please modify the run_IBZKPT_split.sh file with your own settings.")
+
         with open(ibzkpt, "r") as f:
             lines = f.readlines()
         total_k = int(lines[1].split()[0])
@@ -114,6 +118,54 @@ def vasp_split_IBZKPT(wkdir:str="./", ibzkpt:str="IBZKPT", kperibzkpt:int=30, sp
         
     elif split_merge == "merge" or split_merge == "m":
         xmlfile_list = subprocess.getoutput("ls %s/vasprun_IBZKPT_*.xml" % wkdir).split()
+        kpoints_beg, kpoints_end = xml_block(xmlfile=xmlfile_list[0], block_name="kpoints", block=False)
+        eigen_beg, eigen_end = xml_block(xmlfile=xmlfile_list[0], block_name="eigenvalues", block=False)
+        #print(kpoints_beg, kpoints_end)
+        #print(eigen_beg, eigen_end)
+        with open(xmlfile_list[0], "r") as f:
+            lines = f.readlines()
+        block_before_kpoints = lines[:kpoints_beg]
+        block_kpoints2eigen = lines[kpoints_end+1:eigen_beg]
+        block_after_eigen = lines[eigen_end+1:]
+
+        block_kpoints = []
+        block_weight = []
+        block_eigen = []
+
+        for i in range(len(xmlfile_list)):
+            xmlfile = wkdir + "/vasprun_IBZKPT_%d.xml" % (i+1)
+            kpoints_lines = xml_block(xmlfile=xmlfile, block_name="kpoints", block=True)
+            block_kpoints += xml_block(xmlfile=kpoints_lines, block_name="varray", block_indx=0, block=True)[1:-1]
+            block_weight += xml_block(xmlfile=kpoints_lines, block_name="varray", block_indx=1, block=True)[1:-1]
+
+            # eigenvalue
+            eigenvalues_lines = xml_block(xmlfile=xmlfile, block_name="eigenvalues", block=True)
+            block_eigen += eigenvalues_lines[9:-4]
+
+        # add index in block_eigen
+        kpoint_index = 1
+        for i in range(len(block_eigen)):
+            if '<set comment="kpoint' in block_eigen[i]:
+                block_eigen[i] = '      <set comment="kpoint %d">\n' % kpoint_index
+                kpoint_index += 1
+
+        total_block = []
+        total_block += block_before_kpoints
+        total_block += [' <kpoints>\n', '  <varray name="kpointlist" >\n']
+        total_block += block_kpoints
+        total_block += ['  </varray>\n']
+        total_block += ['  <varray name="weights" >\n']
+        total_block += block_weight
+        total_block += ['  </varray>\n', ' </kpoints>\n']
+        total_block += block_kpoints2eigen
+        total_block += ['  <eigenvalues>\n', '   <array>\n', '    <dimension dim="1">band</dimension>\n', '    <dimension dim="2">kpoint</dimension>\n', '    <dimension dim="3">spin</dimension>\n', '    <field>eigene</field>\n', '    <field>occ</field>\n', '    <set>\n', '     <set comment="spin 1">\n']
+        total_block += block_eigen
+        total_block += ['     </set>\n', '    </set>\n', '   </array>\n', '  </eigenvalues>\n']
+        total_block += block_after_eigen
+
+
+        with open(wkdir+"/"+fname, "w") as f:
+            f.writelines(total_block)        
 
     else:
         lexit("Only ")
