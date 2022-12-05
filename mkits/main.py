@@ -31,6 +31,21 @@ def vasp_init_parser(args):
         vasp_gen_input(args.dft if args.dft else "scf", args.potpath if args.potpath else "./", args.poscar if args.poscar else "POSCAR", args.dryrun if args.dryrun else False, args.wpath if args.wpath else "./", args.execode if args.execode else "mpirun -np $SLURM_NTASKS vasp_std", vasp_gen_params)
     elif args.gen_arb_klist:
         arbitrary_klist(kend=args.gen_arb_klist, kmesh=parameter["kmesh"] if "kmesh" in parameter else "7", fpath=parameter["fpath"] if "fpath" in parameter else "./", fname=parameter["fname"] if "fname" in parameter else "KPOINTS")
+    elif args.split_merge_ibzkpt:
+        wkdir = parameter["wkdir"] if "wkdir" in parameter else "./"
+        fname = parameter["fname"] if "fname" in parameter else "vasprun_merged.xml"
+        ibzkpt = parameter["ibzkpt"] if "ibzkpt" in parameter else "IBZKPT"
+        kperibzkpt = int(parameter["kperibzkpt"]) if "kperibzkpt" in parameter else 20
+
+        if args.split_merge_ibzkpt == "split":
+            vasp_split_IBZKPT(wkdir=wkdir, fname=fname, ibzkpt=ibzkpt, kperibzkpt=kperibzkpt, split_merge="split")
+        elif args.split_merge_ibzkpt == "merge":
+            vasp_split_IBZKPT(wkdir=wkdir, fname=fname, ibzkpt=ibzkpt, kperibzkpt=kperibzkpt, split_merge="merge")
+        else:
+            print("Wrong parameter found, optional choices are: split, merge.")
+            lexit("Wrong parameter found, optional choices are: split, merge.")
+    else:
+        lexit("Error key.")
 
 def vasp_post_parser(args):
     try:
@@ -100,7 +115,7 @@ def parse_arguments():
     parser.add_argument(
         "--version",
         action="version",
-        version="0.6",
+        version="0.7",
         help="print version information"
     )
     subparser = parser.add_subparsers(
@@ -215,6 +230,12 @@ def parse_arguments():
         action="store",
         type=str,
         help="Generate arbitrary klist for effective mass calculation. --gen_arb_klist [0,0,0,0.03,0.03,0.0 for cuboid center_x_y_z and length of side, for line start and end coordinates] --param kmesh=7-7-7,fpath=./,fname=KPOINTS."
+    )
+    parser_vasp_init.add_argument(
+        "--split_merge_ibzkpt",
+        action="store",
+        type=str,
+        help="This function can split a huge k-points calculation to several smaller ones and merge the results into an unitary vasprun_merged.xml file. --split_merge_ibzkpt [split, merge] \nPass parameters with --param. Here is an example with default varieties of working directory, the name of output file, the IBZKPT kpoints file and the number of splitted k-points: wkdir=./,fname=vasprun_merged.xml,ibzkpt=IBZKPT,kperibzkpt=20 \n"
     )
     
 

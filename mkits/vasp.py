@@ -5,6 +5,7 @@ import os
 import re
 import ase.io
 import ase.geometry
+import ase.dft.kpoints
 import subprocess
 from mkits.globle import *
 from mkits.sysfc import *
@@ -12,6 +13,7 @@ from mkits.database import *
 
 
 """
+:func vasp_gen_IBZKPT           : generate k-points list
 :func xml_block                 : search the block with specific block_name and return the block or the index
 :func vasp_split_IBZKPT         : split IBZKPT for huge kpoints calculations
 :func vasp_dp_effect_mass       : 
@@ -37,6 +39,19 @@ from mkits.database import *
 :func getvbmcbm                 : extract the valence maximum band and conduction minimum band
 :func arbitrary_klist           : Generate arbitrary klist for effective mass calculation
 """
+
+
+def vasp_gen_IBZKPT(wkdir:str="./", fname:str="IBZKPT_666", poscar:str="POSCAR", kmesh:str="6,6,6", write_file:bool=True):
+    """
+    generate irreducible k-list and the weights
+    :param wkdir:
+    :param fname: 
+    :param poscar:
+    :param kmesh:
+    :write
+    """
+    ase.dft.kpoints.ibz_points()
+
 
 
 def xml_block(xmlfile, block_name:str, block_indx:int=-1, block:bool=True):
@@ -70,13 +85,20 @@ def xml_block(xmlfile, block_name:str, block_indx:int=-1, block:bool=True):
 
 def vasp_split_IBZKPT(wkdir:str="./", fname:str="vasprun_merged.xml", ibzkpt:str="IBZKPT", kperibzkpt:int=30, split_merge:str="split"):
     """
-    :param wkdir: absolute path to the working folder
-    :param fname: the name of the merged xml file
-    :param ibzkpt: the IBZKPT file
-    :param kperibzkpt: the number of k-points in each sub-calculation
-    :param split_merge: [split,merge] "split" the IBZKPT to several files, make sure you have all the INPUTs, including INCAR with ICHARG=11, POSCAR, POTCAR, CHGCAR_scf_pbelda and WAVECAR_scf_pbelda (optional) from previous SCF calculation. Please modify the run_IBZKPT_split.sh file with your own settings. "merge" the splitted vasprun.xml into an unitary one.
-    
-    split a huge k-points calculation to several smaller ones and merge the results into an unitary vasprun_merged.xml file.
+    This function can split a huge k-points calculation to several smaller ones and merge 
+    the results into an unitary vasprun_merged.xml file.
+
+    :param wkdir            : absolute path to the working folder
+    :param fname            : the name of the merged xml file
+    :param ibzkpt           : the IBZKPT file
+    :param kperibzkpt       : the number of k-points in each sub-calculation
+    :param split_merge      : optional [split,merge] 
+                            : "split" the IBZKPT to several files, make sure you have all 
+                            :         the INPUTs, including INCAR with ICHARG=11, POSCAR, 
+                            :         POTCAR, CHGCAR_scf_pbelda and WAVECAR_scf_pbelda (optional)  
+                            :         from previous SCF calculation. Please modify the  
+                            :         run_IBZKPT_split.sh file with your own settings. 
+                            : "merge" the splitted vasprun.xml into an unitary one.
     """
     if split_merge == "split" or split_merge == "s":
         print("Make sure you have all the required INPUTs, including INCAR with ICHARG=11, POSCAR, POTCAR, CHGCAR_scf_pbelda and WAVECAR_scf_pbelda (optional) from previous SCF calculation. Please modify the run_IBZKPT_split.sh file with your own settings.")
@@ -378,7 +400,8 @@ def vaspxml_parser(select_attrib:str, xmlfile:str="vasprun.xml"):
         dos_lines_tot = "#" + "%s" % fermi + "".join(dos[1][0][5][0].itertext())
         # column field: energy s py pz ...
         col_field = ''
-        for _ in dos[2][0][3:-2]: col_field += _.text
+        for _ in dos[2][0][3:-2]: 
+            col_field += _.text
         # ion num
         ion_num = int(atominfo[0].text)
         # partial dos

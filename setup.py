@@ -6,7 +6,7 @@ setup(
     long_description=
     """mkits is a python written tool containing many helpful initial- or post-processing commands for some popular first-principles calculation codes.
     """,
-    version="0.6",
+    version="0.7",
     author="Leon Ma",
     author_email="blustery.med@hotmail.com",
     license="GPLv3+",
