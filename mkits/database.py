@@ -549,38 +549,29 @@ plot "%s" with linespoints ls 1 notitle
 
 
 """ :gnuplot band structures plottig """
-gnubandcar = """set terminal pngcairo enhanced font "Times,20" lw 5 size 500, 900
+gnubandcar = """set terminal pngcairo enhanced font "Times,20" lw 5 size 900, 900
 set output '%s.png'
 unset key
 
-x_max = %10.7f
+x_max = %.8f
 x_min = 0
 y_max = 6
 y_min = -6
 
 set title 'Band structures'
+
 set ylabel "Energy (eV)" font "Times,24"
+# replace with your own labels Γ
 set xtics (%s) 
-set ytics 
+
+set ytics # font "Times-Roman, 16"
 set xrange [x_min:x_max]
 set yrange [y_min:y_max]
-set key left top 
 
-set colorsequence default # [default, classic]
+set key left top # font "Times-Roman,16" 
 
-set style line 1 dt 1 lt 1 lw 0.8 pt 6 ps 3
-set style line 2 dt 1 lt 2 lw 0.8 pt 7 ps 3
+set colorsequence default
 set style line 3 dt 1 lt 3 lw 0.8 pt 8 ps 3
-set style line 4 dt 1 lt 4 lw 0.8 pt 9 ps 3
-set style line 5 dt 1 lt 5 lw 0.8 pt 10 ps 3
-set style line 6 dt 1 lt 6 lw 0.8 pt 11 ps 3
-set style line 7 dt 1 lt 7 lw 0.8 pt 12 ps 3
-
-set style line 11 dt 3 lt 1 lw 0.3 pt 6 ps 3
-set style line 12 dt 3 lt 2 lw 0.3 pt 7 ps 3
-set style line 13 dt 3 lt 3 lw 0.3 pt 8 ps 3
-set style line 14 dt 3 lt 4 lw 0.3 pt 9 ps 3
-set style line 15 dt 3 lt 5 lw 0.3 pt 10 ps 3
 set style line 16 dt 3 lt 6 lw 0.3 pt 11 ps 3
 set style line 17 dt 3 lt 7 lw 0.3 pt 12 ps 3
 
@@ -589,13 +580,7 @@ high_points = "%s"
 set for [x_coord in high_points ] arrow from x_coord,y_min to x_coord,y_max nohead ls 17 front
 set arrow from x_min,0 to x_max,0 nohead ls 16 front
 
-# set label "Gap = 5.3f eV" at 0.1,0.4
-
-plot "%s" using ($1):($2 - (%s)) with line ls 1 notitle
-"""
-
-
-
+plot "BANDCAR" using ($1):($2 - %.8f) with line ls 3 notitle"""
 
 
 

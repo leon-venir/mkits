@@ -370,7 +370,15 @@ def add_selective_dyn(inp:str="POSCAR", out:str="POSCAR_init" ):
 def vaspxml_parser(select_attrib:str, xmlfile:str="vasprun.xml"):
     """
     
-    :param select_arrib       : optional [tdos, pdos, eigen, final_ene, paramters, incar]
+    :param select_arrib : optional [tdos, pdos, eigen, final_ene, paramters, incar]
+    :return    final_ene: the total energy
+    :               kist: 
+    :               tdos:
+    :               pdos:
+    :              eigen:
+    :         parameters: return a dictionary parameters_dict, available key: NELECT, NBAND, efermi
+    :              incar:
+    :            fermi_e: 
     :return final_ene         : the 
     :return klist             : array like kpoints list and the the accumulative k length [frac_reciprocal_x,y,z, abs_reciprocal_x,y,z, kpath_length]
     :return highsympoint      : 
@@ -389,9 +397,6 @@ def vaspxml_parser(select_attrib:str, xmlfile:str="vasprun.xml"):
 
     # parser
     if select_attrib == "dos":
-        calculation = vasproot.find("calculation")
-        atominfo = vasproot.find("atominfo")
-
         dos = calculation.find("dos")
         # fermi : dos[0]
         # total dos: dos[1] -> data: dos[1][0][5][0]
@@ -414,12 +419,23 @@ def vaspxml_parser(select_attrib:str, xmlfile:str="vasprun.xml"):
         calculation = vasproot.find("calculation")
         eigenvalues = calculation.find("eigenvalues")
 
+        is_ispin = False
+        incar = vaspxml_parser(select_attrib="incar", xmlfile=xmlfile)
+        if "ISPIN" in incar:
+            if incar["ISPIN"] == 2:
+                is_ispin = True
+
         eigen_spin1 = []
         eigen_spin2 = []
         for k in range(len(eigenvalues[0][5][0])):
             for e in range(len(eigenvalues[0][5][0][k])):
                 eigen_spin1.append([float(i) for i in eigenvalues[0][5][0][k][e].text.split()])
-        return np.array(eigen_spin1).reshape(-1, len(eigenvalues[0][5][0][0]), 2), np.array(eigen_spin2(-1, len(eigenvalues[0][5][0][0]), 2)) if eigen_spin2 else eigen_spin2
+
+        if is_ispin:
+            return np.array(eigen_spin1).reshape(-1, len(eigenvalues[0][5][0][0]), 2), np.array(eigen_spin2(-1, len(eigenvalues[0][5][0][0]), 2))
+        else:
+            return np.array(eigen_spin1).reshape(-1, len(eigenvalues[0][5][0][0]), 2), eigen_spin2
+
     elif select_attrib == "klist":
         kpoints = vasproot.find("kpoints")
         klist = []
@@ -464,8 +480,6 @@ def vaspxml_parser(select_attrib:str, xmlfile:str="vasprun.xml"):
         parameters_dict["NELECT"] = float(parameters_electronic[attributes_electronic.index("NELECT")].text)
         parameters_dict["NBANDS"] = float(parameters_electronic[attributes_electronic.index("NBANDS")].text)
         parameters_dict["efermi"] = efermi
-
-
 
         return parameters_dict
     elif select_attrib == "incar":
@@ -592,15 +606,29 @@ def vasp_band_extractor(fpath:str="./", fname:str="BANDCAR", xmlfile:str="vaspru
     kpoint_high_sym = vaspxml_parser(select_attrib="highsympoints", xmlfile=xmlfile)
     kpath = vaspxml_parser(select_attrib="klist", xmlfile=xmlfile)[:, -1]
     eigen1, eigen2 = vaspxml_parser(select_attrib="eigen", xmlfile=xmlfile)
+    efermi = vaspxml_parser(select_attrib="parameters", xmlfile=xmlfile)["efermi"]
 
     # write file
     with open(fpath+"/"+fname, "w") as f:
-        f.write('# high symmetry points: \n')
-        f.write('# %s\n' % ''.join("{:15.8f}".format(i) for i in kpoint_high_sym))
+        f.write('# high symmetry points:  ')
+        f.write(' %s\n' % ''.join("{:15.8f}".format(i) for i in kpoint_high_sym))
+        f.write('# efermi: %.8f\n' % efermi)
         for _ in range(len(eigen1[0,:,0])):
             f.write('# %s \n' % str(_+1))
             np.savetxt(f, np.hstack((kpath.reshape(-1, 1), eigen1[:,_,:])), fmt="%12.8f" "%10.4f" "%10.4f")
-            f.write('\n\n')  
+            f.write('\n\n')
+    
+    # write the gnuplot script
+    x_max = kpoint_high_sym[-1] * 1.001
+    xtics = ''
+    K_label = 1
+    for i in kpoint_high_sym:
+        xtics += '"K%d" %.8f, ' % (K_label, i)
+        K_label += 1
+    high_points = ''.join("{:15.8f}".format(i) for i in kpoint_high_sym[1:-1])
+
+    with open(fpath+"/"+fname+".gnu", "w") as f:
+        f.write(gnubandcar % (fname, x_max, xtics, high_points, efermi))
 
 
 def parse_vasp_incar(fpath="./", fname="INCAR"):
