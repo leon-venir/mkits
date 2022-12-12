@@ -306,10 +306,12 @@ def qe_get_upf(atom_num, atomic_species_block:list, upfpath:str="", wkdir:str=".
     :param atom_num: array with atomic number, make sure all upf named with following format: Atom_*
     :param atomic_species_block: str
     :param upfpath: path to 
-    "return : list []
+    :return : atomic_species_block, valence_num, is_uspp
+    :write  : write UPF files to working directory
     """
     z_valence = {}
     valence_num = 0
+    is_uspp = False
 
     upflist = os.listdir(upfpath)
 
@@ -318,18 +320,25 @@ def qe_get_upf(atom_num, atomic_species_block:list, upfpath:str="", wkdir:str=".
             atom = atomic_species_block[i].split()[0]
             for upf in upflist:
                 if atom+"_" in upf[:3]: # or str.lower(atom) in upf[:3] or str.upper(atom) in upf[:3]:
+                    # read UPF from upf_path
                     with open(upfpath+"/"+upf, "r") as f:
                         upflines = f.readlines()
+                    # check if the UPF is USPP
+                    for j in range(len(upflines)):
+                        if "USPP" in upflines[j] or "ltrasoft" in upflines[j]:
+                            is_uspp = True
+                            break
+                    # wirte UPF file to the working directory
                     with open(wkdir+"/"+upf, "w") as f:
                         f.writelines(upflines) 
                     z_valence[symbol_map[atom]] = qe_upf_valence_e(upfpath+"/"+upf)
                     atomic_species_block[i] = atomic_species_block[i].replace("None", upf)
     for num in atom_num:
         valence_num += z_valence[int(num)]
-    return atomic_species_block, valence_num
+    return atomic_species_block, valence_num, is_uspp
 
 
-def qe_in_write(fpath:str="./", fname:str="tmp.in", control_block:dict={}, system_block:dict={}, electrons_block:dict={}, ions_block:dict={}, cell_block:dict={}, atomic_species_block:list=[], kpoints_block:list=[], cell_parameters_block:list=[], atomic_positions_block:list=[]):
+def qe_in_write(fpath:str="./", fname:str="tmp.in", control_block:dict={}, system_block:dict={}, electrons_block:dict={}, ions_block:dict={}, cell_block:dict={}, atomic_species_block:list=[], kpoints_block:list=[], cell_parameters_block:list=[], atomic_positions_block:list=[], dos_block={}, fcp_block={}, rism_block={}):
     """"""
     if control_block:
         with open(fpath+"/"+fname, "w") as f:
@@ -379,6 +388,18 @@ def qe_in_write(fpath:str="./", fname:str="tmp.in", control_block:dict={}, syste
         with open(fpath+"/"+fname, "a") as f:
             f.writelines(atomic_positions_block)
             f.write("\n")
+    if dos_block:
+        with open(fpath+"/"+fname, "a") as f:
+            f.writelines(dos_block)
+            f.write("\n")
+    if fcp_block:
+        with open(fpath+"/"+fname, "a") as f:
+            f.writelines(dos_block)
+            f.write("\n")
+    if rism_block:
+        with open(fpath+"/"+fname, "a") as f:
+            f.writelines(rism_block)
+            f.write("\n")
 
 
 def qe_kgen(struct_inp:str="cu.cif", kspacing=0.15, oddeven="odd"):
@@ -410,10 +431,33 @@ def write_runsh(runsh, cmd):
 
 
 def qe_geninput(calculation:str="scf", wpath:str="./", struct_inp:str="cu.cif", dryrun:bool=False, upf_path:str="./", metal:bool=True, functional:str="pbe", execcode:str='srun --mpi=pmi2 -K1 --resv-ports -n $SLURM_NTASKS pw.x -nimage 1 -npool 1 -ntg 1 -inp %s > %s', params_file:str="caldetail"):
+    """
+    Generate input file for QE calculations
+    :param       calculation: [scf, nscf, dos, relax, vc-relax, conv_kmesh, conv_ecutwfc]
+    :                       : scf
+    :                       : nscf
+    :                       : dos
+    :                       : 
+    :                       : relax
+    :                       : vc-relax
+    :                       : 
+    :                       : 
+    :param             wpath: 
+    :param        struct_inp: 
+    :param            dryrun: 
+    :param          upf_path: 
+    :param             metal: 
+    :param        functional: 
+    :param          execcode: 
+    :param       params_file: 
+    :                       : 
+    """
     func_help = """
     Generate input file for QE calculations
-    :param      calculation: [scf, relax, vc-relax, conv_kmesh, conv_ecutwfc]
-    :param            wpath: 
+    --caltype       : optional      opt  ->  
+                    :               scf  ->  
+                    :              band  ->   
+                    :               dos  ->   
     """
     if dryrun:
         print(func_help)
@@ -425,6 +469,7 @@ def qe_geninput(calculation:str="scf", wpath:str="./", struct_inp:str="cu.cif", 
     electrons_block = qe_electrons_block
     ions_block = qe_ions_block
     cell_block = qe_cell_block
+    dos_block = qe_dos_block
 
     #
     if wpath == "./": wpath = os.path.abspath("./")
@@ -458,10 +503,16 @@ def qe_geninput(calculation:str="scf", wpath:str="./", struct_inp:str="cu.cif", 
 
     # structure parameters
     qe_struct = qe_get_struct(file_inp=struct_inp)
-    atomic_species_block, valence_num = qe_get_upf(atom_num=qe_struct["atoms_num"], atomic_species_block=qe_struct["ATOMIC_SPECIES"], upfpath=upf_path, wkdir=wkdir)
+    atomic_species_block, valence_num, is_uspp = qe_get_upf(atom_num=qe_struct["atoms_num"], atomic_species_block=qe_struct["ATOMIC_SPECIES"], upfpath=upf_path, wkdir=wkdir)
     qe_struct["ATOMIC_SPECIES"] = atomic_species_block
     system_block.update(parser_inputlines(qe_struct["&SYSTEM"]))
     kpoints_block = qe_kgen(struct_inp=struct_inp, kspacing=params_default["kspacing"])
+
+    # USPP or not, ecutrho = 4*ecutwfc for paw , 10*ecutwfc for uspp
+    if is_uspp:
+        system_block["ecutrho"] = str(float(system_block["ecutwfc"])*10)
+    else:
+        system_block["ecutrho"] = str(float(system_block["ecutwfc"])*4)
 
     # metal or not
     if metal:
@@ -480,6 +531,25 @@ def qe_geninput(calculation:str="scf", wpath:str="./", struct_inp:str="cu.cif", 
         """  """
         control_block["calculation"] = '"scf"'
         qe_in_write(fpath=wkdir, fname=fname, control_block=control_block, system_block=system_block, electrons_block=electrons_block, atomic_species_block=atomic_species_block, kpoints_block=kpoints_block, cell_parameters_block=cell_parameters_block, atomic_positions_block=atomic_positions_block)
+    
+    def qe_nscf(fpath:str=wkdir, fname:str="nscf.in", control_block:dict=control_block, system_block:dict=system_block, electrons_block:dict=electrons_block, atomic_species_block:list=qe_struct["ATOMIC_SPECIES"], kpoints_block:list=kpoints_block, atomic_positions_block:list=qe_struct["ATOMIC_POSITIONS"]):
+        """  """
+        control_block["calculation"] = '"nscf"'
+        control_block["verbosity"] = '"high"'
+        #control_block.pop("restart_mode", None)
+        system_block["nosym"] = '.TRUE.'
+        electrons_block["conv_thr"] = '1.D-8'
+
+        # you need denser k-mesh
+        kpoints_block = qe_kgen(struct_inp=struct_inp, kspacing=float(params_default["kspacing"])*0.4)
+        # 
+        print("Move all the generated file to the folder of scf calculation.")
+
+        qe_in_write(fpath=wkdir, fname=fname, control_block=control_block, system_block=system_block, electrons_block=electrons_block, atomic_species_block=atomic_species_block, kpoints_block=kpoints_block, atomic_positions_block=atomic_positions_block)
+    
+    def qe_dos(fpath:str=wkdir, fname:str="dos.in", dos_block:dict=dos_block):
+        """  """
+        qe_in_write(fpath=wkdir, fname=fname, dos_block=dos_block)
 
 
     def qe_vcrelax(control_block:dict=control_block, system_block:dict=system_block, electrons_block:dict=electrons_block, ions_block:dict=ions_block, cell_block:dict=cell_block, atomic_species_block:list=qe_struct["ATOMIC_SPECIES"], kpoints_block:list=kpoints_block, cell_parameters_block:list=qe_struct["CELL_PARAMETERS"], atomic_positions_block:list=qe_struct["ATOMIC_POSITIONS"]):
@@ -508,6 +578,16 @@ def qe_geninput(calculation:str="scf", wpath:str="./", struct_inp:str="cu.cif", 
         os.chmod(wkdir+"/run.sh", 0o775)
 
         cal_detail = "caltype=qe_scf"
+        write_runsh(wkdir+"/caldetails", cal_detail)
+    
+    elif calculation == "nscf":
+        qe_nscf()
+        cmd = "# nscf calculation \n"
+        cmd += execcode % ("nscf.in", "nscf.out") + "\n"
+        write_runsh(wkdir+"/run.sh", cmd)
+        os.chmod(wkdir+"/run.sh", 0o775)
+
+        cal_detail = "caltype=qe_nscf"
         write_runsh(wkdir+"/caldetails", cal_detail)
 
     elif calculation == "vc-relax":

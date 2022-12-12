@@ -110,3 +110,12 @@ mkits is a python written tool containing many helpful initial- or post-processi
 # 4. Introduction
 
 ## QE
+
+
+## VASP
+
+### Generate input files
+
+1. convergence test
+2. scf
+3. band & dos

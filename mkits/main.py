@@ -45,7 +45,7 @@ def vasp_init_parser(args):
             print("Wrong parameter found, optional choices are: split, merge.")
             lexit("Wrong parameter found, optional choices are: split, merge.")
     else:
-        lexit("Error key.")
+        lexit("Unsupported arguments.")
 
 def vasp_post_parser(args):
     try:
@@ -53,7 +53,6 @@ def vasp_post_parser(args):
     except:
         parameter = {}
     if args.extract_band:
-        #vasp_band_extractor(eign=parameter["eignval"] if "eignval" in parameter else "EIGENVAL", poscar=parameter["poscar"] if "poscar" in parameter else "POSCAR", kpoint=parameter["kpoints"] if "kpoints" in parameter else "KPOINTS")
         vasp_band_extractor(fpath=parameter["fpath"] if "fpath" in parameter else "./", fname=parameter["fname"] if "fname" in parameter else "BANDCAR", xmlfile=args.extract_band)
     elif args.extract_dos:
         vasp_dos_extractor(args.extract_dos)
@@ -67,6 +66,10 @@ def vasp_post_parser(args):
         mse_xdatcar(xdatcar=args.mse_xdatcar, crys_struct=args.fname, fpath=args.wpath)
     elif args.getvbmcbm:
         [print(key, " : ", value) for key, value in getvbmcbm(args.getvbmcbm).items()]
+    elif args.extract_dp:
+        vasp_defomation_potential(direction=parameter["direction"] if "direction" in parameter else "ac",init_analy="analysis")
+    else:
+        lexit("Unsupported arguments.")
 
 def qe_init_parser(args):
     pass
@@ -115,7 +118,7 @@ def parse_arguments():
     parser.add_argument(
         "--version",
         action="version",
-        version="0.7",
+        version="0.83",
         help="print version information"
     )
     subparser = parser.add_subparsers(
@@ -300,6 +303,11 @@ def parse_arguments():
         action="store",
         type=str,
         help="Extract VBM and CBM from vasprun.xml file. eg --getvbmcbm vasprun_dos_pbesol.xml"
+    )
+    parser_vasp_post.add_argument(
+        "--extract_dp",
+        action="store_true",
+        help="Extract data from vasp_init --vasp_gen_input --dft dp, and generate gnuplot files"
     )
 
     # ==========================================================================

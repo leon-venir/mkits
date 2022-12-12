@@ -257,7 +257,7 @@ def vasp_defomation_potential(fpath:str="./", poscar_file:str="POSCAR", directio
     :param direction:
     :param step:
     :param num:
-    :param init_analy: str, optional [init, analysis]
+    :param init_analy: optional [init, analysis]
     """
     if init_analy == "init": 
         deformation = center_array(center=1, step=step, total_num=num)
@@ -628,7 +628,7 @@ def vasp_band_extractor(fpath:str="./", fname:str="BANDCAR", xmlfile:str="vaspru
     high_points = ''.join("{:15.8f}".format(i) for i in kpoint_high_sym[1:-1])
 
     with open(fpath+"/"+fname+".gnu", "w") as f:
-        f.write(gnubandcar % (fname, x_max, xtics, high_points, efermi))
+        f.write(gnubandcar % (fname, x_max, xtics[:-2], high_points, efermi))
 
 
 def parse_vasp_incar(fpath="./", fname="INCAR"):
@@ -782,20 +782,37 @@ def update_incar(incar_dict, new_dict, new_key):
 def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath="./", execode="mpirun -np $SLURM_NTASKS vasp_std", params="gga=pbelda"):
     func_help = """
     generate inputs for vasp
-    :param dft        : opt
-                      : scf
-                      : band
-                      : conv_encut, conv_kmesh, conv_sigma, xanes, ifc3-phono3py, born]
-    :param potpath    : string, the path containing potpaw_LDA.54, potpaw_PBE.54, put all required POTCAR in one directory, and renames them as POTCAR_Ti_sv or POTCAR_Bi
-    :param poscar     : 
-    :param dryrun     :
-    :param wpath      : working directory
-    :param params     : addtitional parameters for calculation, example: gga=ps,gga=rev-vdw-DF2,...
-                      : [dft=any]           ->    gga = [pbelda, pbesol, hse06, hsesol, rev-vdW-DF2, optB88, optPBE] default PBE
-                      :                     ->    PREC
-                      :                     ->    oddeven = [odd, even]
-                      :                     ->    kmesh = [0.1, 0.15, ...]
-                      : [dft=opt]           ->    mulisif [263], can using with mulprec [Low-Normal-Normal]
+    --dft       : optional   opt  ->  
+                :            scf  ->  
+                :           band  ->  
+                :            dos  ->  
+                :     conv_encut  ->  
+                :     conv_kmesh  ->  
+                :     conv_sigma  ->  
+                :          xanes  ->  
+                :  ifc3-phono3py  ->  
+                :           born  ->  
+                :          elast  ->  
+                :             dp  -> 
+                :
+    --potpath   : absolute path to the PP library and renames them as POTCAR_Ti
+    --poscar    : poscar
+    --dryrun    : show this help
+    --wpath     : the working directory
+    --param     : dft=any         ->  gga      = [pbelda, pbesol, hse06, hsesol, rev-vdW-DF2, 
+                :                 ->             optB88, optPBE]
+                :                 ->  oddeven  = [odd, even]
+                :                 ->  kspacing = 0.15
+                :                 ->  any tag in INCAR
+                : dft=opt         ->  mulisif  = 263
+                :                 ->  mulprec  = Low-Normal-Normal
+                :                 ->  
+                :                 ->  
+                :                 ->  
+    write       : create a folder containing all the necessary input files for VASP, a file 
+                : of cal_details, 
+
+                      : [dft=opt]           ->    
                       : [dft=scf]           ->    
                       : [dft=band]          ->    NBAND=200, 
                       : [dft=conv_encut]    ->    ENCUT=200-300-400-500, kmesh [0.05-0.1-0.2]
@@ -841,8 +858,6 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         potcar_lines += lines
     with open(wdir+"/POTCAR", "w") as f:
         f.writelines(potcar_lines)
-    #for _ in poscar.return_dict()["atoms_type"]:
-    #    subprocess.run("cat %s/POTCAR_%s* >> %s/POTCAR" %(potpath, _, wdir), shell=True)
 
     # global incar
     incar.update(incar_glob)
@@ -854,10 +869,12 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
     else:
         incar["LMAXMIX"] = "2"
     
+    # write run.sh file and add x permission
     def write_runsh(runsh, cmd):
         with open(runsh, "a") as f:
             f.write(cmd)
-
+        os.chmod(runsh, 0o775)
+    # 
     def ch_functional(incar, wdir=wdir):
         """change functional from parameters"""
         update_incar(incar, incar_functionals[gga], list(incar_functionals[gga].keys()))
@@ -887,7 +904,6 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         cmd += "cp WAVECAR WAVECAR_%s\n" % dftgga
         cmd += "cp vasprun.xml vasprun_%s.xml\n" % dftgga
         write_runsh(wdir+"/run.sh", cmd)
-        os.chmod(wdir+"/run.sh", 0o775)
     
     # =================================================================================
     # opt
@@ -919,7 +935,6 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
                 cmd += "cp vasprun.xml vasprun_%s_%s_%s_isif%s.xml\n" % (dftgga, str(_), gga, params["mulisif"][_])
                 cmd += "cp CONTCAR POSCAR\n"
                 write_runsh(wdir+"/run.sh", cmd)
-                os.chmod(wdir+"/run.sh", 0o775)
         else:
             write_incar(incar, fpath=wdir, fname="INCAR_%s_%s_isif%s" %(dft, gga, incar["ISIF"]))
             poscar.write_struct(fpath=wdir, fname="POSCAR_opt_init")
@@ -938,7 +953,6 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
             cmd += "cp CONTCAR POSCAR\n" 
             cmd += "done\n"
             write_runsh(wdir+"/run.sh", cmd)
-            os.chmod(wdir+"/run.sh", 0o775)
     
     # =================================================================================
     # convergence test: conv_encut
@@ -948,13 +962,11 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         incar.update(incar_scf)
         update_incar(incar, params, ["PREC"])
         incar = ch_functional(incar)
-
         if "encut" in params:
             encut = params["encut"].split("-")
         else:
-            encut = ["250", "300", "350", "400", "450", "500", "550", "600"]
+            encut = ["300", "350", "400", "450", "500", "550", "600", "650"]
         incar["ENCUT"] = "xxx"
-
         vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.15, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_scf")
 
 
@@ -971,8 +983,10 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         cmd += "rm CHGCAR WAVECAR\n"
         cmd += "done\n"
         write_runsh(wdir+"/run.sh", cmd)
-        os.chmod(wdir+"/run.sh", 0o775)
 
+    # =================================================================================
+    # convergence test: conv_kmesh
+    # =================================================================================
     def dft_conv_kmesh(incar=incar):
         """ generate input files for kmesh convergence test """
         incar.update(incar_scf)
@@ -982,7 +996,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         if "encut" in params:
             kspacing = params["kspacing"].split("-")
         else:
-            kspacing = [0.1, 0.12, 0.14, 0.15, 0.2, 0.25, 0.3]
+            kspacing = [0.08, 0.1, 0.12, 0.14, 0.15, 0.2, 0.25, 0.3]
         
         for _ in kspacing:
             vasp_kpoints_gen(poscar.return_dict(), _, kmesh="odd", fpath=wdir, fname="KPOINTS_kconv_k%s" % _)
@@ -999,7 +1013,6 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         cmd += "cp vasprun.xml vasprun_%s_kmesh$kspacing.xml\n" % (dftgga)
         cmd += "done\n"
         write_runsh(wdir+"/run.sh", cmd)
-        os.chmod(wdir+"/run.sh", 0o775)
     
     def dft_conv_vacuum(incar=incar): 
         """ generate input files for vacuum convergence test (2d matertials)"""
@@ -1021,7 +1034,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
 
         dftgga = dft+"_"+gga
         write_incar(incar, fpath=wdir, fname="INCAR_%s" % dftgga)
-        cmd = "# scf calculation\n"
+        cmd = "# band calculation\n"
         cmd += "cp INCAR_%s INCAR\n" % dftgga
         cmd += "cp KPOINTS_band KPOINTS\n"
         cmd += "cp WAVECAR_%s WAVECAR\n" % ("scf_"+gga)
@@ -1029,7 +1042,6 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         cmd += execode + "\n"
         cmd += "cp vasprun.xml vasprun_%s.xml\n" % dftgga
         write_runsh(wdir+"/run_band.sh", cmd)
-        os.chmod(wdir+"/run_band.sh", 0o775)
     
     def dft_dos(incar=incar):
         """ """
@@ -1051,7 +1063,6 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         cmd += execode + "\n"
         cmd += "cp vasprun.xml vasprun_%s.xml\n" % dftgga
         write_runsh(wdir+"/run_dos.sh", cmd)
-        os.chmod(wdir+"/run_dos.sh", 0o775)
 
     def dft_dp(incar=incar):
         incar.update(incar_scf)
@@ -1068,15 +1079,15 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
             if "a" in params["direct"]:
                 struct_dict_new["lattice"] = struct_dict_lattice*np.array([[step],[1],[1]])
                 poscar.update_struct_dict(struct_dict_new)
-                poscar.write_struct(fpath=wdir, fname="POSCAR_%s_%.3f" % ("a", step))
+                poscar.write_struct(fpath=wdir, fname="POSCAR_%s_%5.3f" % ("a", step))
             if "b" in params["direct"]:
                 struct_dict_new["lattice"] = struct_dict_lattice*np.array([[1],[step],[1]])
                 poscar.update_struct_dict(struct_dict_new)
-                poscar.write_struct(fpath=wdir, fname="POSCAR_%s_%.3f" % ("b", step))
+                poscar.write_struct(fpath=wdir, fname="POSCAR_%s_%5.3f" % ("b", step))
             if "c" in params["direct"]:
                 struct_dict_new["lattice"] = struct_dict_lattice*np.array([[1],[1],[step]])
                 poscar.update_struct_dict(struct_dict_new)
-                poscar.write_struct(fpath=wdir, fname="POSCAR_%s_%.3f" % ("c", step))
+                poscar.write_struct(fpath=wdir, fname="POSCAR_%s_%5.3f" % ("c", step))
 
         dftgga = dft+"_"+gga
         write_incar(incar, fpath=wdir, fname="INCAR_%s" % dftgga)
@@ -1090,13 +1101,14 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         cmd += "cp vasprun.xml vasprun_$pos.xml\n" 
         cmd += "done\n"
         write_runsh(wdir+"/run.sh", cmd)
-        os.chmod(wdir+"/run.sh", 0o775)
     
     # =================================================================================
     # machine learning part
     # =================================================================================
     def ml_heat(incar=incar):
         """ """
+    
+    
 
 
     if dft == "scf":
@@ -1119,13 +1131,6 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         vasp_gen_input(dft="scf", potpath=potpath, poscar=poscar, dryrun=False, wpath="./elecall", execode=execode, params=params)
         vasp_gen_input(dft="band", potpath=potpath, poscar=poscar, dryrun=False, wpath="./elecall", execode=execode, params=params)
         vasp_gen_input(dft="dos", potpath=potpath, poscar=poscar, dryrun=False, wpath="./elecall", execode=execode, params=params)
-        
-    # =================================================================================
-    # dos, band, effective mass
-    # =================================================================================
-
-    
-
 
     # =================================================================================
     # XANES
@@ -1213,7 +1218,6 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         cmd += "cp xanes.dat xanes_%s_atom${atom}.dat\n" % dftgga
         cmd += "done\n"
         write_runsh(wdir+"/run.sh", cmd)
-        os.chmod(wdir+"/run.sh", 0o775)
     
     # =================================================================================
     # BORN effective charge
@@ -1284,7 +1288,8 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
 def struct_diff(structname1, structname2):
     """ 
     compare the absolute value of the difference between structure 1 and 2 
-    :param struct1, struct2: string, name of structures; or dictionary """
+    :param struct1, struct2: string, the name of structures; or dictionary 
+    """
     if type(structname1) == str:
         struct1 = struct(structname1).return_dict()
     elif type(structname1) == dict:
