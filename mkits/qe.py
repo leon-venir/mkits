@@ -7,12 +7,31 @@ import subprocess
 
 
 """
+:func qe_vasp2qe_struct: convert vasp structures to qe
 :func qe_add_ifpos: add
 :func qe_input_parser
 :func qe_conv_extractor: extract data from convergence test calculation, [input files are generated from func qe_gen_input, ie conv_encut, conv_kmesh
 :func qe_input_lines_parser: get 
 :func qe_get_struct: return a standard output for QE input file
 """
+
+
+def qe_vasp2qe_struct(poscar:str="POSCAR", qe_out:str="qe_struct.in"):
+    """
+    convert vasp structures to qe
+    """
+    with open(poscar, "r") as f:
+        lines = f.readlines()
+    
+    poscar_dict = struct(poscar).return_dict()
+    atoms_type = poscar_dict["atoms_type"]
+    atoms_num = poscar_dict["atoms_num"]
+    position = poscar_dict["pos_frac"]
+    
+    with open(qe_out, "w") as f:
+        f.write("CELL_PARAMETERS angstrom\n")
+        f.writelines(lines[2:5])
+    
 
 
 def qe_add_ifpos():
@@ -510,9 +529,15 @@ def qe_geninput(calculation:str="scf", wpath:str="./", struct_inp:str="cu.cif", 
 
     # USPP or not, ecutrho = 4*ecutwfc for paw , 10*ecutwfc for uspp
     if is_uspp:
-        system_block["ecutrho"] = str(float(system_block["ecutwfc"])*10)
+        try:
+            system_block["ecutrho"] = str(float(system_block["ecutwfc"])*10)
+        except:
+            system_block.pop("ecutrho", None)
     else:
-        system_block["ecutrho"] = str(float(system_block["ecutwfc"])*4)
+        try:
+            system_block["ecutrho"] = str(float(system_block["ecutwfc"])*4)
+        except:
+            system_block.pop("ecutrho", None)
 
     # metal or not
     if metal:
@@ -616,10 +641,11 @@ def qe_geninput(calculation:str="scf", wpath:str="./", struct_inp:str="cu.cif", 
         write_runsh(wkdir+"/caldetails", cal_detail)
 
         system_block["ecutwfc"] = "xxxxx"
+        system_block["ecutrho"] = "yyyyy"
         qe_scf()
         cmd = "# conv test calculation \n"
         cmd += "for ecutwfc in 35 40 45 50 55 60 65 70; do\n"
-        cmd += "        sed s/xxxxx/$ecutwfc/g scf.in > inp\n"
+        cmd += '        sed -e "s/xxxxx/$ecutwfc/g" -e "s/yyyyy/$((ecutwfc*%s))/g" scf.in > inp\n' % "10" if is_uspp else "4"
         cmd += "        " + execcode % ("inp", "ecutwfc_$ecutwfc.out") + "\n"
         cmd += "        rm -rf ./outdir\n"
         cmd += "done\n"
@@ -629,8 +655,7 @@ def qe_geninput(calculation:str="scf", wpath:str="./", struct_inp:str="cu.cif", 
     elif calculation == "conv_degauss" and metal:
         cal_detail = "caltype=qe_conv_degauss"
         write_runsh(wkdir+"/caldetails", cal_detail)
-
-        system_block["degauss"] = "xxxxx"
+        
         qe_scf()
         cmd = "# conv test calculation \n"
         cmd += "for degauss in 0.01 0.03 0.05 0.1 0.15 0.2 0.25 0.3; do\n"

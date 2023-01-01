@@ -13,6 +13,7 @@ from mkits.database import *
 
 
 """
+:func vasp_opt_2d               : 
 :func vasp_gen_IBZKPT           : generate k-points list
 :func xml_block                 : search the block with specific block_name and return the block or the index
 :func vasp_split_IBZKPT         : split IBZKPT for huge kpoints calculations
@@ -39,6 +40,16 @@ from mkits.database import *
 :func getvbmcbm                 : extract the valence maximum band and conduction minimum band
 :func arbitrary_klist           : Generate arbitrary klist for effective mass calculation
 """
+
+
+def vasp_opt_2d():
+    """
+    optimization -> position(ISIF=2) -> ab/ac -> aob/aoc
+    :param CONTCAR_to_opt: 
+    :param opt_choice:
+    :param step: the step of shape changes in percentage
+    :param runsh: 
+    """
 
 
 def vasp_gen_IBZKPT(wkdir:str="./", fname:str="IBZKPT_666", poscar:str="POSCAR", kmesh:str="6,6,6", write_file:bool=True):
@@ -885,7 +896,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
     # =================================================================================
     def dft_scf(incar=incar):
         incar.update(incar_scf)
-        update_incar(incar, params, ["ENCUT", "PREC"])
+        update_incar(incar, params, incar_scf_tag)
         incar = ch_functional(incar)
 
         vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.15, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_scf")
@@ -943,14 +954,14 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
             cmd += "cp INCAR_%s INCAR\n" % dftgga
             cmd += "cp POSCAR_opt_init POSCAR\n"
             cmd += "cp KPOINTS_opt KPOINTS\n"
-            cmd += "for step in 1 2 ; do\n"
+            cmd += "for step in 1 2 3 4; do\n"
             cmd += execode + "\n"
-            cmd += "cp OUTCAR OUTCAR_%s_$step\n" % dftgga
-            cmd += "cp vasprun.xml vasprun_%s_$step.xml\n" % dftgga
-            cmd += "cp XDATCAR XDATCAR_%s_$step\n" % dftgga
-            cmd += "cp OSZICAR OSZICAR_%s_$step\n" % dftgga
+            cmd += "mv OUTCAR OUTCAR_%s_$step\n" % dftgga
+            cmd += "mv vasprun.xml vasprun_%s_$step.xml\n" % dftgga
+            cmd += "mv XDATCAR XDATCAR_%s_$step\n" % dftgga
+            cmd += "mv OSZICAR OSZICAR_%s_$step\n" % dftgga
             cmd += "cp CONTCAR CONTCAR_%s_$step\n" % dftgga
-            cmd += "cp CONTCAR POSCAR\n" 
+            cmd += "mv CONTCAR POSCAR\n" 
             cmd += "done\n"
             write_runsh(wdir+"/run.sh", cmd)
     
@@ -979,7 +990,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         cmd += "for encut in %s; do\n" % " ".join(encut)
         cmd += "sed -e s/xxx/$encut/g INCAR_%s > INCAR\n" % dftgga
         cmd += execode + "\n"
-        cmd += "cp vasprun.xml vasprun_%s_encut$encut.xml\n" % (dftgga)
+        cmd += "mv vasprun.xml vasprun_%s_encut$encut.xml\n" % (dftgga)
         cmd += "rm CHGCAR WAVECAR\n"
         cmd += "done\n"
         write_runsh(wdir+"/run.sh", cmd)
@@ -1010,7 +1021,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         cmd += "for kspacing in %s; do\n" % " ".join(str(_) for _ in kspacing)
         cmd += "cp KPOINTS_kconv_k$kspacing KPOINTS\n"
         cmd += execode + "\n"
-        cmd += "cp vasprun.xml vasprun_%s_kmesh$kspacing.xml\n" % (dftgga)
+        cmd += "mv vasprun.xml vasprun_%s_kmesh$kspacing.xml\n" % (dftgga)
         cmd += "done\n"
         write_runsh(wdir+"/run.sh", cmd)
     

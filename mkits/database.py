@@ -35,7 +35,7 @@ qe_control_block = {
     "nstep": "100",
     "outdir": '"./outdir"',
     "max_seconds": "4.d+4",
-    "etot_conv_thr": "1.d-6",
+    "etot_conv_thr": "1.d-4",
     "pseudo_dir": '"./"'
 }
 
@@ -46,8 +46,10 @@ qe_system_block = {
 
 
 qe_electrons_block = {
-    "conv_thr": "1.d-7",
-    "mixing_beta": "0.2"
+    "electron_maxstep": "200",
+    "conv_thr": "1.d-6",
+    "mixing_beta": "0.7",
+    "mixing_mode": '"local-TF" ! not converging? try "TF" for highly homogeneous, "local-TF" for highly inhomogeneous system'
 }
 
 qe_ions_block = {
@@ -80,6 +82,14 @@ qe_ions_key = ["ion_positions", "ion_velocities", "ion_dynamics", "pot_extrapola
 qe_cell_key = ["cell_dynamics", "press", "wmass", "cell_factor", "press_conv_thr", "cell_dofree"]
 
 
+# :database vasp: VASP input tag ====================== #
+incar_scf_tag = ["ENCUT", "PREC",
+                # DFT+U
+                "LDAU", "LDAUTYPE", "LDAUL", "LDAUU", "LDAUJ", "LDAUPRINT", 
+                # spin
+                "ISPIN", "MAGMOM"]
+
+
 # :database vasp: VASP input tempelates ====================== #
 incar_glob = {
     "PREC": "Normal",
@@ -87,14 +97,17 @@ incar_glob = {
     "EDIFF": "1e-6",
     "NCORE": "8",
     "NELM": "150",
-    "LMAXMIX": "2"
+    "NELMIN": "5",
+    "LMAXMIX": "2",
+    "AMIX": "0.4 # for metals smaller 0.02, or try other value 0.1",
+    "BMIX": "1.0 # try 0.5"
 }
 incar_opt = {
     "IBRION": "2",
     "ISIF": "3",
     "NSW": "500",
     "ISMEAR": "0",
-    "EDIFFG": "-1e-3",
+    "EDIFFG": "-1e-1",
     "SIGMA": "0.05",
     "POTIM": "0.5",
     "LWAVE": ".FALSE.",
@@ -243,9 +256,9 @@ incar_functionals = {
 
 atom_data = [ 
     #  0   1    2       3             4
-    [  0, "N", "Name", "atomic mass", "qe_upf"], # 0
-    [  1, "H", "Hydrogen", 1.00794, "1s1"], # 1
-    [  2, "He", "Helium", 4.002602, "1s2"], # 2
+    [  0, "N", "Name", "atomic mass", "magnetic"], # 0
+    [  1, "H", "Hydrogen", 1.00794, "nan"], # 1
+    [  2, "He", "Helium", 4.002602, "nan"], # 2
     [  3, "Li", "Lithium", 6.941], # 3
     [  4, "Be", "Beryllium", 9.012182], # 4
     [  5, "B", "Boron", 10.811], # 5
@@ -265,10 +278,10 @@ atom_data = [
     [ 19, "K", "Potassium", 39.0983], # 19
     [ 20, "Ca", "Calcium", 40.078], # 20
     [ 21, "Sc", "Scandium", 44.955912], # 21
-    [ 22, "Ti", "Titanium", 47.867, "1s2,2s2p6,3s2p6d2,4s2"], # 22
+    [ 22, "Ti", "Titanium", 47.867, "nan"], # 22
     [ 23, "V", "Vanadium", 50.9415], # 23
     [ 24, "Cr", "Chromium", 51.9961], # 24
-    [ 25, "Mn", "Manganese", 54.938045], # 25
+    [ 25, "Mn", "Manganese", 54.938045, "1"], # 25
     [ 26, "Fe", "Iron", 55.845], # 26
     [ 27, "Co", "Cobalt", 58.933195], # 27
     [ 28, "Ni", "Nickel", 58.6934], # 28
