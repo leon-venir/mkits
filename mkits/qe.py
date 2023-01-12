@@ -581,7 +581,7 @@ def qe_geninput(calculation:str="scf", wpath:str="./", struct_inp:str="cu.cif", 
         """ """
         #
         control_block["calculation"] = '"vc-relax"'
-        control_block["forc_conv_thr"] = "1.0d-4"
+        control_block["forc_conv_thr"] = "1.0d-3"
 
         qe_in_write(fpath=wkdir, fname="vcrelax.in", control_block=control_block, system_block=system_block, electrons_block=electrons_block, ions_block=ions_block, cell_block=cell_block, atomic_species_block=atomic_species_block, kpoints_block=kpoints_block, cell_parameters_block=cell_parameters_block, atomic_positions_block=atomic_positions_block)
     
@@ -590,7 +590,7 @@ def qe_geninput(calculation:str="scf", wpath:str="./", struct_inp:str="cu.cif", 
         """ """
         #
         control_block["calculation"] = '"relax"'
-        control_block["forc_conv_thr"] = "1.0d-4"
+        control_block["forc_conv_thr"] = "1.0d-3"
 
         qe_in_write(fpath=wkdir, fname="relax.in", control_block=control_block, system_block=system_block, electrons_block=electrons_block, ions_block=ions_block, atomic_species_block=atomic_species_block, kpoints_block=kpoints_block, cell_parameters_block=cell_parameters_block, atomic_positions_block=atomic_positions_block)
 

@@ -155,6 +155,7 @@ def vasp_split_IBZKPT(wkdir:str="./", fname:str="vasprun_merged.xml", ibzkpt:str
         eigen_beg, eigen_end = xml_block(xmlfile=xmlfile_list[0], block_name="eigenvalues", block=False)
         #print(kpoints_beg, kpoints_end)
         #print(eigen_beg, eigen_end)
+        #print(xmlfile_list)
         with open(xmlfile_list[0], "r") as f:
             lines = f.readlines()
         block_before_kpoints = lines[:kpoints_beg]
@@ -173,8 +174,9 @@ def vasp_split_IBZKPT(wkdir:str="./", fname:str="vasprun_merged.xml", ibzkpt:str
 
             # eigenvalue
             eigenvalues_lines = xml_block(xmlfile=xmlfile, block_name="eigenvalues", block=True)
+            #print(eigenvalues_lines)
             block_eigen += eigenvalues_lines[9:-4]
-
+        
         # add index in block_eigen
         kpoint_index = 1
         for i in range(len(block_eigen)):

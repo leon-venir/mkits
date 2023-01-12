@@ -87,7 +87,9 @@ incar_scf_tag = ["ENCUT", "PREC",
                 # DFT+U
                 "LDAU", "LDAUTYPE", "LDAUL", "LDAUU", "LDAUJ", "LDAUPRINT", 
                 # spin
-                "ISPIN", "MAGMOM"]
+                "ISPIN", "MAGMOM",
+                # so
+                "LNONCOLLINEAR", "VOSKOWN", "LSORBIT", "SAXIS", "NBANDS"]
 
 
 # :database vasp: VASP input tempelates ====================== #
