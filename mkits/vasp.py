@@ -1120,9 +1120,6 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
     # =================================================================================
     def ml_heat(incar=incar):
         """ """
-    
-    
-
 
     if dft == "scf":
         dft_scf()  
