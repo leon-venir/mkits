@@ -71,7 +71,7 @@ def gapshifter(code:str, shift:float, inp:str, out:str="shifted.o", absolute:boo
         if absolute:
             energygap = getvbmcbm(inp)["ene_gap"]
             realshift = shift - energygap
-            print(energygap, realshift)
+
         else:
             realshift = shift
         
@@ -83,15 +83,26 @@ def gapshifter(code:str, shift:float, inp:str, out:str="shifted.o", absolute:boo
                 eigen_beg = i
             elif "</eigenvalues>" in inplines[i]:
                 eigen_end = i
-        print(eigen_beg, eigen_end)
+
         with open(out, "w") as f:
             # the part before eigenvalues
             f.writelines(inplines[:eigen_beg])
 
             # eigenvalue part
+            eigen_indx = 1
             for i in range(eigen_beg, eigen_end+1):
-                j=1
-                pass
+                if "kpoint" in inplines[i]:
+                    eigen_indx = 1
+                    f.write(inplines[i])
+                elif "<r>" in inplines[i] and "<r>" in inplines[i]:
+                    if eigen_indx <= valenceband:
+                        f.write(inplines[i])
+                        eigen_indx += 1
+                    else:
+                        f.write("       <r>%10.4f%s" % (float(inplines[i][10:20])+realshift, inplines[i][20:]))
+                        eigen_indx += 1
+                else:
+                    f.write(inplines[i])
 
             # the part after eigenvalues
             f.writelines(inplines[eigen_end+1:])
