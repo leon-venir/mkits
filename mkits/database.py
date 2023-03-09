@@ -83,13 +83,17 @@ qe_cell_key = ["cell_dynamics", "press", "wmass", "cell_factor", "press_conv_thr
 
 
 # :database vasp: VASP input tag ====================== #
-incar_scf_tag = ["ENCUT", "PREC",
-                # DFT+U
-                "LDAU", "LDAUTYPE", "LDAUL", "LDAUU", "LDAUJ", "LDAUPRINT", 
-                # spin
-                "ISPIN", "MAGMOM",
-                # so
-                "LNONCOLLINEAR", "VOSKOWN", "LSORBIT", "SAXIS", "NBANDS"]
+incar_tag = ["ENCUT", "PREC", "ALGO", "IDIPOL", "ISMEAR", "ISTART", "LORBIT", "NELM", "LDIPOL", 
+             "LVTOT", "LWAVE", "LREAL"
+            # DFT+U
+            "LDAU", "LDAUTYPE", "LDAUL", "LDAUU", "LDAUJ", "LDAUPRINT", 
+            # spin
+            "ISPIN", "MAGMOM",
+            # so
+            "LNONCOLLINEAR", "VOSKOWN", "LSORBIT", "SAXIS", "NBANDS",
+            # opt
+            "EDIFF", "EDIFFG", "NSW", ""
+            ]
 
 
 # :database vasp: VASP input tempelates ====================== #
@@ -109,7 +113,7 @@ incar_opt = {
     "ISIF": "3",
     "NSW": "500",
     "ISMEAR": "0",
-    "EDIFFG": "-1e-1",
+    "EDIFFG": "-1e-2",
     "SIGMA": "0.05",
     "POTIM": "0.5",
     "LWAVE": ".FALSE.",

@@ -13,6 +13,7 @@ from mkits.database import *
 
 
 """
+:func gapshifter                : shift gap
 :func vasp_opt_2d               : 
 :func vasp_gen_IBZKPT           : generate k-points list
 :func xml_block                 : search the block with specific block_name and return the block or the index
@@ -40,6 +41,66 @@ from mkits.database import *
 :func getvbmcbm                 : extract the valence maximum band and conduction minimum band
 :func arbitrary_klist           : Generate arbitrary klist for effective mass calculation
 """
+
+def gapshifter(code:str, shift:float, inp:str, out:str="shifted.o", absolute:bool=True):
+    """
+    shift to/or shift specific value
+    :param code: str [vasp, wien2k]
+    :param absolute: bool, default True shift gap to specific value; otherwise shift specific value
+    :param shift: float, the value of gap 
+    :param inp: string, the input file
+    :param out: string, the output file
+    """
+    with open(inp, "r") as f:
+        inplines = f.readlines()
+
+    if code == "vasp" and ".xml" in inp:
+        # get the number of valence bands
+        valenceband = 0
+        incar = vaspxml_parser(select_attrib="incar", xmlfile=inp)
+        nelect = vaspxml_parser(select_attrib="parameters", xmlfile=inp)["NELECT"]
+        
+        if "LSORBIT" in incar:
+            if "T" in incar["LSORBIT"] or "t" in incar["LSORBIT"]:
+                valenceband = int(nelect)
+            else:
+                valenceband = int(nelect/2)
+        else:
+            valenceband = int(nelect/2)
+        
+        if absolute:
+            energygap = getvbmcbm(inp)["ene_gap"]
+            realshift = shift - energygap
+            print(energygap, realshift)
+        else:
+            realshift = shift
+        
+        # get eigenvalue block and 
+        eigen_beg = 0
+        eigen_end = 0
+        for i in range(len(inplines)):
+            if "<eigenvalues>" in inplines[i]:
+                eigen_beg = i
+            elif "</eigenvalues>" in inplines[i]:
+                eigen_end = i
+        print(eigen_beg, eigen_end)
+        with open(out, "w") as f:
+            # the part before eigenvalues
+            f.writelines(inplines[:eigen_beg])
+
+            # eigenvalue part
+            for i in range(eigen_beg, eigen_end+1):
+                j=1
+                pass
+
+            # the part after eigenvalues
+            f.writelines(inplines[eigen_end+1:])
+        
+        
+    elif code == "vasp" and ".hdf5" in inp:
+        pass
+    elif code == "wien2k":
+        pass
 
 
 def vasp_opt_2d():
@@ -554,7 +615,7 @@ def vasp_dos_extractor(xmlfile="vasprun.xml"):
             f.write(dos_partial[_])
 
 
-def vasp_band_extractor_previous(eign='EIGENVAL', poscar="POSCAR", kpoint:str="KPOINTS"):
+def vasp_band_extractor_previous(eign:str='EIGENVAL', poscar:str="POSCAR", kpoint:str="KPOINTS"):
     """
     get eigen value from EIGNVAL
     electron num; kpoints; states
@@ -898,7 +959,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
     # =================================================================================
     def dft_scf(incar=incar):
         incar.update(incar_scf)
-        update_incar(incar, params, incar_scf_tag)
+        update_incar(incar, params, incar_tag)
         incar = ch_functional(incar)
 
         vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.15, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_scf")
@@ -912,10 +973,10 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         cmd += "cp POSCAR_init POSCAR\n"
         cmd += "cp KPOINTS_scf KPOINTS\n"
         cmd += execode + "\n"
-        cmd += "cp OUTCAR OUTCAR_%s\n" % dftgga
-        cmd += "cp CHGCAR CHGCAR_%s\n" % dftgga
-        cmd += "cp WAVECAR WAVECAR_%s\n" % dftgga
-        cmd += "cp vasprun.xml vasprun_%s.xml\n" % dftgga
+        cmd += "mv OUTCAR OUTCAR_%s\n" % dftgga
+        cmd += "mv CHGCAR CHGCAR_%s\n" % dftgga
+        cmd += "mv WAVECAR WAVECAR_%s\n" % dftgga
+        cmd += "mv vasprun.xml vasprun_%s.xml\n" % dftgga
         write_runsh(wdir+"/run.sh", cmd)
     
     # =================================================================================
@@ -923,7 +984,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
     # =================================================================================
     def dft_opt(incar=incar):
         incar.update(incar_opt)
-        update_incar(incar, params, ["ENCUT", "PREC", "POTIM", "ISIF"])
+        update_incar(incar, params, incar_tag)
         incar = ch_functional(incar)
 
         vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.3, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_opt")
@@ -956,7 +1017,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
             cmd += "cp INCAR_%s INCAR\n" % dftgga
             cmd += "cp POSCAR_opt_init POSCAR\n"
             cmd += "cp KPOINTS_opt KPOINTS\n"
-            cmd += "for step in 1 2 3 4; do\n"
+            cmd += "for step in 1; do\n"
             cmd += execode + "\n"
             cmd += "mv OUTCAR OUTCAR_%s_$step\n" % dftgga
             cmd += "mv vasprun.xml vasprun_%s_$step.xml\n" % dftgga
