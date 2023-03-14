@@ -1045,7 +1045,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
     def dft_conv_encut(incar=incar):
         """ generate input files for encut convergence test """
         incar.update(incar_scf)
-        update_incar(incar, params, ["PREC"])
+        update_incar(incar, params, incar_tag)
         incar = ch_functional(incar)
         if "encut" in params:
             encut = params["encut"].split("-")
@@ -1075,13 +1075,13 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
     def dft_conv_kmesh(incar=incar):
         """ generate input files for kmesh convergence test """
         incar.update(incar_scf)
-        update_incar(incar, params, ["ENCUT", "PREC"])
+        update_incar(incar, params, incar_tag)
         incar = ch_functional(incar)
 
         if "encut" in params:
             kspacing = params["kspacing"].split("-")
         else:
-            kspacing = [0.08, 0.1, 0.12, 0.14, 0.15, 0.2, 0.25, 0.3]
+            kspacing = [0.08, 0.1, 0.12, 0.14, 0.15, 0.2, 0.25, 0.3, 0.35]
         
         for _ in kspacing:
             vasp_kpoints_gen(poscar.return_dict(), _, kmesh="odd", fpath=wdir, fname="KPOINTS_kconv_k%s" % _)
@@ -1400,8 +1400,10 @@ def vasp_build_low_dimension(poscar="POSCAR", direc="z", vacuum="20", type="add"
     fraction = struct_dict["pos_frac"]
     if direc == "z":
         abs_fraction = fraction*np.array([1,1,lattice_para[2,2]])
-        if type == "add": vacuum = float(vacuum)
-        elif type == "fit": vacuum = float(vacuum) - lattice_para[2,2]
+        if type == "add": 
+            vacuum = float(vacuum)
+        elif type == "fit": 
+            vacuum = float(vacuum) - lattice_para[2,2]
         lattice_para[2,2] = lattice_para[2,2]+vacuum
         new_fraction = np.vstack((fraction[:,0], fraction[:,1], (abs_fraction[:,2]+vacuum/2)/lattice_para[2,2])).T
 

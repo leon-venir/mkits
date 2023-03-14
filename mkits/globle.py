@@ -10,13 +10,15 @@ import math
 import sys
 
 """
-:func progressbar           : draw processing bar
-:func center_array          : generate an array with specific center value, step and total number
+:func progressbar            : draw processing bar
+:func center_array           : generate an array with specific center value, 
+                               step and total number
 :func del_list_dupli_neighbor: Removing neighboring duplicates in list
-:func effective_mass        : calculate effective mass based on parabolic band approximation, unit: m, J
-:func best_polyfit_range    : find best fit range
-:func globe_polyfit         : poly-fitting with numpy for r square
-:func klist_kpath           : convert a list of kpoints to a kpath in units of reciprocal of angstrom
+:func effective_mass         : calculate effective mass based on parabolic band
+                               approximation, unit: m, J
+:func best_polyfit_range     : find best fit range
+:func globe_polyfit          : poly-fitting with numpy for r square
+:func klist_kpath            : convert a list of kpoints to a kpath in units of reciprocal of angstrom
 :func convert_3decimal_to_4 : convert 3 decimal numbers to 4 integer fraction: (0.625, 0.15625, 0.125) --> (4, 10, 8, 64)
 :func np_ployfit            : 
 :func round_even_odd        : round input varieties to nearest even number or odd number
@@ -476,7 +478,7 @@ def cart2frac(cart_lattice, cart_pos):
     return frac_pos
 
 
-class struct:
+class struct(object):
     """
     structure class
     :input struct_file      : strings, case.vasp, POSCAR

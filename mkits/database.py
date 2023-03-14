@@ -84,7 +84,7 @@ qe_cell_key = ["cell_dynamics", "press", "wmass", "cell_factor", "press_conv_thr
 
 # :database vasp: VASP input tag ====================== #
 incar_tag = ["ENCUT", "PREC", "ALGO", "IDIPOL", "ISMEAR", "ISTART", "LORBIT", "NELM", "LDIPOL", 
-             "LVTOT", "LWAVE", "LREAL"
+             "LVTOT", "LWAVE", "LREAL", "AMIX", "BMIX",
             # DFT+U
             "LDAU", "LDAUTYPE", "LDAUL", "LDAUU", "LDAUJ", "LDAUPRINT", 
             # spin
