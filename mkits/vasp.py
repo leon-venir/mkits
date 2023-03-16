@@ -99,7 +99,7 @@ def gapshifter(code:str, shift:float, inp:str, out:str="shifted.o", absolute:boo
                         f.write(inplines[i])
                         eigen_indx += 1
                     else:
-                        f.write("       <r>%10.4f%s" % (float(inplines[i][10:20])+realshift, inplines[i][20:]))
+                        f.write("       <r>%10.4f%s" % (float(inplines[i][11:20])+realshift, inplines[i][20:]))
                         eigen_indx += 1
                 else:
                     f.write(inplines[i])
@@ -919,7 +919,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
     val_electron = 0
     incar = {}
     
-    params = parser_inputpara(params) 
+    params = parser_inputpara(params)
     gga = params["gga"]
 
     # =================================================================================
@@ -1050,7 +1050,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         if "encut" in params:
             encut = params["encut"].split("-")
         else:
-            encut = ["300", "350", "400", "450", "500", "550", "600", "650"]
+            encut = ["300", "350", "400", "450", "500", "550", "600", "650", "700", "750", "800"]
         incar["ENCUT"] = "xxx"
         vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.15, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_scf")
 
