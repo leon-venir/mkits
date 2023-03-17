@@ -988,6 +988,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         cmd += "mv CHGCAR CHGCAR_%s\n" % dftgga
         cmd += "mv WAVECAR WAVECAR_%s\n" % dftgga
         cmd += "mv vasprun.xml vasprun_%s.xml\n" % dftgga
+        cmd += "rm -f CHG POSCAR KPOINTS CONTCAR DOSCAR EIGENVAL INCAR REPORT vaspout.h5 XDATCAR\n"
         write_runsh(wdir+"/run.sh", cmd)
     
     # =================================================================================
@@ -997,6 +998,11 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         incar.update(incar_opt)
         update_incar(incar, params, incar_tag)
         incar = ch_functional(incar)
+
+        # default ISIF = 3
+        isif = {"ISIF": "3"}
+        if "ISIF" in params:
+            isif["ISIF"] = params["ISIF"]
 
         vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.3, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_opt")
 
@@ -1021,9 +1027,10 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
                 cmd += "cp CONTCAR POSCAR\n"
                 write_runsh(wdir+"/run.sh", cmd)
         else:
-            write_incar(incar, fpath=wdir, fname="INCAR_%s_%s_isif%s" %(dft, gga, incar["ISIF"]))
+            update_incar(incar, isif, ["ISIF"])
+            write_incar(incar, fpath=wdir, fname="INCAR_%s_%s_isif%s" %(dft, gga, isif["ISIF"]))
             poscar.write_struct(fpath=wdir, fname="POSCAR_opt_init")
-            dftgga = dft+"_"+gga+"_isif"+incar["ISIF"]
+            dftgga = dft+"_"+gga+"_isif"+isif["ISIF"]
             cmd = "# opt isif=%s calculation\n"
             cmd += "cp INCAR_%s INCAR\n" % dftgga
             cmd += "cp POSCAR_opt_init POSCAR\n"
@@ -1037,6 +1044,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
             cmd += "cp CONTCAR CONTCAR_%s_$step\n" % dftgga
             cmd += "mv CONTCAR POSCAR\n" 
             cmd += "done\n"
+            cmd += "rm -f CHG KPOINTS DOSCAR EIGENVAL INCAR REPORT vaspout.h5\n"
             write_runsh(wdir+"/run.sh", cmd)
     
     # =================================================================================
@@ -1064,8 +1072,10 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         cmd += "for encut in %s; do\n" % " ".join(encut)
         cmd += "sed -e s/xxx/$encut/g INCAR_%s > INCAR\n" % dftgga
         cmd += execode + "\n"
+        cmd += "mv OUTCAR OUTCAR_%s_encut$encut\n" % (dftgga)
+        cmd += "mv OSZICAR OSZICAR_%s_encut$encut\n" % (dftgga)
         cmd += "mv vasprun.xml vasprun_%s_encut$encut.xml\n" % (dftgga)
-        cmd += "rm CHGCAR WAVECAR\n"
+        cmd += "rm -f CHG CHGCAR WAVECAR POSCAR KPOINTS CONTCAR DOSCAR EIGENVAL INCAR REPORT vaspout.h5 XDATCAR\n"
         cmd += "done\n"
         write_runsh(wdir+"/run.sh", cmd)
 

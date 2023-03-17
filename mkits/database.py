@@ -203,14 +203,14 @@ incar_prop = {
 
 incar_functionals = {
     "pbelda": {
-        "#GGA_or_LDA": "make sure use proper POTCARs"
+        "#GGA_or_LDA": " "
     },
     "pbesol": {
-        "#pbesol": "INCAR for PBEsol, make sure use PBE POTCAR",
+        "#pbesol": " ",
         "GGA": "PS"
     },
     "rev-vdW-DF2": {
-        "#vdw-rev-vdW-DF2": "INCAR for rev-vdW-DF2, make sure use PBE POTCAR",
+        "#vdw-rev-vdW-DF2": " ",
         "GGA": "MK",
         "LUSE_VDW": ".TRUE.",
         "AGGAC": "0.0",
@@ -220,7 +220,7 @@ incar_functionals = {
         "ZAB_VDW": "-1.8867"
     },
     "optB88": {
-        "#vdw-optB88": "INCAR for optB88, make sure use PBE POTCAR",
+        "#vdw-optB88": " ",
         "GGA": "BO",
         "PARAM1": "0.1833333333",
         "PARAM2": "0.22",
@@ -229,14 +229,14 @@ incar_functionals = {
         "LASPH": ".TRUE."
     },
     "optPBE": {
-        "#vdw-optPBE": "INCAR for optPBE, make sure use PBE POTCAR",
+        "#vdw-optPBE": " ",
         "GGA": "OR",
         "LUSE_VDW": ".TRUE.",
         "AGGAC": "0.0",
         "LASPH": ".TRUE."
     },
     "hsesol": {
-        "#hsesol": "INCAR for HSEsol, make sure use PBE POTCAR",
+        "#HSEsol": " ",
         "LHFCALC": ".TRUE.",
         "GGA": "PS",
         "HFSCREEN": "0.2",
@@ -247,7 +247,7 @@ incar_functionals = {
         "ALDAC": "1.0"
     },
     "hse06" : {
-        "#hse06": "INCAR for HSE06, make sure use PBE POTCAR",
+        "#HSE06": " ",
         "LHFCALC": ".TRUE.",
         "GGA": "PE",
         "HFSCREEN": "0.2",
