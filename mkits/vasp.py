@@ -13,6 +13,7 @@ from mkits.database import *
 
 
 """
+:func vasp_show_incar           : show several INCARs 
 :func gapshifter                : shift gap
 :func vasp_opt_2d               : 
 :func vasp_gen_IBZKPT           : generate k-points list
@@ -41,6 +42,40 @@ from mkits.database import *
 :func getvbmcbm                 : extract the valence maximum band and conduction minimum band
 :func arbitrary_klist           : Generate arbitrary klist for effective mass calculation
 """
+
+
+def vasp_show_incar(*arguments:str):
+    """
+    """
+    maxrow = 0
+    maxchr = 0
+
+    for arg in arguments:
+        with open(arg, "r") as f:
+            lines = f.readlines()
+        if len(lines) > maxrow:
+            maxrow = len(lines)
+        for line in lines:
+            if len(line) >  maxchr:
+                maxchr = len(line)
+    maxchr += 2
+
+    totlines = []
+    for arg in arguments:
+        with open(arg, "r") as f:
+            lines = f.readlines()
+        if len(lines) < maxrow:
+            totlines += lines + ["\n"]*int(maxrow - len(lines))
+        else:
+            totlines += lines
+    
+    for i in range(len(totlines)):
+        totlines[i] = totlines[i].replace("\n", " "*(maxchr - len(totlines[i])))
+    
+    #
+    for i in range(maxrow):
+        print("|".join(totlines[i::maxrow]))
+
 
 def gapshifter(code:str, shift:float, inp:str, out:str="shifted.o", absolute:bool=True):
     """
