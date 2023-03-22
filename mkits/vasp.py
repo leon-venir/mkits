@@ -914,6 +914,11 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
                 :           born  ->  
                 :          elast  ->  
                 :             dp  -> 
+                :       aimd-nvt  -> 
+                :       aimd-npt  ->
+                :       aimd-nve  ->
+                :
+                :
                 :
     --potpath   : absolute path to the PP library and renames them as POTCAR_Ti
     --poscar    : poscar
@@ -929,6 +934,9 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
                 :                 ->  
                 :                 ->  
                 :                 ->  
+
+
+
     write       : create a folder containing all the necessary input files for VASP, a file 
                 : of cal_details, 
 
@@ -1083,7 +1091,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
             write_runsh(wdir+"/run.sh", cmd)
     
     # =================================================================================
-    # convergence test: conv_encut
+    # convergence test: conv_encut conv_kmesh
     # =================================================================================
     def dft_conv_encut(incar=incar):
         """ generate input files for encut convergence test """
@@ -1110,13 +1118,12 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         cmd += "mv OUTCAR OUTCAR_%s_encut$encut\n" % (dftgga)
         cmd += "mv OSZICAR OSZICAR_%s_encut$encut\n" % (dftgga)
         cmd += "mv vasprun.xml vasprun_%s_encut$encut.xml\n" % (dftgga)
-        cmd += "rm -f CHG CHGCAR WAVECAR POSCAR KPOINTS CONTCAR DOSCAR EIGENVAL INCAR REPORT vaspout.h5 XDATCAR\n"
+        cmd += "rm -f CHGCAR WAVECAR\n"
         cmd += "done\n"
+        cmd += "rm -f CHG POSCAR KPOINTS CONTCAR DOSCAR EIGENVAL INCAR REPORT vaspout.h5 XDATCAR\n"
         write_runsh(wdir+"/run.sh", cmd)
 
-    # =================================================================================
-    # convergence test: conv_kmesh
-    # =================================================================================
+
     def dft_conv_kmesh(incar=incar):
         """ generate input files for kmesh convergence test """
         incar.update(incar_scf)
@@ -1238,6 +1245,41 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
     def ml_heat(incar=incar):
         """ """
 
+
+    # =================================================================================
+    # AIMD NVT-NPT-NVE
+    # =================================================================================
+    def dft_nvt(incar=incar):
+        incar.update(incar_nvt)
+        update_incar(incar, params, incar_tag)
+        incar = ch_functional(incar)
+
+        vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.3, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_md")
+
+        dftgga = dft+"_"+gga
+        write_incar(incar, fpath=wdir, fname="INCAR_%s" % dftgga)
+        poscar.write_struct(fpath=wdir, fname="POSCAR_md_init")
+        
+        cmd = "# md nvt calculation\n"
+        cmd += "cp INCAR_%s INCAR\n" % dftgga
+        cmd += "cp POSCAR_md_init POSCAR\n"
+        cmd += "cp KPOINTS_md KPOINTS\n"
+        cmd += "for step in 1; do\n"
+        cmd += execode + "\n"
+        cmd += "mv OUTCAR OUTCAR_%s_$step\n" % dftgga
+        cmd += "mv vasprun.xml vasprun_%s_$step.xml\n" % dftgga
+        cmd += "mv XDATCAR XDATCAR_%s_$step\n" % dftgga
+        cmd += "mv OSZICAR OSZICAR_%s_$step\n" % dftgga
+        cmd += "mv REPORT REPORT_%s_$step\n" % dftgga
+        cmd += "mv PCDAT PCDAT_%s_$step\n" % dftgga
+        cmd += "cp CONTCAR CONTCAR_%s_$step\n" % dftgga
+        cmd += "mv CONTCAR POSCAR\n" 
+        cmd += "done\n"
+        cmd += "rm -f CHG KPOINTS DOSCAR EIGENVAL INCAR vaspout.h5\n"
+        write_runsh(wdir+"/run.sh", cmd)
+
+
+
     if dft == "scf":
         dft_scf()  
     elif dft == "opt":
@@ -1252,6 +1294,8 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         dft_dos()
     elif dft == "dp":
         dft_dp()
+    elif dft == "md-nvt":
+        dft_nvt()
     elif dft == "elecall":
         """ opt + scf + band + dos """
         vasp_gen_input(dft="opt", potpath=potpath, poscar=poscar, dryrun=False, wpath="./elecall", execode=execode, params=params)

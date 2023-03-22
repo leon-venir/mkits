@@ -99,10 +99,10 @@ incar_tag = ["ENCUT", "PREC", "ALGO", "IDIPOL", "ISMEAR", "SIGMA", "ISTART", "LO
 # :database vasp: VASP input tempelates ====================== #
 incar_glob = {
     "PREC": "Normal",
-    "ENCUT": "600",
+    "ENCUT": "500",
     "EDIFF": "1e-6",
-    "NCORE": "8",
-    "NELM": "150",
+    "NCORE": "16",
+    "NELM": "1000",
     "NELMIN": "5",
     "LMAXMIX": "2",
     "AMIX": "0.4 # for metals smaller 0.02, or try other value 0.1",
@@ -144,16 +144,23 @@ incar_band = {
     "SIGMA": "0.05", 
     "NBANDS": "set_your_own_value" 
 }
-incar_md = {
-    "MDALGO": "0",
+incar_nvt = {
+    "IBRION": "0",
+    "MDALGO": "2 # 1 Andersen 2 Nose-Hoover 3 Langevin 4 Multiple Andersen",
     "ISIF": "2",
     "SMASS": "1.0",
     "ISYM": "0",
     "ALGO": "FAST",
     "TEBEG": "300",
     "POTIM": "1.0",
+    "LREAL": "Auto",
     "NSW": "2000",
-    "NELMIN": "4"
+    "NELMIN": "4",
+    "LWAVE": ".FALSE.",
+    "LCHARG" : ".FALSE."
+}
+incar_nve = {
+    # To calculate an NVE_ensemble we recommend the user to use MDALGO=1 and ANDERSEN_PROB=0.0.
 }
 incar_ml_heat = {
     "ML_LMLFF": ".TRUE.",
