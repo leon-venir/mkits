@@ -102,7 +102,7 @@ incar_glob = {
     "ENCUT": "500",
     "EDIFF": "1e-6",
     "NCORE": "16",
-    "NELM": "1000",
+    "NELM": "5000",
     "NELMIN": "5",
     "LMAXMIX": "2",
     "AMIX": "0.4 # for metals smaller 0.02, or try other value 0.1",
@@ -199,10 +199,11 @@ incar_prop = {
     "born": {
         "#BORN": "effective charge with DFPT",
         "PREC": "Accurate",
+        "IBRION": "-1",
         "ISMEAR": "0",
         "SIGMA": "0.01",
         "EDIFF": "1.E-8",
-        "IBRION": "8",
+        "LREAL": ".FALSE.",
         "LEPSILON": ".TRUE."
     }
 }

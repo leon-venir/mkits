@@ -10,6 +10,7 @@ import math
 import sys
 
 """
+:func gnudata2numpy          : convert the data blocks of gnuplot to numpy readable
 :func progressbar            : draw processing bar
 :func center_array           : generate an array with specific center value, 
                                step and total number
@@ -33,6 +34,38 @@ import sys
 :class struct               : 
 :class struct_ase           : new class of structures based on ase library
 """
+
+
+def gnudata_split2numpy(gnufile:str, breakline:int=0):
+    """Return an array read from gnuplot data 
+
+    Parameters
+    ----------
+    gnufile: str
+        File name
+    breakline: int
+        line index from 1
+
+    Returns
+    -------
+    array
+        array with 
+    """
+    gnudata = np.loadtxt(gnufile)
+
+    #f len(gnudata)%breakline != 0:
+    #    lexit("Wrong size of the each data block.")
+    
+    gnudata_block_size = int(len(gnudata[:,0])/breakline)
+    gnudata_clumn_init = len(gnudata[0, :])
+
+    # reshape the array
+    gnudata = gnudata.reshape(gnudata_block_size, breakline, -1)
+    gnudata = gnudata.transpose(1,0,2).reshape(breakline,-1)
+    gnudata = np.delete(gnudata, np.s_[gnudata_clumn_init::gnudata_clumn_init], 1)
+
+    return gnudata
+
 
 
 def progressbar(total_step:int, current_step:int):

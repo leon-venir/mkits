@@ -1177,7 +1177,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         cmd += "cp WAVECAR_%s WAVECAR\n" % ("scf_"+gga)
         cmd += "cp CHGCAR_%s CHGCAR\n" % ("scf_"+gga)
         cmd += execode + "\n"
-        cmd += "cp vasprun.xml vasprun_%s.xml\n" % dftgga
+        cmd += "mv vasprun.xml vasprun_%s.xml\n" % dftgga
         write_runsh(wdir+"/run_band.sh", cmd)
     
     def dft_dos(incar=incar):
@@ -1244,7 +1244,6 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
     # =================================================================================
     def ml_heat(incar=incar):
         """ """
-
 
     # =================================================================================
     # AIMD NVT-NPT-NVE
@@ -1397,7 +1396,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         """calculate BORN effective charge with DFPT method"""
         incar.update(incar_glob)
         incar.update(incar_prop["born"])
-        update_incar(incar, params, ["ENCUT", "PREC", "EDIFF"])
+        update_incar(incar, params, incar_tag)
         incar = ch_functional(incar)
 
         vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.15, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_scf")
@@ -1411,8 +1410,8 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         cmd += "cp POSCAR_init POSCAR\n"
         cmd += "cp KPOINTS_scf KPOINTS\n"
         cmd += execode + "\n"
-        cmd += "cp OUTCAR OUTCAR_%s\n" % dftgga
-        cmd += "cp vasprun.xml vasprun_%s.xml\n" % dftgga
+        cmd += "mv OUTCAR OUTCAR_%s\n" % dftgga
+        cmd += "mv vasprun.xml vasprun_%s.xml\n" % dftgga
         write_runsh(wdir+"/run.sh", cmd)
         os.chmod(wdir+"/run.sh", 0o775)
 
