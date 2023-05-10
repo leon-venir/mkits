@@ -899,7 +899,7 @@ def update_incar(incar_dict, new_dict, new_key):
     return incar_dict
 
 
-def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath="./", execode="mpirun -np $SLURM_NTASKS vasp_std", params="gga=pbelda"):
+def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath="./", wname:str="none", execode="mpirun -np $SLURM_NTASKS vasp_std", params="gga=pbelda"):
     func_help = """
     generate inputs for vasp
     --dft       : optional   opt  ->  
@@ -923,7 +923,9 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
     --potpath   : absolute path to the PP library and renames them as POTCAR_Ti
     --poscar    : poscar
     --dryrun    : show this help
-    --wpath     : the working directory
+    --wpath     : the parent path containing the working diectory 
+    --wname     : The name of working folder. If specified, generate working
+                  direction with given name instead of default one.
     --param     : dft=any         ->  gga      = [pbelda, pbesol, hse06, hsesol, rev-vdW-DF2, 
                 :                 ->             optB88, optPBE]
                 :                 ->  oddeven  = [odd, even]
@@ -953,12 +955,9 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
     """
     if dryrun:
         print(func_help)
-        lexit(func_help)
+        exit()
     
     poscar = struct(poscar)
-    kspacing = 0.07
-    if wpath == "./": wpath = os.path.abspath("./")
-    wdir = wpath+"/"+dft+"/"
     val_electron = 0
     incar = {}
     
@@ -969,6 +968,11 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
     # global setting
     # =================================================================================
     # gen directory
+    if wpath == "./": 
+        wpath = os.path.abspath("./")
+    wdir = wpath+"/"+dft+"/"
+    if wname == "none":
+        wdir = wpath+"/"+wname+"/"
     if not os.path.exists(wpath):
         os.mkdir(wpath)
     if not os.path.exists(wdir):
