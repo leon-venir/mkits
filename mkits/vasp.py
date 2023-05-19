@@ -899,7 +899,7 @@ def update_incar(incar_dict, new_dict, new_key):
     return incar_dict
 
 
-def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath="./", wname:str="none", execode="mpirun -np $SLURM_NTASKS vasp_std", params="gga=pbelda"):
+def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath="./", wname:str="none", execode="srun --mpi=pmi2 vasp_std", params="gga=pbelda"):
     func_help = """
     generate inputs for vasp
     --dft       : optional   opt  ->  
@@ -971,7 +971,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
     if wpath == "./": 
         wpath = os.path.abspath("./")
     wdir = wpath+"/"+dft+"/"
-    if wname == "none":
+    if wname != "none":
         wdir = wpath+"/"+wname+"/"
     if not os.path.exists(wpath):
         os.mkdir(wpath)
