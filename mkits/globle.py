@@ -9,8 +9,11 @@ import os
 import math
 import sys
 
+
 """
-:func gnudata2numpy          : convert the data blocks of gnuplot to numpy readable
+:func parser_inputfile       : get input parameters from inputfile
+:func gnudata2numpy          : convert the data blocks of gnuplot to numpy 
+                               readable
 :func progressbar            : draw processing bar
 :func center_array           : generate an array with specific center value, 
                                step and total number
@@ -19,21 +22,84 @@ import sys
                                approximation, unit: m, J
 :func best_polyfit_range     : find best fit range
 :func globe_polyfit          : poly-fitting with numpy for r square
-:func klist_kpath            : convert a list of kpoints to a kpath in units of reciprocal of angstrom
-:func convert_3decimal_to_4 : convert 3 decimal numbers to 4 integer fraction: (0.625, 0.15625, 0.125) --> (4, 10, 8, 64)
-:func np_ployfit            : 
-:func round_even_odd        : round input varieties to nearest even number or odd number
-:func vector_angle          : calculate the angle between two vectors
-:func lattice_conversion    : convert lattice between cartesian vector and base vector
-:func parser_inputpara      : get input parameters from string and return a dictionary, eg, oddkpoints:Ture;key2:attrib2 -> {"oddkpoints": "Ture"}
-:parser_inputlines          : get input parameters from file and return a dictionary
-:func hstack_append_list    : append list2 to list1 in the horizontal direction despite of the equality of the length, [[1,2,3],[2,3,4]]+[[5,6,7],[6,7,8],[7,8,9]]->[[1, 2, 3, 5, 6, 7], [2, 3, 4, 6, 7, 8], [7, 8, 9]]
-:func listcross             : get cross product of two list, [a, b, c]*[1,2,3]=[a, b, b, c, c, c]
-:func frac2cart             :  
-:func cart2frac             : 
-:class struct               : 
-:class struct_ase           : new class of structures based on ase library
+:func klist_kpath            : convert a list of kpoints to a kpath in units of
+                               reciprocal of angstrom
+:func convert_3decimal_to_4  : convert 3 decimal numbers to 4 integer fraction: 
+                               (0.625, 0.15625, 0.125) --> (4, 10, 8, 64)
+:func np_ployfit             : 
+:func round_even_odd         : round input varieties to nearest even number or 
+                               odd number
+:func vector_angle           : calculate the angle between two vectors
+:func lattice_conversion     : convert lattice between cartesian vector and base
+                               vector
+:func parser_inputpara       : get input parameters from string and return a 
+                               dictionary, eg, oddkpoints:Ture;key2:attrib2 -> 
+                               {"oddkpoints": "Ture"}
+:parser_inputlines           : get input parameters from file and return a 
+                               dictionary
+:func hstack_append_list     : append list2 to list1 in the horizontal direction 
+                               despite of the equality of the length, 
+                               [[1,2,3],[2,3,4]]+[[5,6,7],[6,7,8],[7,8,9]]->
+                               [[1, 2, 3, 5, 6, 7], [2, 3, 4, 6, 7, 8], [7, 8, 9]]
+:func listcross              : get cross product of two list, 
+                               [a, b, c]*[1,2,3]=[a, b, b, c, c, c]
+:func frac2cart              :  
+:func cart2frac              : 
+:class struct                : 
+:class struct_ase            : new class of structures based on ase library
 """
+
+
+def parser_inputfile(inp, comment_sym="#", assign_sym="=", block=False):
+    """
+    Parameters
+    ----------
+    inp:str
+        the name of input file
+    style: str
+        option [keywords, block] 
+    comment_sym: str
+        comment symbol, default #
+    assign_sym: str
+        value assigned symbol
+    
+    Returns
+    -------
+    dictionary
+    """
+    keywords = {}
+
+    with open(inp, "r") as f:
+        lines = f.readlines()
+
+    if block:
+        pass
+    else:
+        blockoutlist = list(range(len(lines)))
+        
+    # delete comments and \n
+    for i in blockoutlist:
+        lines[i] = lines[i].strip()
+        try:
+            harshsym_index = lines[i].index(comment_sym)
+            lines[i] = lines[i][:harshsym_index]
+        except:
+            continue
+    
+    # delete blank line and find the keys - values
+    for i in blockoutlist:
+        if lines[i] == "\n":
+            blockoutlist.remove(i)
+        else:
+            try:
+                assign_sym_index = lines[i].index(assign_sym)
+                key = lines[i][:assign_sym_index].strip()
+                value = lines[i][assign_sym_index+1:].strip()
+                keywords[key] = value
+            except:
+                continue
+    
+    return keywords
 
 
 def gnudata_split2numpy(gnufile:str, breakline:int=0):
@@ -89,9 +155,13 @@ def center_array(center:float=1.0, step:float=0.005, total_num:int=5):
     """
     """
     if total_num%2 == 1:
-        return np.linspace(center-step*(total_num-1)/2, center+step*(total_num-1)/2, total_num, endpoint=True)
+        return np.linspace(center-step*(total_num-1)/2, 
+                           center+step*(total_num-1)/2, 
+                           total_num, endpoint=True)
     elif total_num % 2 == 0:
-        return np.linspace(center-step*total_num/2, center+step*(total_num-1)/2, total_num, endpoint=True)
+        return np.linspace(center-step*total_num/2, 
+                           center+step*(total_num-1)/2, 
+                           total_num, endpoint=True)
 
 
 def del_list_dupli_neighbor(inp_list:list):
@@ -107,11 +177,18 @@ def del_list_dupli_neighbor(inp_list:list):
 def carrier_mobility(cii, ed, T, dimension:str="3d"):
     """
     Calculate relaxation time based on Deformation Potential theory 
-    :param cii: elastic constants in Pa
-    :param effect_mass: effective mass 
-    :param ed: deformation potenital
-    :param T: temperature in K
-    :param dimension: [3d, 2d]
+    Parameters
+    ----------
+    cii: float
+        elastic constants in Pa
+    effect_mass: float
+        effective mass
+    ed: float 
+        deformation potenital
+    T: float
+        temperature in K
+    dimension: str
+        option [3d, 2d]
     """
     if dimension == "3d":
         mu = 2 * np.sqrt(2*np.pi) * cons_echarge * cons_hbar**4 * cii / (3 * cons_emass**(5/2) * (cons_kb*T)**(3/2) * ed**2)

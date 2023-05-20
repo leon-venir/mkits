@@ -930,6 +930,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
                 :                 ->             optB88, optPBE]
                 :                 ->  oddeven  = [odd, even]
                 :                 ->  kspacing = 0.15
+                :                 ->  charged  = -1
                 :                 ->  any tag in INCAR
                 : dft=opt         ->  mulisif  = 263
                 :                 ->  mulprec  = Low-Normal-Normal
@@ -1000,13 +1001,18 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         incar["LMAXMIX"] = "4"
     else:
         incar["LMAXMIX"] = "2"
+
+    # charged system with charged=-1 in parameters
+    if "charged" in params:
+        incar["NELECT"] = str(val_electron - int(params["charged"]))
     
     # write run.sh file and add x permission
     def write_runsh(runsh, cmd):
         with open(runsh, "a") as f:
             f.write(cmd)
         os.chmod(runsh, 0o775)
-    # 
+
+    # change gga functionals
     def ch_functional(incar, wdir=wdir):
         """change functional from parameters"""
         update_incar(incar, incar_functionals[gga], list(incar_functionals[gga].keys()))
