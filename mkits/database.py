@@ -99,10 +99,9 @@ incar_tag = ["ENCUT", "PREC", "ALGO", "IDIPOL", "ISMEAR", "SIGMA", "ISTART", "LO
 # :database vasp: VASP input tempelates ====================== #
 incar_glob = {
     "PREC": "Normal",
-    "ENCUT": "500",
     "EDIFF": "1e-6",
     "NCORE": "16",
-    "NELM": "5000",
+    "NELM": "1000",
     "NELMIN": "5",
     "LMAXMIX": "2",
     "AMIX": "0.4 # for metals smaller 0.02, or try other value 0.1",

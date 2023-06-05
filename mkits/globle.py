@@ -11,43 +11,143 @@ import sys
 
 
 """
-:func parser_inputfile       : get input parameters from inputfile
-:func gnudata2numpy          : convert the data blocks of gnuplot to numpy 
-                               readable
-:func progressbar            : draw processing bar
-:func center_array           : generate an array with specific center value, 
-                               step and total number
-:func del_list_dupli_neighbor: Removing neighboring duplicates in list
-:func effective_mass         : calculate effective mass based on parabolic band
-                               approximation, unit: m, J
-:func best_polyfit_range     : find best fit range
-:func globe_polyfit          : poly-fitting with numpy for r square
-:func klist_kpath            : convert a list of kpoints to a kpath in units of
-                               reciprocal of angstrom
-:func convert_3decimal_to_4  : convert 3 decimal numbers to 4 integer fraction: 
-                               (0.625, 0.15625, 0.125) --> (4, 10, 8, 64)
-:func np_ployfit             : 
-:func round_even_odd         : round input varieties to nearest even number or 
-                               odd number
-:func vector_angle           : calculate the angle between two vectors
-:func lattice_conversion     : convert lattice between cartesian vector and base
-                               vector
-:func parser_inputpara       : get input parameters from string and return a 
-                               dictionary, eg, oddkpoints:Ture;key2:attrib2 -> 
-                               {"oddkpoints": "Ture"}
-:parser_inputlines           : get input parameters from file and return a 
-                               dictionary
-:func hstack_append_list     : append list2 to list1 in the horizontal direction 
-                               despite of the equality of the length, 
-                               [[1,2,3],[2,3,4]]+[[5,6,7],[6,7,8],[7,8,9]]->
-                               [[1, 2, 3, 5, 6, 7], [2, 3, 4, 6, 7, 8], [7, 8, 9]]
-:func listcross              : get cross product of two list, 
-                               [a, b, c]*[1,2,3]=[a, b, b, c, c, c]
-:func frac2cart              :  
-:func cart2frac              : 
-:class struct                : 
-:class struct_ase            : new class of structures based on ase library
+Functional
+----------
+trans_reflection_xy:
+
+split_list:
+arithmetic_prog_split_even:
+    split the arithmetic progression into approximate equal part
+coord_trans_xy: 
+    coordinates translation in x-y plane
+coord_rotate_xy: 
+    coordinates rotation in x-y plane
+
+func parser_inputfile       : get input parameters from inputfile
+func gnudata2numpy          : convert the data blocks of gnuplot to numpy 
+                              readable
+func progressbar            : draw processing bar
+func center_array           : generate an array with specific center value, 
+                              step and total number
+func del_list_dupli_neighbor: Removing neighboring duplicates in list
+func effective_mass         : calculate effective mass based on parabolic band
+                              approximation, unit: m, J
+func best_polyfit_range     : find best fit range
+func globe_polyfit          : poly-fitting with numpy for r square
+func klist_kpath            : convert a list of kpoints to a kpath in units of
+                              reciprocal of angstrom
+func convert_3decimal_to_4  : convert 3 decimal numbers to 4 integer fraction: 
+                              (0.625, 0.15625, 0.125) --> (4, 10, 8, 64)
+func np_ployfit             : 
+func round_even_odd         : round input varieties to nearest even number or 
+                              odd number
+func vector_angle           : calculate the angle between two vectors
+func lattice_conversion     : convert lattice between cartesian vector and base
+                              vector
+func parser_inputpara       : get input parameters from string and return a 
+                              dictionary, eg, oddkpoints:Ture;key2:attrib2 -> 
+                              {"oddkpoints": "Ture"}
+parser_inputlines           : get input parameters from file and return a 
+                              dictionary
+func hstack_append_list     : append list2 to list1 in the horizontal direction 
+                              despite of the equality of the length, 
+                              [[1,2,3],[2,3,4]]+[[5,6,7],[6,7,8],[7,8,9]]->
+                              [[1, 2, 3, 5, 6, 7], [2, 3, 4, 6, 7, 8], [7, 8, 9]]
+func listcross              : get cross product of two list, 
+                              [a, b, c]*[1,2,3]=[a, b, b, c, c, c]
+func frac2cart              :  
+func cart2frac              : 
+class struct                : 
+class struct_ase            : new class of structures based on ase library
 """
+
+
+def trans_reflection_xy(vector, method, inp):
+    """
+    Parameters
+    ----------
+    vector: array
+        The original vector
+    method: str [2ps]
+        The form of reflection line
+        2ps: 2 points
+    inp: tuple
+        2ps: ([1, 0], [2,1])
+    Returns
+    -------
+        A reflected vector
+    """
+    reflected = np.array([0])
+    if method == "2ps":
+        point1 = np.array(inp[0])
+        point2 = np.array(inp[1])
+
+        p1p2xdiff = point1[0]-point2[0]
+        p1p2ydiff = point1[1]-point2[1]
+        if p1p2xdiff < 1e-8:
+            reflected = vector + np.array([-p1p2xdiff, 0])
+            reflected *= np.array([1,-1])
+            reflected += np.array([p1p2xdiff, 0])
+
+
+
+def split_list(a, n):
+    """
+
+    """
+    k, m = divmod(len(a), n)
+    return (a[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
+
+
+def arithmetic_prog_split_even(n):
+    """ 
+    Algorithm
+    ---------
+    20, 19, 18, ..., 3, 2, 1
+        |
+
+    \left\{\begin{matrix}
+        x_{10} = n \\ 
+        \frac{x_{1} + 0}{2} \frac{x_{1}}{d} \approx 
+        \frac{x_{2} + x_{1}}{2} \frac{x_{2} - x_{1}}{d} \approx 
+        \frac{x_{3} + x_{2}}{2} \frac{x_{3} - x_{2}}{d} \approx 
+        \frac{x_{4} + x_{3}}{2} \frac{x_{4} - x_{3}}{d} 
+    \end{matrix}\right.
+
+    Parameters
+    """
+
+
+def vector_trans_xy(vector, mv_vector):
+    """
+    Parameters
+    ----------
+    vector: array
+        The original vector
+    mv_vector: array
+        The translation vector
+    Returns
+    -------
+        A translated vector
+    """
+    return vector + mv_vector
+
+
+def vector_rotate_xy(vector, angle, clockwise=True):
+    """
+    Parameters
+    ----------
+    """
+    vx = np.array([])
+    if clockwise:
+        vx = np.array([[np.cos(angle), np.sin(angle), 0],
+                        [-np.sin(angle), np.cos(angle), 0],
+                        [0,0,1]])
+    else:
+        vx = np.array([[np.cos(angle), -np.sin(angle), 0],
+                        [np.sin(angle), np.cos(angle), 0],
+                        [0,0,1]])
+    return (vx @ vector.T).T
 
 
 def parser_inputfile(inp, comment_sym="#", assign_sym="=", block=False):
@@ -377,9 +477,16 @@ def round_even_odd(num, even_odd):
 def vector_angle(vector1, vector2, unit="deg"):
     """
     calculate the angle between two vectors
-    :param vector1  : array, vector1
-    :param vector2  : array, vector2
-    :param unit     : string, optional [rad, deg]
+    Parameters
+    ----------
+    vector1: array
+        The first vector
+    vector2: array
+        The second vector
+    unit:str
+        units, option [rad, deg]
+    Returns
+    -------
     """
     unit_vector1 = vector1 / np.linalg.norm(vector1)
     unit_vector2 = vector2 / np.linalg.norm(vector2)

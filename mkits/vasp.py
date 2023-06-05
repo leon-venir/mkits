@@ -899,7 +899,7 @@ def update_incar(incar_dict, new_dict, new_key):
     return incar_dict
 
 
-def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath="./", wname:str="none", execode="srun --mpi=pmi2 vasp_std", params="gga=pbelda"):
+def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath="./", wname:str="none", execode="srun --mpi=pmi2 vasp_std", params="gga=pbelda", **kwargs):
     func_help = """
     generate inputs for vasp
     --dft       : optional   opt  ->  
@@ -932,8 +932,8 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
                 :                 ->  kspacing = 0.15
                 :                 ->  charged  = -1
                 :                 ->  any tag in INCAR
-                : dft=opt         ->  mulisif  = 263
-                :                 ->  mulprec  = Low-Normal-Normal
+                : dft=opt         ->  mulisif  = 2/6/3
+                :                 ->  mulprec  = Low/Normal/Normal
                 :                 ->  
                 :                 ->  
                 :                 ->  
@@ -1018,6 +1018,38 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         update_incar(incar, incar_functionals[gga], list(incar_functionals[gga].keys()))
         return incar
     
+    # set GGA+U, need inputs from kwargs ["ggau"]
+    if "ggau" in params:
+        val_u = {}
+        val_j = {}
+        incar["# gga+u setting "] = " "
+        incar["LDAU"] = ".TRUE."
+        incar["LDAUTYPE"] = "2"
+        incar["LDAUL"] = ""
+        incar["LDAUU"] = ""
+        incar["LDAUJ"] = ""
+        try:
+            val_u = parser_inputpara(kwargs["ggau"])
+        except:
+            pass
+        try:
+            val_j = parser_inputpara(kwargs["ggaj"])
+        except:
+            pass
+        for atom in poscar.return_dict()["atoms_type"]:
+            if atom in val_u:
+                incar["LDAUL"] = incar["LDAUL"] + "  2"
+                incar["LDAUU"] = incar["LDAUU"] + "  " + val_u[atom]
+            else:
+                incar["LDAUL"] = incar["LDAUL"] + " -1"
+                incar["LDAUU"] = incar["LDAUU"] + "  0.00"
+            if atom in val_j:
+                incar["LDAUJ"] = incar["LDAUJ"] + "  " + val_j[atom]
+            else:
+                incar["LDAUJ"] = incar["LDAUJ"] + "  0.00"
+
+        
+    
     # =================================================================================
     # scf
     # =================================================================================
@@ -1052,36 +1084,83 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         update_incar(incar, params, incar_tag)
         incar = ch_functional(incar)
 
+        # enable WAVECAR
+        incar["LWAVE"] = ".TRUE."
+        incar["LCHARG"] = ".TRUE."
+
         # default ISIF = 3
         isif = {"ISIF": "3"}
         if "ISIF" in params:
             isif["ISIF"] = params["ISIF"]
 
-        vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.3, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_opt")
+        vasp_kpoints_gen(poscar.return_dict(), 
+                         kspacing=float(params["kmesh"]) if "kmesh" in params else 0.3, 
+                         kmesh=params["oddeven"] if "oddeven" in params else "odd", 
+                         fpath=wdir, 
+                         fname="KPOINTS_opt")
 
-        # for multi-isif
+        # for multi-isif: need inputs from kwargs: ["params2", "params3"]
         if "mulisif" in params:
-            if "mulprec" in params:
-                optprec = params["mulprec"].split("-")
-            else:
-                optprec = ["Normal"]*len(params["mulisif"])
-            for _ in range(len(params["mulisif"])):
-                incar["ISIF"] = params["mulisif"][_]
-                incar["PREC"] = optprec[_]
+            mulstep = len(params["mulisif"]) + 1
+            step = 1
+            
+            # write first inputs
+            update_incar(incar, isif, ["ISIF"])
+            isif_mem = incar["ISIF"]
+            write_incar(incar, 
+                        fpath=wdir, 
+                        fname="INCAR_%s_%s_isif%s_%d" \
+                               %(dft, gga, incar["ISIF"], step))
+            poscar.write_struct(fpath=wdir, 
+                                fname="POSCAR_opt_init")
+            dftgga = "%s_%s_isif%s" % (dft, gga, incar["ISIF"])
+            cmd = "# opt isif=%s calculation\n" % incar["ISIF"]
+            cmd += "cp POSCAR_opt_init POSCAR\n"
+            cmd += "cp KPOINTS_opt KPOINTS\n"
+            cmd += "for step in %d; do\n" % step
+            cmd += "cp INCAR_%s_$step INCAR\n" % dftgga
+            cmd += execode + "\n"
+            cmd += "mv OUTCAR OUTCAR_%s_$step\n" % dftgga
+            cmd += "mv vasprun.xml vasprun_%s_$step.xml\n" % dftgga
+            cmd += "mv XDATCAR XDATCAR_%s_$step\n" % dftgga
+            cmd += "mv OSZICAR OSZICAR_%s_$step\n" % dftgga
+            cmd += "cp CONTCAR CONTCAR_%s_$step\n" % dftgga
+            cmd += "mv CONTCAR POSCAR\n" 
+            cmd += "done\n"
+            write_runsh(wdir+"/run.sh", cmd)
 
-                dftgga = dft+str(_)+"_"+gga+"_isif"+params["mulisif"][_]
-                write_incar(incar, fpath=wdir, fname="INCAR_%s_%s_%s_isif%s" %(dftgga, str(_), gga, params["mulisif"][_]))
-                
-                cmd = "# opt %s isif=%s calculation\n" % (str(_), params["mulisif"][_])
-                cmd += "cp INCAR_%s_%s_%s_isif%s INCAR" % (dftgga, str(_), gga, params["mulisif"][_])
+            # write folowing steps
+            for step in range(2, mulstep):
+                params_tmp = parser_inputpara(kwargs["params%d" % step])
+                update_incar(incar, params_tmp, incar_tag)
+
+                write_incar(incar, 
+                        fpath=wdir, 
+                        fname="INCAR_%s_%s_isif%s_%d" \
+                               %(dft, gga, incar["ISIF"], step))
+            
+                dftgga = "%s_%s_isif%s" % (dft, gga, incar["ISIF"])
+                cmd = "# opt isif=%s calculation\n" % incar["ISIF"]
+                cmd += "cp CONTCAR_%s_%d POSCAR\n" % ("%s_%s_isif%s" % (dft, gga, isif_mem), step-1)
+                cmd += "for step in %d; do\n" % step
+                cmd += "cp INCAR_%s_$step INCAR\n" % dftgga
                 cmd += execode + "\n"
-                cmd += "cp OUTCAR OUTCAR_%s_%s_%s_isif%s\n" % (dftgga, str(_), gga, params["mulisif"][_])
-                cmd += "cp vasprun.xml vasprun_%s_%s_%s_isif%s.xml\n" % (dftgga, str(_), gga, params["mulisif"][_])
-                cmd += "cp CONTCAR POSCAR\n"
+                cmd += "mv OUTCAR OUTCAR_%s_$step\n" % dftgga
+                cmd += "mv vasprun.xml vasprun_%s_$step.xml\n" % dftgga
+                cmd += "mv XDATCAR XDATCAR_%s_$step\n" % dftgga
+                cmd += "mv OSZICAR OSZICAR_%s_$step\n" % dftgga
+                cmd += "cp CONTCAR CONTCAR_%s_$step\n" % dftgga
+                cmd += "mv CONTCAR POSCAR\n" 
+                cmd += "done\n"
                 write_runsh(wdir+"/run.sh", cmd)
+
+                isif_mem = incar["ISIF"]
+
         else:
             update_incar(incar, isif, ["ISIF"])
-            write_incar(incar, fpath=wdir, fname="INCAR_%s_%s_isif%s" %(dft, gga, isif["ISIF"]))
+            write_incar(incar, 
+                        fpath=wdir, 
+                        fname="INCAR_%s_%s_isif%s" %(dft, gga, isif["ISIF"]))
             poscar.write_struct(fpath=wdir, fname="POSCAR_opt_init")
             dftgga = dft+"_"+gga+"_isif"+isif["ISIF"]
             cmd = "# opt isif=%s calculation\n"
