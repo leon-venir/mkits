@@ -521,7 +521,11 @@ def carbontube(m:int=5, n:int=5, l:int=1, out:str="out", fmt:str="xyz", **kwargs
             pass
 
 
-def ngt_til():
+def ngt_til(pattern_square, pattern_triangle, pattern_rhombus):
+    """
+    Parameters
+    ----------
+    """
     ngt_tiling = canvas(pattern_square)
     ngt_tiling.add_pattern(pattern_triangle, 1)
     ngt_tiling.add_pattern(pattern_triangle, 2)
