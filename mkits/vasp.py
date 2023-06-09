@@ -7,6 +7,8 @@ import ase.io
 import ase.geometry
 import ase.dft.kpoints
 import subprocess
+import shutil
+from copy import deepcopy
 from mkits.globle import *
 from mkits.sysfc import *
 from mkits.database import *
@@ -983,11 +985,11 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
     if os.path.exists(wdir+"/POTCAR"):
         os.remove(wdir+"/POTCAR")
     potcar_lines = []
-    for _ in range(len(poscar.return_dict()["atoms_type"])):
+    for _ in range(len(poscar.atom_type)):
         atom = poscar.return_dict()["atoms_type"][_]
         with open("%s/POTCAR_%s" %(potpath, atom)) as f:
             lines = f.readlines()
-        val_electron += float(lines[1][:-1])*poscar.return_dict()["atoms_num"][_]
+        val_electron += float(lines[1][:-1])* poscar.atom_num[_]
         potcar_lines += lines
     with open(wdir+"/POTCAR", "w") as f:
         f.writelines(potcar_lines)
@@ -1047,8 +1049,42 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
                 incar["LDAUJ"] = incar["LDAUJ"] + "  " + val_j[atom]
             else:
                 incar["LDAUJ"] = incar["LDAUJ"] + "  0.00"
+    
+    # copy vdw kernel to working folder
+    if params["gga"] in ["rev-vdW-DF2", "optB88", "optPBE"]:
+        try:
+            path2vdw = kwargs["vdw_kernel_path"]
+            shutil.copy(path2vdw, wdir)
+        except:
+            print("""Cannot find the vdw kernel, remember to copy it to the 
+            working folder. Or you can enable the path to the file with 
+            vdw_kernel=/path/to/vdw_kernel""")
+    
+    # nbands, specify the NBANDS based on the valence electrons
+    try:
+        nbands = kwargs["nbands"]
+        if nbands > 4 or nbands <=0:
+            print("""The number of bands typically out of reasonable range.
+            I hope you know what you are doing!""")
+        incar["NBANDS"] = str(int(val_electron * float(nbands)))
+        params["NBANDS"] = incar["NBANDS"]
+    except:
+        pass
 
-        
+    # select the dynamic atoms
+    if "dynrange" in kwargs.keys():
+        selec_dyn = kwargs["dynrange"]
+        selec_dyn = parser_inputpara(selec_dyn)
+        dynrange = {"xmin": -1e8, "ymin": -1e8, "zmin": -1e8,
+                    "xmax": 1e8,  "ymax": 1e8,  "zmax": 1e8}
+        for key in selec_dyn.keys():
+            dynrange[key] = float(selec_dyn[key])
+        poscar.add_dyn(xmin=dynrange["xmin"],
+                       xmax=dynrange["xmax"],
+                       ymin=dynrange["ymin"],
+                       ymax=dynrange["ymax"],
+                       zmin=dynrange["zmin"],
+                       zmax=dynrange["zmax"])
     
     # =================================================================================
     # scf
@@ -1341,30 +1377,61 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         incar.update(incar_nvt)
         update_incar(incar, params, incar_tag)
         incar = ch_functional(incar)
-
-        vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.3, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_md")
-
-        dftgga = dft+"_"+gga
-        write_incar(incar, fpath=wdir, fname="INCAR_%s" % dftgga)
-        poscar.write_struct(fpath=wdir, fname="POSCAR_md_init")
         
-        cmd = "# md nvt calculation\n"
-        cmd += "cp INCAR_%s INCAR\n" % dftgga
-        cmd += "cp POSCAR_md_init POSCAR\n"
-        cmd += "cp KPOINTS_md KPOINTS\n"
-        cmd += "for step in 1; do\n"
-        cmd += execode + "\n"
-        cmd += "mv OUTCAR OUTCAR_%s_$step\n" % dftgga
-        cmd += "mv vasprun.xml vasprun_%s_$step.xml\n" % dftgga
-        cmd += "mv XDATCAR XDATCAR_%s_$step\n" % dftgga
-        cmd += "mv OSZICAR OSZICAR_%s_$step\n" % dftgga
-        cmd += "mv REPORT REPORT_%s_$step\n" % dftgga
-        cmd += "mv PCDAT PCDAT_%s_$step\n" % dftgga
-        cmd += "cp CONTCAR CONTCAR_%s_$step\n" % dftgga
-        cmd += "mv CONTCAR POSCAR\n" 
-        cmd += "done\n"
-        cmd += "rm -f CHG KPOINTS DOSCAR EIGENVAL INCAR vaspout.h5\n"
-        write_runsh(wdir+"/run.sh", cmd)
+        poscar.write_struct(fpath=wdir, fname="POSCAR_md_init")
+
+        vasp_kpoints_gen(poscar.return_dict(),
+                         kspacing=float(params["kmesh"]) \
+                            if "kmesh" in params \
+                            else 0.3, 
+                         kmesh=params["oddeven"] \
+                            if "oddeven" in params else "odd", 
+                         fpath=wdir, 
+                         fname="KPOINTS_md")
+        
+        if "mulmd" not in params:
+            dftgga = dft+"_"+gga
+            write_incar(incar, 
+                        fpath=wdir, 
+                        fname="INCAR_%s" % dftgga)
+            
+            cmd = "# md nvt calculation\n"
+            cmd += "cp INCAR_%s INCAR\n" % dftgga
+            cmd += "cp POSCAR_md_init POSCAR\n"
+            cmd += "cp KPOINTS_md KPOINTS\n"
+            cmd += "for step in 1; do\n"
+            cmd += execode + "\n"
+            cmd += "mv OUTCAR OUTCAR_%s_$step\n" % dftgga
+            cmd += "mv vasprun.xml vasprun_%s_$step.xml\n" % dftgga
+            cmd += "mv XDATCAR XDATCAR_%s_$step\n" % dftgga
+            cmd += "mv OSZICAR OSZICAR_%s_$step\n" % dftgga
+            cmd += "mv REPORT REPORT_%s_$step\n" % dftgga
+            cmd += "mv PCDAT PCDAT_%s_$step\n" % dftgga
+            cmd += "cp CONTCAR CONTCAR_%s_$step\n" % dftgga
+            cmd += "mv CONTCAR POSCAR\n" 
+            cmd += "done\n"
+            cmd += "rm -f CHG KPOINTS DOSCAR EIGENVAL INCAR vaspout.h5\n"
+            write_runsh(wdir+"/run.sh", cmd)
+
+        else:
+            for step in range(1, int(params["mulmd"])+1):
+                incar_tmp = deepcopy(incar)
+                params_tmp = parser_inputpara(kwargs["params%d" % step])
+                update_incar(incar_tmp, params_tmp, incar_tag)
+                write_incar(incar_tmp, fpath=wdir, fname="INCAR_%d" % step)
+
+                cmd = "# md nvt calculation step %d\n" % step
+                cmd += "cp INCAR_%d INCAR\n" % step
+                if step == 1:
+                    cmd += "cp POSCAR_md_init POSCAR\n"
+                else:
+                    cmd += "cp CONTCAR_%d POSCAR\n" % (step - 1)
+                cmd += "cp KPOINTS_md KPOINTS\n"
+                cmd += execode + "\n"
+                cmd += savevaspsh(["OUTCAR", "XDATCAR", "OSZICAR", "REPORT", \
+                                   "PCDAT", "CONTCAR"],
+                                  str(step))
+                write_runsh(wdir+"/run_%d.sh" % step, cmd)
 
 
 
@@ -1542,6 +1609,22 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
     # =================================================================================
     # finalizing
     # =================================================================================
+
+
+def savevaspsh(savelist, savelabel):
+    """
+    Write a bash scripts to save the vasp files with provided labels.
+    Parameters
+    ----------
+    Return
+    ------
+    String 
+    """
+    savestring = ""
+    
+    for i in savelist:
+        savestring += """mv %s %s_%s\n""" % (i, i, savelabel)
+    return savestring
 
 
 def struct_diff(structname1, structname2):

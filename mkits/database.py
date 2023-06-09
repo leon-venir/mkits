@@ -71,9 +71,29 @@ qe_dos_block = {
     "emax": "35"
 }
 
-qe_control_key = ["calculation", "title", "verbosity", "restart_mode", "wf_collect", "nstep", "iprint", "tstress", "tprnfor", "dt", "outdir", "wfcdir", "prefix", "lkpoint_dir", "max_seconds", "etot_conv_thr", "forc_conv_thr", "disk_io", "pseudo_dir", "tefield", "dipfield", "lelfield", "nberrycyc", "lorbm", "lberry", "gdir", "nppstr", "gate", "lfcp", "trism"]
+qe_control_key = ["calculation", "title", "verbosity", "restart_mode", 
+                  "wf_collect", "nstep", "iprint", "tstress", "tprnfor", "dt", 
+                  "outdir", "wfcdir", "prefix", "lkpoint_dir", "max_seconds", 
+                  "etot_conv_thr", "forc_conv_thr", "disk_io", "pseudo_dir", 
+                  "tefield", "dipfield", "lelfield", "nberrycyc", "lorbm", 
+                  "lberry", "gdir", "nppstr", "gate", "lfcp", "trism"]
 
-qe_system_key = ["ibrav", "celldm", "A", "B", "C", "cosAB", "cosAC", "cosBC", "nat", "ntyp", "nbnd", "tot_charge", "starting_charge", "tot_magnetization", "starting_magnetization", "ecutwfc", "ecutrho", "ecutfock", "nr1", "nr2", "nr3", "nr1s", "nr2s", "nr3s", "nosym", "nosym_evc", "noinv", "no_t_rev", "force_symmorphic", "use_all_frac", "occupations", "one_atom_occupations", "starting_spin_angle", "degauss", "smearing", "nspin", "noncolin", "ecfixed", "qcutz", "q2sigma", "input_dft", "ace", "exx_fraction", "screening_parameter", "exxdiv_treatment", "x_gamma_extrapolation", "ecutvcut", "nqx1", "nqx2", "nqx3", "localization_thr", "Hubbard_occ", "Hubbard_alpha", "Hubbard_beta", "starting_ns_eigenvalue", "dmft", "dmft_prefix", "ensemble_energies", "edir", "emaxpos", "eopreg", "eamp", "angle1", "angle2", "lforcet", "constrained_magnetization", "fixed_magnetization", "lambda", "report", "lspinorb", "assume_isolated", "esm_bc", "esm_w", "esm_efield", "esm_nfit", "lgcscf", "gcscf_mu", "gcscf_conv_thr", "gcscf_beta", "vdw_corr", "london", "london_s6", "london_c6", "london_rvdw", "london_rcut", "dftd3_version", "dftd3_threebody", "ts_vdw_econv_thr", "ts_vdw_isolated", "xdm", "xdm_a1", "xdm_a2", "space_group", "uniqueb", "origin_choice", "rhombohedral", "zgate", "relaxz", "block", "block_1", "block_2", "block_height"]
+qe_system_key = ["ibrav", "celldm", "A", "B", "C", "cosAB", "cosAC", "cosBC", 
+                 "nat", "ntyp", "nbnd", "tot_charge", "starting_charge", 
+                 "tot_magnetization", "starting_magnetization", "ecutwfc", 
+                 "ecutrho", "ecutfock", "nr1", "nr2", "nr3", "nr1s", "nr2s", 
+                 "nr3s", "nosym", "nosym_evc", "noinv", "no_t_rev", 
+                 "force_symmorphic", "use_all_frac", "occupations", 
+                 "one_atom_occupations", "starting_spin_angle", "degauss", 
+                 "smearing", "nspin", "noncolin", "ecfixed", "qcutz", 
+                 "q2sigma", "input_dft", "ace", "exx_fraction", 
+                 "screening_parameter", "exxdiv_treatment", 
+                 "x_gamma_extrapolation", "ecutvcut", "nqx1", "nqx2", "nqx3", 
+                 "localization_thr", "Hubbard_occ", "Hubbard_alpha", 
+                 "Hubbard_beta", "starting_ns_eigenvalue", "dmft", 
+                 "dmft_prefix", "ensemble_energies", "edir", "emaxpos", 
+                 "eopreg", "eamp", "angle1", "angle2", "lforcet", 
+                 "constrained_magnetization", "fixed_magnetization", "lambda", "report", "lspinorb", "assume_isolated", "esm_bc", "esm_w", "esm_efield", "esm_nfit", "lgcscf", "gcscf_mu", "gcscf_conv_thr", "gcscf_beta", "vdw_corr", "london", "london_s6", "london_c6", "london_rvdw", "london_rcut", "dftd3_version", "dftd3_threebody", "ts_vdw_econv_thr", "ts_vdw_isolated", "xdm", "xdm_a1", "xdm_a2", "space_group", "uniqueb", "origin_choice", "rhombohedral", "zgate", "relaxz", "block", "block_1", "block_2", "block_height"]
 
 qe_electrons_key = ["electron_maxstep", "scf_must_converge", "conv_thr", "adaptive_thr", "conv_thr_init", "conv_thr_multi", "mixing_mode", "mixing_beta", "mixing_ndim", "mixing_fixed_ns", "diagonalization", "diago_thr_init", "diago_cg_maxiter", "diago_ppcg_maxiter", "diago_david_ndim", "diago_rmm_ndim", "diago_rmm_conv", "diago_gs_nblock", "diago_full_acc", "efield", "efield_cart", "efield_phase", "startingpot", "startingwfc", "tqr", "real_space"]
 
@@ -83,8 +103,9 @@ qe_cell_key = ["cell_dynamics", "press", "wmass", "cell_factor", "press_conv_thr
 
 
 # :database vasp: VASP input tag ====================== #
-incar_tag = ["ENCUT", "PREC", "ALGO", "IDIPOL", "ISMEAR", "SIGMA", "ISTART", "LORBIT", "NELM", "LDIPOL", 
-             "LVTOT", "LWAVE", "LREAL", "AMIX", "BMIX", "NCORE", "ISIF", "NELECT", "IOPTCELL",
+incar_tag = ["ENCUT", "PREC", "ALGO", "IDIPOL", "ISMEAR", "SIGMA", "ISTART", 
+             "LORBIT", "NELM", "LDIPOL", "LVTOT", "LWAVE", "LREAL", "AMIX", 
+             "BMIX", "NCORE", "ISIF", "NELECT", "IOPTCELL",
             # DFT+U
             "LDAU", "LDAUTYPE", "LDAUL", "LDAUU", "LDAUJ", "LDAUPRINT", 
             # spin
@@ -92,7 +113,11 @@ incar_tag = ["ENCUT", "PREC", "ALGO", "IDIPOL", "ISMEAR", "SIGMA", "ISTART", "LO
             # so
             "LNONCOLLINEAR", "VOSKOWN", "LSORBIT", "SAXIS", "NBANDS",
             # opt
-            "EDIFF", "EDIFFG", "NSW"
+            "EDIFF", "EDIFFG", "NSW",
+            # md
+            "TEBEG", "TEEND", "SMASS",
+            # sym
+            "ISYM"
             ]
 
 
@@ -151,6 +176,7 @@ incar_nvt = {
     "ISYM": "0",
     "ALGO": "FAST",
     "TEBEG": "300",
+    "TEEND": "300",
     "POTIM": "1.0",
     "LREAL": "Auto",
     "NSW": "2000",

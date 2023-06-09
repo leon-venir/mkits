@@ -5,10 +5,7 @@ import numpy as np
 from mkits.globle import *
 import matplotlib.pyplot as plt
 from shapely.geometry import Point, Polygon
-try:
-    import cv2 as cv
-except:
-    print("Cannot find OpenCV module")
+
 
 """
 Class
@@ -18,13 +15,29 @@ canvas:
 
 Functions
 ---------
+stack_struct:
+    stack 
 ngt_tiling:
     The NGT ideal tiling canvas.
 carbontube:
     The builder of carbon nanotube.
+
 """
 
-    
+
+def stack_struct(substrate, support, distance=1.7, vacuum=15):
+    """ 
+    """
+    zmin = support.positions[:, 2].min()
+    zmax = substrate.positions[:, 2].max()
+    support.positions += (0, 0, zmax - zmin + distance)
+    c = support.positions[:, 2].max()
+    interface = substrate + support
+    interface.set_cell([interface.get_cell()[0][0], 
+                        interface.get_cell()[1][1], c])
+    ase.build.add_vacuum(interface, vacuum)
+    return interface
+
 class canvas(object):
     """
 
