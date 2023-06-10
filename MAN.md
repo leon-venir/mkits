@@ -46,9 +46,16 @@ This is a function to generate VASP input files.
 ```kwargs```
 
 1. ```vdw_kernel_path```
+   
    The path to the file of Van de Waals kernel table, which is copied to the calculation folder if enable the vdw corrections. 
 
 2. ```nbands``` 
+   
    Specify the number of the bands, which is identical to NBANDS in --params. But the input value provided here is the multiple of the valence electrons. The default variable is 0.5 for non-spin orbit coupling calculation. 
 
-3. ``` ```
+3. ```dynrange``` 
+   
+   Available variables xmin, xmax, ymin, ymax, zmin, zmax.
+   eg: dynrange="zmin=0,zmax=0.5"
+
+4. ``` ```

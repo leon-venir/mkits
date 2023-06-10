@@ -47,6 +47,19 @@ class canvas(object):
         """
         Parameters
         ----------
+        pattern
+            square_pos = np.loadtxt("./square.xyz", 
+                                    skiprows=2, 
+                                    usecols=[1,2,3])
+            square_atom = np.loadtxt("./square.xyz", 
+                                     skiprows=2, 
+                                     usecols=[0], 
+                                     dtype='str')
+            pattern_square = {
+                "corner": 4,
+                "coord": square_pos,
+                "atoms": square_atom
+            }
 
         Attributes
         ----------
@@ -324,7 +337,7 @@ class canvas(object):
                                            edge_coordinates_reflected))
         self.coord = np.vstack((self.coord, coord_reflected))
     
-    def build_crystal(self, out, vacuum, a_index, b_index, fmt="vasp"):
+    def build_crystal(self, out, vacuum, a_index, b_index, fmt="vasp", sort=True):
         """
         Parameters
         ----------
@@ -381,6 +394,10 @@ class canvas(object):
         self.atom = np.delete(self.atom, list(set(toocloseatom)))
         self.coord = np.delete(self.coord, list(set(toocloseatom)), axis=0)
 
+        # sort the atoms
+        if sort:
+            self.sort_atom()
+
         # ase atoms
         cell = ase.Atoms(self.atom, 
                          positions=self.coord.tolist(), 
@@ -391,10 +408,14 @@ class canvas(object):
         self.export_value["crystal_lattice_a"] = vector_a
         self.export_value["crystal_lattice_b"] = vector_b
         
-        if fmt == "vasp":
-            ase.io.write(out, cell, format="vasp")
-        elif fmt == "cif":
-            ase.io.write(out, cell, format="cif")
+        ase.io.write(out, cell, format=fmt)
+    
+    def sort_atom(self):
+        """ """
+        atom_index = np.array([symbol_map[_] for _ in self.atom])
+        atom_index = np.argsort(atom_index)
+        self.atom = np.array(self.atom)[atom_index]
+        self.coord = self.coord[atom_index]
         
     def export_val(self):
         """ 
