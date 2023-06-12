@@ -33,8 +33,9 @@ def stack_struct(substrate, support, distance=1.7, vacuum=15):
     support.positions += (0, 0, zmax - zmin + distance)
     c = support.positions[:, 2].max()
     interface = substrate + support
-    interface.set_cell([interface.get_cell()[0][0], 
-                        interface.get_cell()[1][1], c])
+    interface.set_cell([interface.get_cell()[0].tolist(),
+                        interface.get_cell()[1].tolist(), 
+                        [0, 0, c]])
     ase.build.add_vacuum(interface, vacuum)
     return interface
 

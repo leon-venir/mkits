@@ -20,7 +20,7 @@ setup(
     entry_points={"console_scripts": ["mkits = mkits.main:mkits_main"]},
     
     install_requires=[
-        "spglib", "numpy", "ase", "pandas"
+        "spglib", "numpy", "ase", "pandas", "shapely"
     ],
     python_requires=">=3.5",
     url="https://github.com/leon-venir/mkits",

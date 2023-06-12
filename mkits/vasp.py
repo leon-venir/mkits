@@ -1134,6 +1134,8 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
                          kmesh=params["oddeven"] if "oddeven" in params else "odd", 
                          fpath=wdir, 
                          fname="KPOINTS_opt")
+        
+        poscar.write_struct(fpath=wdir, fname="POSCAR_opt_init")
 
         # for multi-isif: need inputs from kwargs: ["params2", "params3"]
         if "mulisif" in params:
@@ -1156,14 +1158,11 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
             cmd += "for step in %d; do\n" % step
             cmd += "cp INCAR_%s_$step INCAR\n" % dftgga
             cmd += execode + "\n"
-            cmd += "mv OUTCAR OUTCAR_%s_$step\n" % dftgga
-            cmd += "mv vasprun.xml vasprun_%s_$step.xml\n" % dftgga
-            cmd += "mv XDATCAR XDATCAR_%s_$step\n" % dftgga
-            cmd += "mv OSZICAR OSZICAR_%s_$step\n" % dftgga
-            cmd += "cp CONTCAR CONTCAR_%s_$step\n" % dftgga
-            cmd += "mv CONTCAR POSCAR\n" 
+            cmd += savevaspsh(["OUTCAR", "XDATCAR", "OSZICAR", "REPORT", \
+                               "PCDAT", "CONTCAR"],
+                               dftgga)
             cmd += "done\n"
-            write_runsh(wdir+"/run.sh", cmd)
+            write_runsh(wdir+"/run_%d.sh" % step, cmd)
 
             # write folowing steps
             for step in range(2, mulstep):
@@ -1188,7 +1187,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
                 cmd += "cp CONTCAR CONTCAR_%s_$step\n" % dftgga
                 cmd += "mv CONTCAR POSCAR\n" 
                 cmd += "done\n"
-                write_runsh(wdir+"/run.sh", cmd)
+                write_runsh(wdir+"/run_%d.sh" % step, cmd)
 
                 isif_mem = incar["ISIF"]
 
