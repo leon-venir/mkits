@@ -707,6 +707,11 @@ class struct(object):
 
     Attributs
     ---------
+    nearest_neighbor, array
+        The list of 5 nearest neighbor and their distance
+        [[atom1, neighbor1, distance_to_neighbor1, neighbor2, dis...],
+         [atom2, neighbor1, distance_to_neighbor1, neighbor2, dis...],
+         ...]]
     struct_dict
         A dictionary 
     
@@ -732,6 +737,7 @@ class struct(object):
         self.atom_num = np.array([])
         self.atom_type = []
         self.atom_index = []
+        self.nearest_neighbor = np.array([])
         try:
             if type(inp) == dict:
                 self.struct_dict = inp              
@@ -748,6 +754,7 @@ class struct(object):
         except:
             lexit("Cannot find the structure file: ", inp)
         self.atoms_sequence = listcross(self.atom_type, self.atom_num)
+        self.find_neighbor()
 
     def __repr__(self) -> str:
         """"""
@@ -755,6 +762,28 @@ class struct(object):
         pringinfo = "This is a Class containing structures information:\n"
         pringinfo += "Lattice direct: {}\n".format(struct_dict["lattice"])
         return pringinfo
+    
+    def find_neighbor(self):
+        """ """
+        neighbor_num = min(5, self.total_atom_num-1)
+        self.nearest_neighbor = np.zeros(neighbor_num*2+1)
+
+        for i in range(self.total_atom_num):
+            distance = np.array([])
+            for j in range(self.total_atom_num):
+                if i != j:
+                    distance = np.append(distance, 
+                                         np.linalg.norm(self.coord_cart[i]-self.coord_cart[j]))
+                else:
+                    distance = np.append(distance, 1e8)
+            distance_sort = np.argsort(distance)
+
+            distance_tmp = np.array([i])
+            for j in range(neighbor_num):
+                distance_tmp = np.append(distance_tmp, distance_sort[j])
+                distance_tmp = np.append(distance_tmp, distance[distance_sort[j]])
+
+            self.nearest_neighbor = np.vstack((self.nearest_neighbor, distance_tmp))
     
     def return_dict(self):
         struct_dict = {}

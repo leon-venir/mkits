@@ -15,6 +15,8 @@ canvas:
 
 Functions
 ---------
+refine_struct:
+    Refine the structures
 stack_struct:
     stack 
 ngt_tiling:

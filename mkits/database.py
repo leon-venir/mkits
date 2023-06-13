@@ -28,6 +28,22 @@ uc_d2a = np.pi/180 # degree to radian
 :database 
 """
 
+
+# :database bond length
+bond_length = {
+    "Sr-O": 2.6,
+    "Ti-O": 1.93
+}
+rev_bond = {}
+for key in bond_length.keys():
+    atom1, atom2 = key.split("-")
+    rev_pair = "%s-%s" %(atom2, atom1)
+    if rev_pair not in bond_length.keys():
+        rev_bond[rev_pair] = bond_length[key]
+bond_length.update(rev_bond)
+del(rev_bond)
+
+
 # :database quantum: VASP input tempelates ====================== #
 qe_control_block = {
     "calculation": '"scf"',
