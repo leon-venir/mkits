@@ -1158,13 +1158,11 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
             cmd = "# opt step %d\n" % step
             cmd += "cp POSCAR_opt_init POSCAR\n"
             cmd += "cp KPOINTS_opt KPOINTS\n"
-            cmd += "for step in %d; do\n" % step
-            cmd += "cp INCAR_%s_$step INCAR\n" % dft
+            cmd += "cp INCAR_%s_%d INCAR\n" % (dft, step)
             cmd += execode + "\n"
             cmd += savevaspsh(["OUTCAR", "XDATCAR", "OSZICAR", "REPORT", \
                                "PCDAT", "CONTCAR", "vasprun.xml"],
-                               dft)
-            cmd += "done\n"
+                               dft+"_"+str(step))
             write_runsh(wdir+"/run_%d.sh" % step, cmd)
 
             # write folowing steps
@@ -1174,17 +1172,16 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
 
                 write_incar(incar, 
                         fpath=wdir, 
-                        fname="INCAR_%s_%s_isif%s_%d" %(dft, step))
+                        fname="INCAR_%s_%d" % (dft, step))
             
                 cmd = "# opt step %d\n" % step
                 cmd += "cp CONTCAR_%s_%d POSCAR\n" % (dft, step-1)
-                cmd += "for step in %d; do\n" % step
-                cmd += "cp INCAR_%s_$step INCAR\n" % dft
+                cmd += "cp INCAR_%s_%d INCAR\n" % (dft, step)
+                cmd += "cp KPOINTS_opt KPOINTS\n"
                 cmd += execode + "\n"
                 cmd += savevaspsh(["OUTCAR", "XDATCAR", "OSZICAR", "REPORT", \
                                    "PCDAT", "CONTCAR", "vasprun.xml"],
-                                   dft)
-                cmd += "done\n"
+                                   dft+"_"+str(step))
                 write_runsh(wdir+"/run_%d.sh" % step, cmd)
 
         else:
