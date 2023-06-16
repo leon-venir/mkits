@@ -1,0 +1,18 @@
+Metadata-Version: 2.1
+Name: mkits
+Version: 0.87
+Summary: multi-DFT codes assistant program.
+Home-page: https://github.com/leon-venir/mkits
+Download-URL: https://github.com/leon-venir/mkits
+Author: Leon Ma
+Author-email: blustery.med@hotmail.com
+License: GPLv3+
+Keywords: DFT code assistant
+Classifier: Development Status :: 2 - Pre-Alpha
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Topic :: Scientific/Engineering :: Physics
+Requires-Python: >=3.5
+License-File: LICENSE
+
+mkits is a python written tool containing many helpful initial- or post-processing commands for some popular first-principles calculation codes.
+    

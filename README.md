@@ -1,8 +1,8 @@
-## welcome to my DFT kits: mkits
+### welcome to my DFT kits: mkits
 
 mkits is a python written tool containing many helpful initial- or post-processing commands for some popular first-principles calculation codes.
 
-# 1. installation
+## 1. installation
 
 + install from pip
   ```
@@ -17,11 +17,55 @@ mkits is a python written tool containing many helpful initial- or post-processi
   pip3 install dist/thebuild.whl
   ```
 
+## 2. New features
 
- # 2. available functionals
++ build quasi-crystalline structures with NGT tiling June 16<sup>rd</sup> 2023
+  
+  A new class of NGT canvas has been added to builder.py, which can be used to generate different tiling based on provided patterns. A pattern can be defined with a xyz structure file:
+  ```
+  8
+  rhombus
+  Sr      0.000000000000000      0.000000000000000      0.570133113075200
+  Sr      6.700000001664639      0.000000000000000      0.570133113075200
+  Sr     12.502370208508770      3.350000000832320      0.570133113075200
+  Sr      5.802370206844132      3.350000000832320      0.570133113075200
+  Ti      3.720469533952320      0.811662040359627      0.000000000000000
+  Ti      9.000535361468776      2.349738153970408      0.000000000000000
+  O       5.085002927088206      1.225916194572862      0.944989785403200
+  O       7.634468076562175      2.039944845316493      0.944989785403200
+
+  ```
+
+  Here are three examples of patterns with different shapes (rhombus, square and triangle):
+
+  <p float="left">
+    <img src="./example/builder/pattern.png" height="90" />
+  </p>
+
+  By using three patterns, a simple tiling from Cockayne-σ model can be plotted and the red dash lines indicate the boder of crystals. 
+
+  <p float="left">
+    <img src="./example/builder/sigma_tiling.png" height="190" />
+    <img src="./example/builder/sigma_film.png" height="200" />
+  </p>
+
+  Then we can try to generate whole NGT tiling and truncate crystals from it:
+
+  <p float="left">
+    <img src="./example/builder/ngt_tling.gif" height="400" />
+  </p>
+  
+  The next target is try to recognize the target tiling automatically and plot the canvas.
+
++ nanotube builder May 23<sup>rd</sup> 2023
+
+
+ ## 3. available functionals
  
  ```
  mkits: my DFT helper
+ |
+ |----builder
  |
  |----vasp_init 
  |        |--------param            : additional parameters
@@ -80,42 +124,3 @@ mkits is a python written tool containing many helpful initial- or post-processi
  |        |--------findex           : specify the index
  |        |--------params           : additional parameters
  ```
-
-
-# 3. release history
-
-+ version 0.5 (September 14th 2022)
-  1. fix the error when write wien2k structure
-
-+ version 0.3 (August 27th 2022)
-
-  1. fix some errors
-
-+ version 0.2 (August 23rd 2022)
-
-  1. add layered structures generator: structgen
-  2. fix some errors
-
-+ version 0.1 (August 19th 2022)
-  
-  1. add WIEN2k initial interface: wien_init;
-  2. add XDATCAR extrctor to vasp_post.
-
-+ version 0.0 (April 1st 2022)
-  
-  1. vasp_init: add VASP initial interface
-  2. VASP post-processing interface: vasp_post
-
-
-# 4. Introduction
-
-## QE
-
-
-## VASP
-
-### Generate input files
-
-1. convergence test
-2. scf
-3. band & dos

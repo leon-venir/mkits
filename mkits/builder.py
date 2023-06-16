@@ -10,20 +10,14 @@ from shapely.geometry import Point, Polygon
 """
 Class
 -----
-canvas:
-    Ideal tiling canvas.
+canvas             : generate an ideal tiling canvas.
 
 Functions
 ---------
-refine_struct:
-    Refine the structures
-stack_struct:
-    stack 
-ngt_tiling:
-    The NGT ideal tiling canvas.
-carbontube:
-    The builder of carbon nanotube.
-
+refine_struct      : refine the structures
+stack_struct       : stack two slab and generate a new heterojunction 
+ngt_tiling         : a possible NGT ideal tiling canvas
+carbontube         : the builder of carbon nanotube.
 """
 
 
@@ -179,7 +173,8 @@ class canvas(object):
     def plot_canvas(self, 
                     show_pattern_index=0,
                     show_edge_index=True,
-                    save_fig="none"):
+                    save_fig="none",
+                    fig_size="none"):
         """
         Parameters
         ----------
@@ -187,13 +182,15 @@ class canvas(object):
             optional [-1, 0, 1]
             0 : don't show the indices
             1 : show the indices in positive sequence
-            -1: show the indices in inverted sequence 
+            -1: show the indices in inverted sequence
+        fig_size:
+            plot the figure with specific size. eg: [20,20]
         save_fig:
-            if provide, save the figure with specific size. eg: [20,20]
+            if provide, save the figure by provided name.
         """
         fig = plt.figure(figsize=[10,10])
-        if save_fig != "none":
-            fig = plt.figure(figsize=save_fig)
+        if fig_size != "none":
+            fig = plt.figure(figsize=fig_size)
 
         for i in range(len(self.edge_coordinates) - 1):
             if i+1 in self.edge_used:
@@ -233,7 +230,7 @@ class canvas(object):
                          fontsize=16)
                 
         if save_fig != "none":
-            plt.savefig("./output.png")
+            plt.savefig(save_fig)
 
     def savexyz(self, out):
         """
@@ -275,10 +272,32 @@ class canvas(object):
                   eg: inpara = ([1,2,3], 
                                 [0,1,0], 
                                 [-0.1, -0.1, 0.1])
+            midp: Get the vertex from the midpoint of given edge
+                  eg: inpara = (
+                  [1,2,3],
+                  [-0.01, -0.01, -0.01]
+                  )
 
         """
         self.truncated = True
-        if method == "cube":
+        if method == "midp":
+            truncated_edge = np.zeros(2)
+            offsetx = np.zeros(1)
+            offsety = np.zeros(1)
+            for i in range(len(inpara[0])):
+                edge_points = np.average(self.edge_coordinates[inpara[0][i]].reshape((-1,3)),
+                                         axis=0)
+                
+                truncated_edge = np.vstack((truncated_edge, edge_points[0:2]))
+                offsetx = np.append(offsetx, inpara[1][i])
+                offsety = np.append(offsety, inpara[2][i])
+            
+            truncated_edge = truncated_edge + (np.vstack((offsetx, offsety))).T
+            self.points_in_polygon(truncated_edge[1:])
+            self.truncated_edge = np.vstack((truncated_edge[1:], 
+                                             truncated_edge[1]))
+
+        elif method == "cube":
             xmin, xmax, ymin, ymax = inpara
             truncated_edge = np.array([[xmin, ymin],
                                        [xmax, ymin],

@@ -1,0 +1,2 @@
+[console_scripts]
+mkits = mkits.main:mkits_main
