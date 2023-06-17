@@ -553,6 +553,12 @@ def carbontube(m:int=5, n:int=5, l:int=1, out:str="out", fmt:str="xyz", **kwargs
             x = np.sin(cood_alpha) * radium
             y = np.cos(cood_alpha) * radium
             cood_xy = np.vstack((cood_xy, np.array([[x,y,thick/2]])))
+    
+    # add l
+    if l > 1:
+        for i in range(1, l):
+            cood_xy = np.vstack((cood_xy, cood_xy+np.array([0,0,thick*i])))
+
 
 
     # write to file
