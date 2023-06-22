@@ -901,7 +901,10 @@ def update_incar(incar_dict, new_dict, new_key):
     return incar_dict
 
 
-def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath="./", wname:str="none", execode="srun --mpi=pmi2 vasp_std", params="gga=pbelda", **kwargs):
+def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", 
+                   dryrun=False, wpath="./", wname:str="none", 
+                   execode="srun --mpi=pmi2 vasp_std", 
+                   params="gga=pbelda", **kwargs):
     func_help = """
     generate inputs for vasp
     --dft       : optional   opt  ->  
@@ -1090,6 +1093,13 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
                        ymax=dynrange["ymax"],
                        zmin=dynrange["zmin"],
                        zmax=dynrange["zmax"])
+    
+    # WARNING of very long lattice vectors (>50 A) 
+    # decrease AMIN to a smaller value (e.g. 0.01)
+    if any ([poscar.lattice6[0] > 50,     # lattice a
+             poscar.lattice6[1] > 50,     # lattice b
+             poscar.lattice6[2] > 50,]):   # lattice c
+        incar["AMIN"] = "0.01"
     
     # =================================================================================
     # scf
@@ -1439,8 +1449,20 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", dryrun=False, wpath
         dft_nvt()
     elif dft == "elecall":
         """ opt + scf + band + dos """
-        vasp_gen_input(dft="opt", potpath=potpath, poscar=poscar, dryrun=False, wpath="./elecall", execode=execode, params=params)
-        vasp_gen_input(dft="scf", potpath=potpath, poscar=poscar, dryrun=False, wpath="./elecall", execode=execode, params=params)
+        vasp_gen_input(dft="opt", 
+                       potpath=potpath, 
+                       poscar=poscar, 
+                       dryrun=False, 
+                       wpath="./elecall", 
+                       execode=execode, 
+                       params=params)
+        vasp_gen_input(dft="scf", 
+                       potpath=potpath, 
+                       poscar=poscar, 
+                       dryrun=False, 
+                       wpath="./elecall", 
+                       execode=execode, 
+                       params=params)
         vasp_gen_input(dft="band", potpath=potpath, poscar=poscar, dryrun=False, wpath="./elecall", execode=execode, params=params)
         vasp_gen_input(dft="dos", potpath=potpath, poscar=poscar, dryrun=False, wpath="./elecall", execode=execode, params=params)
 

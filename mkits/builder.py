@@ -405,13 +405,13 @@ class canvas(object):
         for i in range(len(self.atom)):
             if abs(self.coord[i, 0]) < 1:
                 for j in range(len(self.atom)):
-                    if np.linalg.norm(self.coord[i] + np.array([vector_a[0],0,0] - self.coord[j])) < 1:
+                    if np.linalg.norm(self.coord[i] + np.array(vector_a - self.coord[j])) < 1:
                         toocloseatom.append(j)
         # in b-direction
         for i in range(len(self.atom)):
             if abs(self.coord[i, 1]) < 1:
                 for j in range(len(self.atom)):
-                    if np.linalg.norm(self.coord[i] + np.array([0,vector_b[1],0] - self.coord[j])) < 1:
+                    if np.linalg.norm(self.coord[i] + np.array(vector_b - self.coord[j])) < 1:
                         toocloseatom.append(j)
         self.atom = np.delete(self.atom, list(set(toocloseatom)))
         self.coord = np.delete(self.coord, list(set(toocloseatom)), axis=0)
@@ -447,7 +447,7 @@ class canvas(object):
         self.export_value["edge"] = self.edge_coordinates
         return self.export_value
     
-    def del_neighbor(self):
+    def del_neighbor(self, threshold=1):
         """ 
         """
         toocloseatompairs = [[-1,-1]]
@@ -455,7 +455,7 @@ class canvas(object):
             for j in range(len(self.coord)):
                 if i != j:
                     dis = np.linalg.norm(self.coord[j] - self.coord[i])
-                    if dis < 1 and self.atom[i] == self.atom[j]:
+                    if dis < threshold and self.atom[i] == self.atom[j]:
                         toocloseatompairs += [[i, j]]
 
         # delete reversed elements
@@ -482,7 +482,7 @@ class canvas(object):
         for i in range(1, len(new_coord)):
             putatom = True
             for j in self.coord:
-                if np.linalg.norm(new_coord[i]-j) < 1:
+                if np.linalg.norm(new_coord[i]-j) < threshold:
                     putatom = False
                 else:
                     continue
@@ -1284,3 +1284,41 @@ def hexapp_til(pattern_square, pattern_triangle, pattern_rhombus):
     hexapprox.add_pattern(pattern_triangle, 56)
     hexapprox.add_pattern(pattern_triangle, 68)
     return hexapprox
+
+
+def honeycomb_til(pattern_square, pattern_triangle, pattern_rhombus):
+    """ 
+    """
+    honeycomb = canvas(center_pattern=pattern_triangle)
+    honeycomb.add_pattern(pattern_triangle, 1)
+    honeycomb.add_pattern(pattern_triangle, 5)
+    honeycomb.add_pattern(pattern_triangle, 9)
+    honeycomb.add_pattern(pattern_triangle, 2)
+    honeycomb.add_pattern(pattern_triangle, 11)
+    honeycomb.add_pattern(pattern_triangle, 14)
+    honeycomb.add_pattern(pattern_triangle, 17)
+    honeycomb.add_pattern(pattern_triangle, 20)
+    honeycomb.add_pattern(pattern_triangle, 23)
+    honeycomb.add_pattern(pattern_triangle, 29)
+    honeycomb.add_pattern(pattern_triangle, 6)
+    honeycomb.add_pattern(pattern_triangle, 12)
+    honeycomb.add_pattern(pattern_triangle, 24)
+    honeycomb.add_pattern(pattern_triangle, 33)
+    honeycomb.add_pattern(pattern_triangle, 39)
+    honeycomb.add_pattern(pattern_triangle, 42)
+    honeycomb.add_pattern(pattern_triangle, 45)
+    honeycomb.add_pattern(pattern_triangle, 36)
+    honeycomb.add_pattern(pattern_triangle, 8)
+    honeycomb.add_pattern(pattern_triangle, 38)
+    honeycomb.add_pattern(pattern_triangle, 48)
+    honeycomb.add_pattern(pattern_triangle, 51)
+    honeycomb.add_pattern(pattern_triangle, 54)
+    honeycomb.add_pattern(pattern_triangle, 56)
+    honeycomb.add_pattern(pattern_triangle, 59)
+    honeycomb.add_pattern(pattern_triangle, 62)
+    honeycomb.add_pattern(pattern_triangle, 66)
+    honeycomb.add_pattern(pattern_triangle, 69)
+    honeycomb.add_pattern(pattern_triangle, 72)
+    honeycomb.add_pattern(pattern_triangle, 57)
+    honeycomb.add_pattern(pattern_triangle, 81)
+    return honeycomb
