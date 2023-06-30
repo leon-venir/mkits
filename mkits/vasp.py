@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import xml.etree.ElementTree as ET
 import os
 import re
+import math
 import ase.io
 import ase.geometry
 import ase.dft.kpoints
@@ -15,6 +16,10 @@ from mkits.database import *
 
 
 """
+Functinons
+----------
+supercar                : generate the supercell for charge density
+
 :func vasp_show_incar           : show several INCARs 
 :func gapshifter                : shift gap
 :func vasp_opt_2d               : 
@@ -44,6 +49,118 @@ from mkits.database import *
 :func getvbmcbm                 : extract the valence maximum band and conduction minimum band
 :func arbitrary_klist           : Generate arbitrary klist for effective mass calculation
 """
+
+
+def supercar(car, supercell):
+    """
+    Generate the supercell for charge density file
+    ELFCAR, CHGCAR
+
+    Parameters
+    ----------
+    car, string
+        CHGCAR or ELFCAR
+    supercell, string
+        "6 6 1"
+    """
+
+    supercell = [int(i) for i in supercell.split()]
+    if len(supercell) != 3:
+        print("Error supercell.")
+        exit()
+    out = car + "_%d%d%d" % (supercell[0], supercell[1], supercell[2])
+    mulsp = math.prod(supercell)
+
+    with open(car, "r") as f:
+        lines = f.readlines()
+
+    lattice_uc = np.loadtxt(car, skiprows=2, max_rows=3)
+    atom_num_uc = [int(i) for i in lines[6].split()]
+    atom_typ_uc = [str(i) for i in lines[5].split()]
+    atom_tot_uc = sum(atom_num_uc)
+    atom_pos_uc = np.loadtxt(car, skiprows=8, max_rows=atom_tot_uc)
+    grid_x_uc, grid_y_uc, grid_z_uc = [int(i) for i in lines[9+atom_tot_uc].split()]
+    grid_x_sc = grid_x_uc * supercell[0]
+    grid_y_sc = grid_y_uc * supercell[1]
+    grid_z_sc = grid_z_uc * supercell[2]
+
+    grid_1st_len = len(lines[10+atom_tot_uc].split())
+
+    # check
+    grid_row_len = (grid_x_uc*grid_y_uc*grid_z_uc)//grid_1st_len
+
+    grid_dat_uc = np.loadtxt(car, skiprows=10+atom_tot_uc, max_rows=grid_row_len).flatten()
+
+    if (grid_x_uc*grid_y_uc*grid_z_uc)%grid_1st_len !=0:
+        grid_dat_last = np.loadtxt(car, skiprows=(10+atom_tot_uc+grid_row_len), max_rows=1)
+        grid_dat_uc = np.hstack((grid_dat_uc, grid_dat_last))
+
+    # reshape grid to 3D
+    grid_dat_uc = grid_dat_uc.reshape((grid_z_uc, grid_y_uc, grid_x_uc))
+
+    atom_pos_sc = atom_pos_uc
+    grid_dat_sc = grid_dat_uc
+
+    atom_pos_uc_tmp = atom_pos_uc
+    grid_dat_uc_tmp = grid_dat_uc
+    for a in range(1, supercell[0]):
+        atom_pos_sc = np.vstack((atom_pos_sc, 
+                                atom_pos_uc_tmp+np.array([a, 0, 0])))
+        grid_dat_sc = np.concatenate((grid_dat_sc, grid_dat_uc_tmp), axis=2)
+
+    atom_pos_uc_tmp = atom_pos_sc
+    grid_dat_uc_tmp = grid_dat_sc
+    for b in range(1, supercell[1]):
+        atom_pos_sc = np.vstack((atom_pos_sc, 
+                                atom_pos_uc_tmp+np.array([0, b, 0])))
+        grid_dat_sc = np.concatenate((grid_dat_sc, grid_dat_uc_tmp), axis=1)
+
+    atom_pos_uc_tmp = atom_pos_sc
+    grid_dat_uc_tmp = grid_dat_sc
+    for c in range(1, supercell[2]):
+        atom_pos_sc = np.vstack((atom_pos_sc, 
+                                atom_pos_uc_tmp+np.array([0, 0, c])))
+        grid_dat_sc = np.concatenate((grid_dat_sc, grid_dat_uc_tmp), axis=0)
+    atom_pos_sc /= np.array(supercell)
+
+    grid_dat_sc = grid_dat_sc.flatten()
+    grid_row_len = len(grid_dat_sc)//grid_1st_len
+    grid_dat_sc_1st = grid_dat_sc[:grid_row_len*grid_1st_len]
+    grid_dat_sc_1st = grid_dat_sc_1st.reshape((-1, grid_1st_len))
+    grid_dat_sc_2nd = grid_dat_sc[grid_row_len*grid_1st_len:]
+
+    # lattice 
+    lattice_sc = lattice_uc * np.array(supercell).reshape((3,1))
+
+    # sort atoms
+    atom_typ_sc = np.array(listcross(atom_typ_uc, atom_num_uc) * mulsp)
+    atom_sort = np.argsort(atom_typ_sc)
+    atom_typ_sc = atom_typ_sc[atom_sort]
+    atom_pos_sc = atom_pos_sc[atom_sort]
+    atom_num = np.array([])
+    atom_typ = np.array([i for i in set(atom_typ_sc)])
+    atom_typ = np.sort(atom_typ)
+    for atom in atom_typ:
+        num = 0
+        for idx in range(len(atom_typ_sc)):
+            if atom_typ_sc[idx] == atom:
+                num += 1
+        atom_num = np.append(atom_num, num)
+
+    with open(out, "w") as f:
+        f.write(lines[0])
+        f.write(lines[1])
+        np.savetxt(f, lattice_sc, fmt="%15.6f")
+        f.write("   ".join(atom_typ) + "\n")
+        np.savetxt(f, np.array([atom_num]), fmt="%5d")
+        f.write(lines[7])
+        np.savetxt(f, atom_pos_sc, fmt="%15.6f")
+        f.write("\n")
+
+        # grids
+        f.write("%5d%5d%5d\n" % (grid_x_sc, grid_y_sc, grid_z_sc))
+        np.savetxt(f, grid_dat_sc_1st, fmt="%12.5e")
+        np.savetxt(f, np.array([grid_dat_sc_2nd]), fmt="%12.5e")
 
 
 def vasp_show_incar(*arguments:str):

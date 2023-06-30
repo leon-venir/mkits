@@ -359,7 +359,8 @@ class canvas(object):
                                            edge_coordinates_reflected))
         self.coord = np.vstack((self.coord, coord_reflected))
     
-    def build_crystal(self, out, vacuum, a_index, b_index, fmt="vasp", sort=True):
+    def build_crystal(self, out, vacuum, a_index, b_index, fmt="vasp", 
+                      sort=True, scale_a=1.0, scale_b=1.0):
         """
         Parameters
         ----------
@@ -419,6 +420,9 @@ class canvas(object):
         # sort the atoms
         if sort:
             self.sort_atom()
+
+        # scaled lattice
+        # self.coord = 
 
         # ase atoms
         cell = ase.Atoms(self.atom, 
