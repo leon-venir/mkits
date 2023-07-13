@@ -44,13 +44,6 @@ bond_length.update(rev_bond)
 del(rev_bond)
 
 
-# :database WIEN2K tempelates =================================== #
-local_rot_matrix = """LOCAL ROT MATRIX:    1.0000000 0.0000000 0.0000000                             
-                     0.0000000 1.0000000 0.0000000                             
-                     0.0000000 0.0000000 1.0000000                             
-"""
-
-
 # :database quantum: VASP input tempelates ====================== #
 qe_control_block = {
     "calculation": '"scf"',

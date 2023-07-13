@@ -18,36 +18,36 @@ from mkits.database import *
 """
 Functinons
 ----------
-supercar                  : generate the supercell for charge density
-vasp_show_incar           : show several INCARs 
-gapshifter                : shift gap
-vasp_opt_2d               : 
-vasp_gen_IBZKPT           : generate k-points list
-xml_block                 : search the block with specific block_name and return 
-                            the block or the index
-vasp_split_IBZKPT         : split IBZKPT for huge kpoints calculations
-vasp_dp_effect_mass       : 
-vasp_defomation_potential : generate structures for deformation potential calculation
-gen_gnu_bandcar           : generate gnuplot scripts 
-add_selective_dyn         : add the 4-, 5-, 6th columns for selective dynamic POSCAR
-vaspxml_parser            : parse the vasprun.xml file
-vasp_dos_extractor        : extract data from vasprun.xml and create a gnuplot format dos_num.dat
-vasp_band_extractor       : extract data from EIGNVAL and create a gnuplot format BANDCAR
-parse_vasp_incar          : parse the INCAR file
-parse_vasp_incarstring    : parse string-like INCAR
-parse_vasp_outcar         : parse the OUTCAR file 
-vasp_potcar_gen           : generate the POTCAR file
-vasp_kpoints_gen          : generate the KPOINTS file
-vasp_build_low_dimension  : generate 2-d structure from vasp-format crystal structures
-vasp_gen_input            : generate input files for VASP valculations
-vasp_struct_diff          : compare the absolute value of the difference between 2 structure in angstrom)
-vasp_build_low_dimension  : build 2-dimensinal structure
-xdatcar_parser            : path to XDATCAR, parse XDATCAR and return a series of struct dict
-mse_xdatcar               : Mean squared error of structure compared with crystalline structure during md process
-extract_conv_test         : extract data from convergence test calculation, [input files are generated from
-                            func vasp_gen_input, ie encut, kmesh, ]
-getvbmcbm                 : extract the valence maximum band and conduction minimum band
-arbitrary_klist           : Generate arbitrary klist for effective mass calculation
+supercar                : generate the supercell for charge density
+
+:func vasp_show_incar           : show several INCARs 
+:func gapshifter                : shift gap
+:func vasp_opt_2d               : 
+:func vasp_gen_IBZKPT           : generate k-points list
+:func xml_block                 : search the block with specific block_name and return the block or the index
+:func vasp_split_IBZKPT         : split IBZKPT for huge kpoints calculations
+:func vasp_dp_effect_mass       : 
+:func vasp_defomation_potential : generate structures for deformation potential calculation
+:func gen_gnu_bandcar           : generate gnuplot scripts 
+:func add_selective_dyn         : add the 4-, 5-, 6th columns for selective dynamic POSCAR
+:func vaspxml_parser            : parse the vasprun.xml file
+:func vasp_dos_extractor        : extract data from vasprun.xml and create a gnuplot format dos_num.dat
+:func vasp_band_extractor       : extract data from EIGNVAL and create a gnuplot format BANDCAR
+:func parse_vasp_incar          : parse the INCAR file
+:func parse_vasp_incarstring    : parse string-like INCAR
+:func parse_vasp_outcar         : parse the OUTCAR file 
+:func vasp_potcar_gen           : generate the POTCAR file
+:func vasp_kpoints_gen          : generate the KPOINTS file
+:func vasp_build_low_dimension  : generate 2-d structure from vasp-format crystal structures
+:func vasp_gen_input            : generate input files for VASP valculations
+:func vasp_struct_diff          : compare the absolute value of the difference between 2 structure in angstrom)
+:func vasp_build_low_dimension  : build 2-dimensinal structure
+:func xdatcar_parser            : path to XDATCAR, parse XDATCAR and return a series of struct dict
+:func mse_xdatcar               : Mean squared error of structure compared with crystalline structure during md process
+:func extract_conv_test         : extract data from convergence test calculation, [input files are generated from
+                                : func vasp_gen_input, ie encut, kmesh, ]
+:func getvbmcbm                 : extract the valence maximum band and conduction minimum band
+:func arbitrary_klist           : Generate arbitrary klist for effective mass calculation
 """
 
 
@@ -123,7 +123,7 @@ def supercar(car, supercell):
     grid_dat_uc_tmp = grid_dat_sc
     for c in range(1, supercell[2]):
         atom_pos_sc = np.vstack((atom_pos_sc, 
-                                 atom_pos_uc_tmp+np.array([0, 0, c])))
+                                atom_pos_uc_tmp+np.array([0, 0, c])))
         grid_dat_sc = np.concatenate((grid_dat_sc, grid_dat_uc_tmp), axis=0)
     atom_pos_sc /= np.array(supercell)
 
@@ -202,15 +202,12 @@ def vasp_show_incar(*arguments:str):
 
 def gapshifter(code:str, shift:float, inp:str, out:str="shifted.o", absolute:bool=True):
     """
-    Shift to/or shift specific value
-
-    Parameters:
-    -----------
-    code: str [vasp, wien2k]
-    absolute: bool, default True shift gap to specific value; otherwise shift specific value
-    shift: float, the value of gap 
-    inp: string, the input file
-    out: string, the output file
+    shift to/or shift specific value
+    :param code: str [vasp, wien2k]
+    :param absolute: bool, default True shift gap to specific value; otherwise shift specific value
+    :param shift: float, the value of gap 
+    :param inp: string, the input file
+    :param out: string, the output file
     """
     with open(inp, "r") as f:
         inplines = f.readlines()
@@ -285,16 +282,9 @@ def vasp_opt_2d():
     """
 
 
-def vasp_gen_IBZKPT(wkdir:str="./", 
-                    fname:str="IBZKPT_666", 
-                    poscar:str="POSCAR", 
-                    kmesh:str="6,6,6", 
-                    write_file:bool=True):
+def vasp_gen_IBZKPT(wkdir:str="./", fname:str="IBZKPT_666", poscar:str="POSCAR", kmesh:str="6,6,6", write_file:bool=True):
     """
-    Generate irreducible k-list and the weights
-    
-    Parameters:
-    ----------
+    generate irreducible k-list and the weights
     :param wkdir:
     :param fname: 
     :param poscar:

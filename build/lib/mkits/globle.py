@@ -20,8 +20,9 @@ struct_ase             : a new class of structures based on ase library
 
 Functions
 ---------
-trans_reflection_xy    :
-split_list             : 
+trans_reflection_xy:
+
+split_list: 
 arith_prog_split_even  : split the arithmetic progression into approximate 
                          equal part.
 coord_trans_xy         : coordinates translation in x-y plane
@@ -323,27 +324,16 @@ def mean_free_path(cii, ed, T, dimension:str="3d"):
     :param dimension: [3d, 2d]
     """
     if dimension == "3d":
-        mean_free_path = np.pi * cons_hbar**4 * cii / \
-                         ( cons_emass**2 * ed**2 * cons_kb * T)
+        mean_free_path = np.pi * cons_hbar**4 * cii / ( cons_emass**2 * ed**2 * cons_kb * T)
     return mean_free_path
 
 
-def effective_mass_calculator(kpath, 
-                              eigen, 
-                              fpath:str="./", 
-                              fname="fitting.png", 
-                              plot:bool=True):
+def effective_mass_calculator(kpath, eigen, fpath:str="./", fname="fitting.png", plot:bool=True):
     """
     Calculate effective mass from single-band parabolic approximation
-
-    Parameters:
-    -----------
-    kpath: a list or array like kpath (unit: angstrom^{-1})
-    eigen: a list or array like eigen values of VBM or CBM band coorresponding 
-           to kpath dimension
-    Return:
-    -------
-    effective_mass, r square
+    :param kpath: a list or array like kpath (unit: angstrom^{-1})
+    :param eigen: a list or array like eigen values of VBM or CBM band coorresponding to kpath dimension
+    :return effective_mass, r square
     """
     if type(kpath) == list:
         kpath = np.array(kpath, dtype=float)
@@ -389,11 +379,8 @@ def best_polyfit_range(x, y, degree:int, min_points:int=10, max_points:int=20):
     for points in range(min_points, max_points+1):
         beg_index = 0
         while beg_index + points <= len(y):
-            ssreg, sstot, rsquares = rsquare(x[beg_index:beg_index+points], 
-                                             y[beg_index:beg_index+points], 
-                                             degree=degree)
-            fit_history = np.vstack((fit_history, 
-                                     np.array([beg_index, beg_index+points, rsquares])))
+            ssreg, sstot, rsquares = rsquare(x[beg_index:beg_index+points], y[beg_index:beg_index+points], degree=degree)
+            fit_history = np.vstack((fit_history, np.array([beg_index, beg_index+points, rsquares])))
             beg_index += 1
             # progressing bar
             progressbar(total_step=total_step, current_step=step)
@@ -425,23 +412,15 @@ def rsquare(x, y, degree):
 
 def klist_kpath(klist, recip):
     """
-    Convert a list of kpoints to a kpath in units of reciprocal of angstrom 
-    for band plotting or analyzing
-
-    Parameters:
-    -----------
-    klist: array, x3 shape array
-    recip: array, 3x3 shape array containing reciprocal lattice vector
-    
-    Return:
-    -------
-    x shape array with kpath
+    convert a list of kpoints to a kpath in units of reciprocal of angstrom for band plotting or analyzing
+    :param klist: array, x3 shape array
+    :param recip: array, 3x3 shape array containing reciprocal lattice vector
+    :return x shape array with kpath
     """
     kpath_abs = [0]
     cartesian_reciprocal = frac2cart(recip, klist)
     for _ in range(1, len(klist)):
-        kpath_abs.append(kpath_abs[_-1]+np.sqrt(np.dot(cartesian_reciprocal[_]-cartesian_reciprocal[_-1], 
-                                                       cartesian_reciprocal[_]-cartesian_reciprocal[_-1])))
+        kpath_abs.append(kpath_abs[_-1]+np.sqrt(np.dot(cartesian_reciprocal[_]-cartesian_reciprocal[_-1], cartesian_reciprocal[_]-cartesian_reciprocal[_-1])))
     
     return np.array(kpath_abs)
 
@@ -455,8 +434,7 @@ def convert_3decimal_to_4integer_fractioin(x:float, y:float, z:float):
 
 
 def np_ployfit(x, y, n, d):
-    """
-    Polyfit
+    """ polyfit
     :param x: array or list
     :param y: array or list
     :param n: int, total points
@@ -1157,7 +1135,9 @@ class struct(object):
                     f.write("ATOM%4d: X=%-10.8f Y=%-10.8f Z=%-10.8f\n" % (_+1, self.struct_dict["pos_frac"][_,0], self.struct_dict["pos_frac"][_,1], self.struct_dict["pos_frac"][_,2]))
                     f.write("          MULT= 1          ISPLIT= 4                                           \n")
                     f.write("%-5s      NPT=  781  R0=%10.8f RMT=%8.5f     Z:%10.5f\n" % (self.struct_dict["atoms_alias"][_], self.struct_dict["atoms_r0"][_], self.struct_dict["atoms_rmt"][_], self.struct_dict["atoms_index"][_]))
-                    f.write(local_rot_matrix)
+                    f.write("LOCAL ROT MATRIX:    1.0000000 0.0000000 0.0000000                             \n")
+                    f.write("                     0.0000000 1.0000000 0.0000000                             \n")
+                    f.write("                     0.0000000 0.0000000 1.0000000                             \n")
                 f.write("   0      NUMBER OF SYMMETRY OPERATIONS                                        \n")
         else:
             pass
