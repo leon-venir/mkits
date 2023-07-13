@@ -905,7 +905,8 @@ class struct(object):
                                               self.coord_cart)
                    
         if calculator == "qeout":
-            # get data line: celldm(1); crystal axes; site n.     atom                  positions (alat units); number of k points=    12
+            # get data line: celldm(1); crystal axes; site n.     atom       
+            # positions (alat units); number of k points=    12
             dataget_num = 3
             lattice_inx = 0
             atom_position_bgn_inx = 0

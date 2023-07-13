@@ -89,10 +89,14 @@ def supercar(car, supercell):
     # check
     grid_row_len = (grid_x_uc*grid_y_uc*grid_z_uc)//grid_1st_len
 
-    grid_dat_uc = np.loadtxt(car, skiprows=10+atom_tot_uc, max_rows=grid_row_len).flatten()
+    grid_dat_uc = np.loadtxt(car, 
+                             skiprows=10+atom_tot_uc, 
+                             max_rows=grid_row_len).flatten()
 
     if (grid_x_uc*grid_y_uc*grid_z_uc)%grid_1st_len !=0:
-        grid_dat_last = np.loadtxt(car, skiprows=(10+atom_tot_uc+grid_row_len), max_rows=1)
+        grid_dat_last = np.loadtxt(car, 
+                                   skiprows=(10+atom_tot_uc+grid_row_len), 
+                                   max_rows=1)
         grid_dat_uc = np.hstack((grid_dat_uc, grid_dat_last))
 
     # reshape grid to 3D
