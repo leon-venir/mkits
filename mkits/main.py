@@ -14,11 +14,16 @@ def vasp_init_parser(args):
     except:
         parameter = {}
     if args.gen2d:
-        vasp_build_low_dimension(parameter[0], parameter[1], parameter[2], parameter[3])
+        vasp_build_low_dimension(parameter[0], 
+                                 parameter[1], 
+                                 parameter[2], 
+                                 parameter[3])
     elif args.pot:
-        vasp_potcar_gen(struct(args.poscar).return_dict() if args.poscar else struct("POSCAR").return_dict(), args.potpath)
+        vasp_potcar_gen(struct(args.poscar).return_dict() if args.poscar else struct("POSCAR").return_dict(), 
+                        args.potpath)
     elif args.kgen:
-        vasp_kpoints_gen(struct(args.poscar).return_dict() if args.poscar else struct("POSCAR").return_dict(), args.kgen, parameter["kmesh"] if args.param else "odd")
+        vasp_kpoints_gen(struct(args.poscar).return_dict() if args.poscar else struct("POSCAR").return_dict(), 
+                         args.kgen, parameter["kmesh"] if args.param else "odd")
     elif args.vasp_gen_input:
         if args.param:
             if "gga=" not in args.param:
@@ -28,9 +33,18 @@ def vasp_init_parser(args):
         else:
             vasp_gen_params = "gga=pbelda"
 
-        vasp_gen_input(args.dft if args.dft else "scf", args.potpath if args.potpath else "./", args.poscar if args.poscar else "POSCAR", args.dryrun if args.dryrun else False, args.wpath if args.wpath else "./", args.execode if args.execode else "mpirun -np $SLURM_NTASKS vasp_std", vasp_gen_params)
+        vasp_gen_input(args.dft if args.dft else "scf", 
+                       args.potpath if args.potpath else "./", 
+                       args.poscar if args.poscar else "POSCAR", 
+                       args.dryrun if args.dryrun else False, 
+                       args.wpath if args.wpath else "./", 
+                       args.execode if args.execode else "mpirun -np $SLURM_NTASKS vasp_std", 
+                       vasp_gen_params)
     elif args.gen_arb_klist:
-        arbitrary_klist(kend=args.gen_arb_klist, kmesh=parameter["kmesh"] if "kmesh" in parameter else "7", fpath=parameter["fpath"] if "fpath" in parameter else "./", fname=parameter["fname"] if "fname" in parameter else "KPOINTS")
+        arbitrary_klist(kend=args.gen_arb_klist, 
+                        kmesh=parameter["kmesh"] if "kmesh" in parameter else "7", 
+                        fpath=parameter["fpath"] if "fpath" in parameter else "./", 
+                        fname=parameter["fname"] if "fname" in parameter else "KPOINTS")
     elif args.split_merge_ibzkpt:
         wkdir = parameter["wkdir"] if "wkdir" in parameter else "./"
         fname = parameter["fname"] if "fname" in parameter else "vasprun_merged.xml"
@@ -38,9 +52,17 @@ def vasp_init_parser(args):
         kperibzkpt = int(parameter["kperibzkpt"]) if "kperibzkpt" in parameter else 20
 
         if args.split_merge_ibzkpt == "split":
-            vasp_split_IBZKPT(wkdir=wkdir, fname=fname, ibzkpt=ibzkpt, kperibzkpt=kperibzkpt, split_merge="split")
+            vasp_split_IBZKPT(wkdir=wkdir, 
+                              fname=fname, 
+                              ibzkpt=ibzkpt, 
+                              kperibzkpt=kperibzkpt, 
+                              split_merge="split")
         elif args.split_merge_ibzkpt == "merge":
-            vasp_split_IBZKPT(wkdir=wkdir, fname=fname, ibzkpt=ibzkpt, kperibzkpt=kperibzkpt, split_merge="merge")
+            vasp_split_IBZKPT(wkdir=wkdir, 
+                              fname=fname, 
+                              ibzkpt=ibzkpt, 
+                              kperibzkpt=kperibzkpt, 
+                              split_merge="merge")
         else:
             print("Wrong parameter found, optional choices are: split, merge.")
             lexit("Wrong parameter found, optional choices are: split, merge.")
@@ -118,7 +140,7 @@ def parse_arguments():
     parser.add_argument(
         "--version",
         action="version",
-        version="0.87",
+        version="0.89",
         help="print version information"
     )
     subparser = parser.add_subparsers(

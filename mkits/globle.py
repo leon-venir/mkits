@@ -1182,14 +1182,6 @@ class struct(object):
 
 
 
-
-
-
-
-
-
-
-
         """if calculator == "vasp_direct":
             struct_dict["title"] = struct_lines[0][:-1]
             struct_dict["ratio"] = float(struct_lines[1][:-1])
