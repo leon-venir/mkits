@@ -235,7 +235,7 @@ class canvas(object):
     def savexyz(self, out):
         """
         """
-        with open(out, "w") as f:
+        with open(out, "w", newline="\n") as f:
             f.write("%d\n" % len(self.coord))
             f.write("\n")
             for i in range(len(self.coord)):
@@ -566,7 +566,7 @@ def carbontube(m:int=5, n:int=5, l:int=1, out:str="out", fmt:str="xyz", **kwargs
 
 
     # write to file
-    with open("./tube_m%dn%dl%d.%s" % (m, n, l, fmt), "w") as f:
+    with open("./tube_m%dn%dl%d.%s" % (m, n, l, fmt), "w", newline="\n") as f:
         if fmt == "vasp":
             lattice = np.array([[vacuum + 2*radium + 0.0001, 0, 0],
                                 [0, vacuum + 2*radium + 0.0001, 0],

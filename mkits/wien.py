@@ -97,7 +97,7 @@ def wien_merge_energy(energy_head:str="case.energy", energy_num:int=4, fpath:str
             beg_index += 1
         else:
             break
-    with open("%s/%s" % (fpath, energy_head), "w") as f:
+    with open("%s/%s" % (fpath, energy_head), "w", newline="\n") as f:
         f.writelines(ene1lines)
         for _ in range(energy_num-1):
             with open("%s/%s_%d" % (fpath, energy_head, _+2), "r") as ff:
@@ -126,7 +126,7 @@ def wien_kgen(kend:str="0,0,0,0.1,0.1,0", kmesh:str="11-11-1", fpath:str="/Users
         xx, yy, zz = np.meshgrid(x_, y_, z_, indexing='ij')
         x, y, z = xx.flatten(), yy.flatten(), zz.flatten()
         
-        with open(fpath+"/"+fname, "w") as f:
+        with open(fpath+"/"+fname, "w", newline="\n") as f:
             lineindex = 1
             for _ in range(int(kmesh[0]*kmesh[1]*kmesh[2])):
                 xyz = convert_3decimal_to_4integer_fractioin(x[_], y[_], z[_])          
@@ -138,7 +138,7 @@ def wien_kgen(kend:str="0,0,0,0.1,0.1,0", kmesh:str="11-11-1", fpath:str="/Users
         y_ = np.linspace(kend[1], kend[4], num=kmesh[0])
         z_ = np.linspace(kend[2], kend[5], num=kmesh[0])
 
-        with open(fpath+"/"+fname, "w") as f:
+        with open(fpath+"/"+fname, "w", newline="\n") as f:
             lineindex = 1
             for _ in range(kmesh[0]):
                 xyz = convert_3decimal_to_4integer_fractioin(x_[_], y_[_], z_[_])

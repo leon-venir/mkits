@@ -28,7 +28,7 @@ def qe_vasp2qe_struct(poscar:str="POSCAR", qe_out:str="qe_struct.in"):
     atoms_num = poscar_dict["atoms_num"]
     position = poscar_dict["pos_frac"]
     
-    with open(qe_out, "w") as f:
+    with open(qe_out, "w", newline="\n") as f:
         f.write("CELL_PARAMETERS angstrom\n")
         f.writelines(lines[2:5])
     
@@ -72,7 +72,7 @@ def qe_conv_extractor(wkdir:str="./"):
         datatowrite = np.vstack((kpoints, final_ene)).T
         datatowrite = datatowrite[np.argsort(datatowrite[:,0])]
         np.savetxt(fname=wkdir+"/kmesh_ene.dat", X=datatowrite, header="kpoints final_ene(eV)")
-        with open(wkdir+"/kmesh_ene.gnu", "w") as f:
+        with open(wkdir+"/kmesh_ene.gnu", "w", newline="\n") as f:
             f.write(gnu2dline % ("kmesh_ene.png", "Convergence test of kpoints", "Kpoints", "Total energy(eV)", "kmesh_ene.dat"))
     elif caltype == "qe_conv_ecutwfc":
         ecutwfc = np.array([])
@@ -87,7 +87,7 @@ def qe_conv_extractor(wkdir:str="./"):
         datatowrite = np.vstack((ecutwfc, final_ene)).T
         datatowrite = datatowrite[np.argsort(datatowrite[:,0])]
         np.savetxt(fname=wkdir+"/ecutwfc_ene.dat", X=datatowrite, header="Ecutwfc(Ry) final_ene(eV)")
-        with open(wkdir+"/ecutwfc_ene.gnu", "w") as f:
+        with open(wkdir+"/ecutwfc_ene.gnu", "w", newline="\n") as f:
             f.write(gnu2dline % ("ecutwfc_ene.png", "Convergence test of Kinetic energy cutoff", "Kinetic energy cutoff(Ry)", "Total energy(eV)", "ecutwfc_ene.dat"))
     elif caltype == "qe_conv_degauss":
         degauss = np.array([])
@@ -103,7 +103,7 @@ def qe_conv_extractor(wkdir:str="./"):
         datatowrite = np.vstack((degauss, final_ene)).T
         datatowrite = datatowrite[np.argsort(datatowrite[:,0])]
         np.savetxt(fname=wkdir+"/degauss_ene.dat", X=datatowrite, header="Degauss")
-        with open(wkdir+"/degauss_ene.gnu", "w") as f:
+        with open(wkdir+"/degauss_ene.gnu", "w", newline="\n") as f:
             f.write(gnu2dline % ("degauss_ene.png", "Convergence test of Kinetic energy cutoff", "Kinetic energy cutoff(Ry)", "Total energy(eV)", "degauss_ene.dat"))
 
 
@@ -348,7 +348,7 @@ def qe_get_upf(atom_num, atomic_species_block:list, upfpath:str="", wkdir:str=".
                             is_uspp = True
                             break
                     # wirte UPF file to the working directory
-                    with open(wkdir+"/"+upf, "w") as f:
+                    with open(wkdir+"/"+upf, "w", newline="\n") as f:
                         f.writelines(upflines) 
                     z_valence[symbol_map[atom]] = qe_upf_valence_e(upfpath+"/"+upf)
                     atomic_species_block[i] = atomic_species_block[i].replace("None", upf)
@@ -360,7 +360,7 @@ def qe_get_upf(atom_num, atomic_species_block:list, upfpath:str="", wkdir:str=".
 def qe_in_write(fpath:str="./", fname:str="tmp.in", control_block:dict={}, system_block:dict={}, electrons_block:dict={}, ions_block:dict={}, cell_block:dict={}, atomic_species_block:list=[], kpoints_block:list=[], cell_parameters_block:list=[], atomic_positions_block:list=[], dos_block={}, fcp_block={}, rism_block={}):
     """"""
     if control_block:
-        with open(fpath+"/"+fname, "w") as f:
+        with open(fpath+"/"+fname, "w", newline="\n") as f:
             f.write("&CONTROL\n")
             for item in control_block.keys():
                 f.write(item+"="+control_block[item]+"\n")

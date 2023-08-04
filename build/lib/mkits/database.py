@@ -392,7 +392,7 @@ atom_data = [
     [ 71, "Lu", "Lutetium", 174.9668], # 71
     [ 72, "Hf", "Hafnium", 178.49], # 72
     [ 73, "Ta", "Tantalum", 180.94788], # 73
-    [ 74, "W", "Tungsten", 183.84], # 74
+    [ 74, "w", newline="\n", "Tungsten", 183.84], # 74
     [ 75, "Re", "Rhenium", 186.207], # 75
     [ 76, "Os", "Osmium", 190.23], # 76
     [ 77, "Ir", "Iridium", 192.217], # 77
@@ -513,7 +513,7 @@ symbol_map = {
     "Lu":71,
     "Hf":72,
     "Ta":73,
-    "W":74,
+    "w", newline="\n":74,
     "Re":75,
     "Os":76,
     "Ir":77,

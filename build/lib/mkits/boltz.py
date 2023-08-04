@@ -79,14 +79,14 @@ def split_boltz_dope(dopefile, para_dict={"key1":"attrib1"}):
 
     if condtens:
         # write p type
-        with open("ptype_%s.condtens" % boltzname, "w") as f:
+        with open("ptype_%s.condtens" % boltzname, "w", newline="\n") as f:
             f.write(unitheads)
             for i in range(len(temperature)):
                 f.write("# "+str(temperature[i])+" K\n")
                 np.savetxt(f, data[npsplit:, i, :], fmt="%10.7f %10.2f %12.5f %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e")
                 f.write("\n\n")
         # write n type
-        with open("ntype_%s.condtens" % boltzname, "w") as f:
+        with open("ntype_%s.condtens" % boltzname, "w", newline="\n") as f:
             f.write(unitheads)
             for i in range(len(temperature)):
                 f.write("# "+str(temperature[i])+" K\n")
@@ -94,14 +94,14 @@ def split_boltz_dope(dopefile, para_dict={"key1":"attrib1"}):
                 f.write("\n\n")
     else:
         # write p type
-        with open("ptype_%s.trace" % boltzname, "w") as f:
+        with open("ptype_%s.trace" % boltzname, "w", newline="\n") as f:
             f.write(unitheads)
             for i in range(len(temperature)):
                 f.write("# "+str(temperature[i])+" K\n")
                 np.savetxt(f, data[npsplit:, i, :], fmt="%10.7f %10.2f %12.5f %12.3f %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e %15.6e")
                 f.write("\n\n")
         # write n type
-        with open("ntype_%s.trace" % boltzname, "w") as f:
+        with open("ntype_%s.trace" % boltzname, "w", newline="\n") as f:
             f.write(unitheads)
             for i in range(len(temperature)):
                 f.write("# "+str(temperature[i])+" K\n")
@@ -121,7 +121,7 @@ def shift_eigin_wien(energyso, shift, val_ind, direction="cb"):
     except:
         lexit("Cannot find the energyso file.")
     
-    with open("new.energyso", "w") as f:
+    with open("new.energyso", "w", newline="\n") as f:
         for line in ene_lines:
             if line[:8] == "        " and int(line[:12]) > val_ind:
                 new_states = float(line[12:])+shift*0.0734986176

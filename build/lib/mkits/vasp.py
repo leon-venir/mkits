@@ -151,7 +151,7 @@ def supercar(car, supercell):
                 num += 1
         atom_num = np.append(atom_num, num)
 
-    with open(out, "w") as f:
+    with open(out, "w", newline="\n") as f:
         f.write(lines[0])
         f.write(lines[1])
         np.savetxt(f, lattice_sc, fmt="%15.6f")
@@ -245,7 +245,7 @@ def gapshifter(code:str, shift:float, inp:str, out:str="shifted.o", absolute:boo
             elif "</eigenvalues>" in inplines[i]:
                 eigen_end = i
 
-        with open(out, "w") as f:
+        with open(out, "w", newline="\n") as f:
             # the part before eigenvalues
             f.writelines(inplines[:eigen_beg])
 
@@ -362,7 +362,7 @@ def vasp_split_IBZKPT(wkdir:str="./", fname:str="vasprun_merged.xml", ibzkpt:str
         group_num = total_k//kperibzkpt
 
         for i in range(1, group_num+1):
-            with open(wkdir+"/IBZKPT_%d" % i, "w") as f:
+            with open(wkdir+"/IBZKPT_%d" % i, "w", newline="\n") as f:
                 f.write("Automatically generated mesh\n")
                 f.write("%8s\n" % kperibzkpt)
                 f.write("Reciprocal lattice\n")
@@ -370,7 +370,7 @@ def vasp_split_IBZKPT(wkdir:str="./", fname:str="vasprun_merged.xml", ibzkpt:str
             start_line_indx += kperibzkpt
         
         if total_k%kperibzkpt != 0:
-            with open("%s/IBZKPT_%d" % (wkdir, int(group_num+1)), "w") as f:
+            with open("%s/IBZKPT_%d" % (wkdir, int(group_num+1)), "w", newline="\n") as f:
                 f.write("Automatically generated mesh\n")
                 f.write("%8d\n" % int(total_k%kperibzkpt))
                 f.write("Reciprocal lattice\n")
@@ -385,7 +385,7 @@ def vasp_split_IBZKPT(wkdir:str="./", fname:str="vasprun_merged.xml", ibzkpt:str
         cmd += "        mpirun -np $SLURM_NTASKS vasp_std\n"
         cmd += "        mv vasprun.xml vasprun_IBZKPT_$ibz.xml\n"
         cmd += "done\n"
-        with open("%s/run_IBZKPT_split.sh" % wkdir, "w") as f:
+        with open("%s/run_IBZKPT_split.sh" % wkdir, "w", newline="\n") as f:
             f.write(cmd)
         os.chmod("%s/run_IBZKPT_split.sh" % wkdir, 0o775)
         
@@ -439,7 +439,7 @@ def vasp_split_IBZKPT(wkdir:str="./", fname:str="vasprun_merged.xml", ibzkpt:str
         total_block += block_after_eigen
 
 
-        with open(wkdir+"/"+fname, "w") as f:
+        with open(wkdir+"/"+fname, "w", newline="\n") as f:
             f.writelines(total_block)        
 
     else:
@@ -470,7 +470,7 @@ def vasp_dp_effect_mass(fpath:str="./", xmlfile:str="vasprun.xml", carrier:str="
         # data to write and units conversion
         print(bestfitting)
         dat_to_write = np.vstack((kpath[int(bestfitting[0,0]):int(bestfitting[0,1])]/uc_ang2m, cbm_band[int(bestfitting[0,0]):int(bestfitting[0,1])]*uc_ev2j))
-        with open("%s/%s" % (fpath, "effect_electron.dat"), "w") as f:
+        with open("%s/%s" % (fpath, "effect_electron.dat"), "w", newline="\n") as f:
             f.write("# kpath(angstrom^-1)    eigen_states(J)\n")
             f.write("# rsqures: %15.9f\n" % bestfitting[0, 2])
             np.savetxt(f, dat_to_write.reshape(-1, 2))
@@ -532,7 +532,7 @@ def vasp_defomation_potential(fpath:str="./", poscar_file:str="POSCAR", directio
     elif init_analy == "analysis":
         xml_file_list = subprocess.getoutput("ls %s/*.xml" % fpath).split()
         if "a" in direction:
-            with open("%s/dp_a.dat" % fpath, "w") as f:
+            with open("%s/dp_a.dat" % fpath, "w", newline="\n") as f:
                 f.write("%5s%15s%15s\n" % ("#dp(%)", "VBM", "CBM"))
                 for _ in xml_file_list:
                     if "_a_" in _:
@@ -558,7 +558,7 @@ def vasp_defomation_potential(fpath:str="./", poscar_file:str="POSCAR", directio
             plt.savefig("%s/dp_a.png" % fpath)
             plt.close()
         if "b" in direction:
-            with open("%s/dp_b.dat" % fpath, "w") as f:
+            with open("%s/dp_b.dat" % fpath, "w", newline="\n") as f:
                 f.write("%5s%15s%15s\n" % ("#dp(%)", "VBM", "CBM"))
                 for _ in xml_file_list:
                     if "_b_" in _:
@@ -584,7 +584,7 @@ def vasp_defomation_potential(fpath:str="./", poscar_file:str="POSCAR", directio
             plt.savefig("%s/dp_b.png" % fpath)
             plt.close()
         if "c" in direction:
-            with open("%s/dp_c.dat" % fpath, "w") as f:
+            with open("%s/dp_c.dat" % fpath, "w", newline="\n") as f:
                 f.write("%5s%15s%15s\n" % ("#dp(%)", "VBM", "CBM"))
                 for _ in xml_file_list:
                     if "_c_" in _:
@@ -787,10 +787,10 @@ def vaspxml_parser(select_attrib:str, xmlfile:str="vasprun.xml"):
 def vasp_dos_extractor(xmlfile="vasprun.xml"):
     """  """
     dos_tot, dos_partial, ion_num = vaspxml_parser("dos", xmlfile)
-    with open("dos_tot.dat", "w") as f:
+    with open("dos_tot.dat", "w", newline="\n") as f:
         f.write(dos_tot)
     for _ in range(ion_num):
-        with open ("dos_ion%d.dat" % _, "w") as f:
+        with open ("dos_ion%d.dat" % _, "w", newline="\n") as f:
             f.write(dos_partial[_])
 
 
@@ -862,7 +862,7 @@ def vasp_band_extractor(fpath:str="./", fname:str="BANDCAR", xmlfile:str="vaspru
     efermi = vaspxml_parser(select_attrib="parameters", xmlfile=xmlfile)["efermi"]
 
     # write file
-    with open(fpath+"/"+fname, "w") as f:
+    with open(fpath+"/"+fname, "w", newline="\n") as f:
         f.write('# high symmetry points:  ')
         f.write(' %s\n' % ''.join("{:15.8f}".format(i) for i in kpoint_high_sym))
         f.write('# efermi: %.8f\n' % efermi)
@@ -880,7 +880,7 @@ def vasp_band_extractor(fpath:str="./", fname:str="BANDCAR", xmlfile:str="vaspru
         K_label += 1
     high_points = ''.join("{:15.8f}".format(i) for i in kpoint_high_sym[1:-1])
 
-    with open(fpath+"/"+fname+".gnu", "w") as f:
+    with open(fpath+"/"+fname+".gnu", "w", newline="\n") as f:
         f.write(gnubandcar % (fname, x_max, xtics[:-2], high_points, efermi))
 
 
@@ -957,7 +957,7 @@ def vasp_potcar_gen(poscar_dict, potpath, fpath="./"):
     if os.path.exists(fpath+"/POTCAR"):
         lexit("POTCAT exits, rename it and re-excute the code.")
     else:
-        with open(fpath+"/"+"POTCAR", "w") as f:
+        with open(fpath+"/"+"POTCAR", "w", newline="\n") as f:
             f.writelines(potcar)
 
 
@@ -986,7 +986,7 @@ def vasp_kpoints_gen(poscar_dict, kspacing=0.3, kmesh="none", fpath="./", fname=
     n2 = int(np.max(np.array([1, round_even_odd(b2/(kspacing), oddeven)])))
     n3 = int(np.max(np.array([1, round_even_odd(b3/(kspacing), oddeven)])))
     
-    with open(fpath+fname, "w") as f:
+    with open(fpath+fname, "w", newline="\n") as f:
         f.write("mesh auto\n0\nG\n%s %s %s\n0 0 0" %(str(n1), str(n2), str(n3)))
 
 
@@ -1012,7 +1012,7 @@ def vasp_build_low_dimension(poscar="POSCAR", direction="z", vacuum=20, type="ad
 
 def write_incar(incar_dict, fpath="./", fname="INCAR"):
     """ write INCAR """
-    with open(fpath+fname, "w") as f:
+    with open(fpath+fname, "w", newline="\n") as f:
         for item in incar_dict.keys():
             f.write(item+"="+incar_dict[item]+"\n")
 
@@ -1125,7 +1125,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR",
             lines = f.readlines()
         val_electron += float(lines[1][:-1])* poscar.atom_num[_]
         potcar_lines += lines
-    with open(wdir+"/POTCAR", "w") as f:
+    with open(wdir+"/POTCAR", "w", newline="\n") as f:
         f.writelines(potcar_lines)
 
     # global incar
@@ -1625,7 +1625,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR",
                 lines = f.readlines()
             val_electron += float(lines[1][:-1])
             potcar_lines += lines
-        with open(wdir+"/POTCAR_%s_atom%d" % (dftgga, 1), "w") as f:
+        with open(wdir+"/POTCAR_%s_atom%d" % (dftgga, 1), "w", newline="\n") as f:
             f.writelines(potcar_lines)
 
         # the last atom
@@ -1641,7 +1641,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR",
                 lines = f.readlines()
             val_electron += float(lines[1][:-1])
             potcar_lines += lines
-        with open(wdir+"/POTCAR_%s_atom%d" % (dftgga, len(atom_list)), "w") as f:
+        with open(wdir+"/POTCAR_%s_atom%d" % (dftgga, len(atom_list)), "w", newline="\n") as f:
             f.writelines(potcar_lines)
 
         # the others
@@ -1660,12 +1660,12 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR",
                     lines = f.readlines()
                 val_electron += float(lines[1][:-1])
                 potcar_lines += lines
-            with open(wdir+"/POTCAR_%s_atom%d" % (dftgga, _+1), "w") as f:
+            with open(wdir+"/POTCAR_%s_atom%d" % (dftgga, _+1), "w", newline="\n") as f:
                 f.writelines(potcar_lines)
 
         vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.15, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_scf")
 
-        with open(wdir+"/extractor.sh", "w") as f:
+        with open(wdir+"/extractor.sh", "w", newline="\n") as f:
             f.write(extract_xanes_vasp)
         os.chmod(wdir+"/extractor.sh", 0o775)
         
@@ -1873,7 +1873,7 @@ def extract_xdatcar(xdatcar:str, idx:list, fpath:str="./"):
     print(frac_pos.shape)
 
     for _ in idx:
-        with open(fpath+"/XDATCAR_"+str(_)+".vasp", "w") as f:
+        with open(fpath+"/XDATCAR_"+str(_)+".vasp", "w", newline="\n") as f:
             f.writelines(xdatcar_lines[:7])
             f.write("Direct configuration=  %4d\n" % _)
             np.savetxt(f, frac_pos[:, :, _-1], fmt="%20.16f")
@@ -1910,14 +1910,14 @@ def extract_conv_test(wdir="./"):
         ene = [vaspxml_parser("final_ene", wdir+"/"+_) for _ in conv_name_list]
         encut = [float((_.replace(".xml", "")).split("_encut")[-1]) for _ in conv_name_list]
         np.savetxt(wdir+"/encut-ene.dat", (np.vstack((np.array(encut), np.array(ene))).T)[np.argsort(encut)[::-1], :], header="encut(eV) ene(eV)")
-        with open(wdir+"/encut-ene.gnu", "w") as f:
+        with open(wdir+"/encut-ene.gnu", "w", newline="\n") as f:
             f.write(gnu2dline % ("encut-ene.png", "Convergence test of kinetic energy cutoff", "Kinetic energy cutoff(eV)", "Total energy(eV)", "encut-ene.dat"))
     
     if "vasprun_conv_kmesh_" in conv_name_list[0]:
         ene = [vaspxml_parser("final_ene", wdir+"/"+_) for _ in conv_name_list]
         kmesh = [float((_.replace(".xml", "")).split("_kmesh")[-1]) for _ in conv_name_list]
         np.savetxt(wdir+"/kmesh-ene.dat", (np.vstack((np.array(kmesh), np.array(ene))).T)[np.argsort(kmesh)[::-1], :], header="k-mesh ene(eV)")
-        with open(wdir+"/kmesh-ene.gnu", "w") as f:
+        with open(wdir+"/kmesh-ene.gnu", "w", newline="\n") as f:
             f.write(gnu2dline % ("kmesh-ene.png", "Convergence test of k-mesh", "K-Spacing", "Total energy(eV)", "kmesh-ene.dat"))
     
 
@@ -1988,7 +1988,7 @@ Reciprocal lattice
         xx, yy, zz = np.meshgrid(x_, y_, z_, indexing='ij')
         x, y, z = xx.flatten(), yy.flatten(), zz.flatten()
         
-        with open(fpath+"/"+fname, "w") as f:
+        with open(fpath+"/"+fname, "w", newline="\n") as f:
             f.write(khead % int(kmesh[0]*kmesh[1]*kmesh[2]))
             for _ in range(int(kmesh[0]*kmesh[1]*kmesh[2])):
                 f.write("%15.9f%15.9f%15.9f%10.6f\n" % (x[_], y[_], z[_], 1))
@@ -2001,7 +2001,7 @@ Reciprocal lattice
         y_ = np.linspace(kend[1], kend[4], num=kmesh[0])
         z_ = np.linspace(kend[2], kend[5], num=kmesh[0])
 
-        with open(fpath+"/"+fname, "w") as f:
+        with open(fpath+"/"+fname, "w", newline="\n") as f:
             f.write(khead % int(kmesh[0]))
             for _ in range(int(kmesh[0])):
                 f.write("%15.9f%15.9f%15.9f%10.6f\n" % (x_[_], y_[_], z_[_], 1))
@@ -2060,7 +2060,7 @@ def gen_gnu_bandcar(xml:str, bandcar:str="BANDCAR", kpoints:str="KPOINTS_band"):
 
     gnuscripts = gnubandcar % (bandcar, highpoints_value[-1]+0.0001, xtics, midhigh, bandcar, str(efermi))
     
-    with open("plot.gnu", "w") as f:
+    with open("plot.gnu", "w", newline="\n") as f:
         f.write(gnuscripts)
     
         

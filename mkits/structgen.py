@@ -239,7 +239,7 @@ def gen_struct_fix_block(node_num, node_type, block_type, bond_abs_c=False):
         poscar.get_refined_struct()
         poscar.write_struct(fpath="./layered/chains%s/" % str(node_num[0]), fname=filename1+filename2+".vasp")
     
-    ch = open("./layered/chains%s/chains%s.data" % (str(node_num[0]), str(node_num[0])), "w")
+    ch = open("./layered/chains%s/chains%s.data" % (str(node_num[0]), str(node_num[0])), "w", newline="\n")
     ch.write("Total structures: "+str(len(chains))+"\n")
     ch.write("========== Chains ==========\n"+str(chains)+"\n")
     ch.write("========== Blocks ==========\n"+json.dumps(block_num_type)+"\n")

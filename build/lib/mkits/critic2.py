@@ -141,7 +141,7 @@ def critc2_extract_data(inputfile:str="more.cro", outfile:str="more.crx"):
     datatowrite = datatowrite.replace("(3,1)", "ring")
     datatowrite = datatowrite.replace("(3,3)", "cage")
 
-    with open(outfile, "w") as f:
+    with open(outfile, "w", newline="\n") as f:
         f.write(datatowrite)
 
 

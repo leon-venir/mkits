@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from mkits.sysfc import lexit
 from mkits.database import *
@@ -15,8 +16,12 @@ import sys
 """
 Class
 -----
-struct                 : a class for read, write, operate the material structure
-struct_ase             : a new class of structures based on ase library
+struct:
+    A class for read, write, operate the material structure.
+struct_ase: 
+    A new class of structures based on ase library.
+about:
+    A class for parsering the dft output files.
 
 Functions
 ---------
@@ -661,10 +666,19 @@ def frac2cart(cart_lattice, fraction_pos):
     :para 
     """
     cart_ = np.zeros(3)
-    for _ in range(len(fraction_pos)):
-        cart_ = np.vstack((cart_, 
-                           np.sum(cart_lattice*fraction_pos[_], 
-                                  axis=0)))
+
+    if fraction_pos.shape == (1,3):
+        fraction_pos = np.vstack((fraction_pos,
+                                  np.array([[0,0,0]])))
+        for _ in range(len(fraction_pos)):
+            cart_ = np.vstack((cart_, 
+                               np.sum(cart_lattice*fraction_pos[_],
+                                      axis=0)))
+        cart_ = cart_[:-1]
+    else:
+        for _ in range(len(fraction_pos)):
+            cart_ = np.vstack((cart_, np.sum(cart_lattice, axis=0)))
+    
     return cart_[1:]
 
 
@@ -908,23 +922,28 @@ class struct(object):
                 coord_start_line = 9
                 # check if the dyn symbols present, if not, use "T T T" for all
                 if len(struct_lines[9].split()) == 6:
-                    self.atom_dyn = np.array([list(map(str, (i[:-1].split())[:3])) \
+                    self.atom_dyn = np.array([list(map(str, (i[:-1].split())[3:])) \
                                     for i in struct_lines[coord_start_line:coord_start_line+self.total_atom_num]])
                 else:
                     self.atom_dyn = np.array([["T", "T", "T"]] * self.total_atom_num)
+                self.atom_dyn = self.one_atom_reshape(self.atom_dyn)
                     
             if "direct" in self.calculator:
                 self.coord_direct = np.array([list(map(float, 
                                                        (i[:-1].split())[:3])) \
                                                         for i in struct_lines[coord_start_line:coord_start_line+self.total_atom_num]])
+                self.coord_direct = self.one_atom_reshape(self.coord_direct)
                 self.coord_cart = frac2cart(self.lattice9,
                                             self.coord_direct)
+                #self.coord_cart = self.one_atom_reshape(self.coord_cart)
             else:
                 self.coord_cart = np.array([list(map(float, 
                                                        (i[:-1].split())[:3])) \
                                                         for i in struct_lines[coord_start_line:coord_start_line+self.total_atom_num]])
+                self.coord_cart = self.one_atom_reshape(self.coord_cart)
                 self.coord_direct = cart2frac(self.lattice6,
                                               self.coord_cart)
+                #self.coord_direct = self.one_atom_reshape(self.cood_direct)
                    
         if calculator == "qeout":
             # get data line: celldm(1); crystal axes; site n.     atom       
@@ -1036,6 +1055,15 @@ class struct(object):
         self.atom_type = [atom_data[i][1] for i in atom_type]
         self.atom_num = atom_num
     
+    def one_atom_reshape(self, v):
+        """
+        Reshape the Vector for one-atom system 
+        """
+        if self.total_atom_num == 1:
+            return v.reshape(1, 3)
+        else:
+            return v
+    
     def update_struct_dict(self, new_dict):
         """ 
         Update struct dictionary with new and changed structure 
@@ -1081,8 +1109,6 @@ class struct(object):
                 tmp[i, 2] = dyn_sym_o
         self.atom_dyn = tmp
 
-
-
     def change_calculator(self, new_calculator):
         """ 
         update struct calculator option [vasp_direct, wien] 
@@ -1105,7 +1131,7 @@ class struct(object):
                 """)
         
         if "vasp" in calculator:
-            with open(fpath+"/"+fname, "w") as f:
+            with open(fpath+"/"+fname, "w", newline="\n") as f:
                 f.write("%s\n" % self.title)
                 f.write("%10.5f\n" % self.ratio)
                 np.savetxt(fname=f,
@@ -1148,7 +1174,7 @@ class struct(object):
                                    fmt="%20s %20s %20s")
 
         elif calculator == "wien":
-            with open(fpath+"/"+fname, "w") as f:
+            with open(fpath+"/"+fname, "w", newline="\n") as f:
                 f.write("generate by mkits\n")
                 f.write("%-4sLATTICE,NONEQUIV.ATOMS%4d%11s\n" % ("P", self.struct_dict["atoms_tot"], "P1"))
                 f.write("MODE OF CALC=RELA unit=bohr                                                    \n")
@@ -1162,7 +1188,10 @@ class struct(object):
         else:
             pass
                 
-    def gen_potcar(self, potpath: str = "./", fpath: str ="./", fname: str ="POTCAR"):
+    def gen_potcar(self, 
+                   potpath: str = "./", 
+                   fpath: str ="./", 
+                   fname: str ="POTCAR"):
         # VASP] generate POTCAR
         atoms = self.atom_type
         potcar = []
@@ -1177,44 +1206,25 @@ class struct(object):
         if os.path.exists(fpath+"/POTCAR"):
             lexit("POTCAT exits, rename it and re-excute the code.")
         else:
-            with open(fpath+"/"+fname, "w") as f:
+            with open(fpath+"/"+fname, "w", newline="\n") as f:
                 f.writelines(potcar)
 
 
+class about(object):
+    """
+    """
+    def __init__(self, inp) -> None:
+        with open(inp, "r") as f:
+            self.inplines = f.readlines()
+        
+        self.calculator = self.parse_calculator(self.inplines)
 
-        """if calculator == "vasp_direct":
-            struct_dict["title"] = struct_lines[0][:-1]
-            struct_dict["ratio"] = float(struct_lines[1][:-1])
-            struct_dict["lattice"] = np.array([list(map(float, struct_lines[2].split())), list(map(float, struct_lines[3].split())), list(map(float, struct_lines[4].split()))])
-            struct_dict["lattice_direct"] = lattice_conversion(struct_dict["lattice"])
-            struct_dict["atoms_type"] = struct_lines[5].split()
-            struct_dict["atoms_num"] = np.array(list(map(int, struct_lines[6].split())))
-            struct_dict["atoms_index"] = [symbol_map[_] for _ in struct_dict["atoms_type"]]
-            struct_dict["pos_frac"] = np.array([list(map(float, (i[:-1].split())[:3])) for i in struct_lines[8:8+np.sum(struct_dict["atoms_num"])]])
-            struct_dict["calculator"] = "vasp_direct"
-        if calculator == "vasp_cart":
-            struct_dict["title"] = struct_lines[0][:-1]
-            struct_dict["ratio"] = float(struct_lines[1][:-1])
-            struct_dict["lattice"] = np.array([list(map(float, struct_lines[2].split())), list(map(float, struct_lines[3].split())), list(map(float, struct_lines[4].split()))])
-            struct_dict["lattice_direct"] = lattice_conversion(struct_dict["lattice"])
-            struct_dict["atoms_type"] = struct_lines[0].split()
-            struct_dict["atoms_num"] = np.array(list(map(int, struct_lines[6].split())))
-            self.total_atom_num = np.sum(struct_dict["atoms_num"])
-            struct_dict["atoms_index"] = [symbol_map[_] for _ in struct_dict["atoms_type"]]
-            struct_dict["pos_cart"] = np.loadtxt(self.struct_file, 
-                                                 usecols=[0,1,2],
-                                                 skiprows=8,
-                                                 max_rows=self.total_atom_num)
-            #struct_dict["pos_frac"] = cart2frac(struct_dict["lattice"], struct_dict["pos_cart"])
-            struct_dict["calculator"] = "vasp_cart"
-        elif calculator == "vasp_dyn_direct":
-            struct_dict["title"] = struct_lines[0][:-1]
-            struct_dict["ratio"] = float(struct_lines[1][:-1])
-            struct_dict["lattice"] = np.array([list(map(float, struct_lines[2].split())), list(map(float, struct_lines[3].split())), list(map(float, struct_lines[4].split()))])
-            struct_dict["lattice_direct"] = lattice_conversion(struct_dict["lattice"])
-            struct_dict["atoms_type"] = struct_lines[5].split()
-            struct_dict["atoms_num"] = np.array(list(map(int, struct_lines[6].split())))
-            struct_dict["atoms_index"] = [symbol_map[_] for _ in struct_dict["atoms_type"]]
-            struct_dict["pos_frac"] = np.array([list(map(float, (i[:-1].split())[:3])) for i in struct_lines[9:9+np.sum(struct_dict["atoms_num"])]])
-            struct_dict["pos_move"] = [list(map(str, (i.split())[3:])) for i in struct_lines[9:9+np.sum(struct_dict["atoms_num"])]]
-            struct_dict["calculator"] = "vasp_dyn" """
+    def parse_calculator(self, inplines):
+        """
+        Parse the calculator for the input files
+
+        Returns:
+        --------
+        [vasp_xml, vasp_h5, vasp_out]
+        """
+        

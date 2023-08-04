@@ -58,7 +58,7 @@ def fdmnes_gen_inp(struct_inp, fpath="./", index=0, params=""):
  Crystal
 """
 
-    with open(fpath+"/"+compound+"_inp_"+str(index)+".txt", "w") as f:
+    with open(fpath+"/"+compound+"_inp_"+str(index)+".txt", "w", newline="\n") as f:
         f.write(fdmnes_inp_head % (params["element"], compound, compound, str(index)))
         f.write("%15.10f%15.10f%15.10f%6.1f%6.1f%6.1f\n" % (lattice[0], lattice[1], lattice[2], lattice[3], lattice[4], lattice[5]))
         np.savetxt(f, np.hstack((atom_list.reshape(-1,1), struct_inp["pos_frac"])), fmt="%3d%15.10f%15.10f%15.10f")

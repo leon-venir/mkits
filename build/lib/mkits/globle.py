@@ -1105,7 +1105,7 @@ class struct(object):
                 """)
         
         if "vasp" in calculator:
-            with open(fpath+"/"+fname, "w") as f:
+            with open(fpath+"/"+fname, "w", newline="\n") as f:
                 f.write("%s\n" % self.title)
                 f.write("%10.5f\n" % self.ratio)
                 np.savetxt(fname=f,
@@ -1148,7 +1148,7 @@ class struct(object):
                                    fmt="%20s %20s %20s")
 
         elif calculator == "wien":
-            with open(fpath+"/"+fname, "w") as f:
+            with open(fpath+"/"+fname, "w", newline="\n") as f:
                 f.write("generate by mkits\n")
                 f.write("%-4sLATTICE,NONEQUIV.ATOMS%4d%11s\n" % ("P", self.struct_dict["atoms_tot"], "P1"))
                 f.write("MODE OF CALC=RELA unit=bohr                                                    \n")
@@ -1177,7 +1177,7 @@ class struct(object):
         if os.path.exists(fpath+"/POTCAR"):
             lexit("POTCAT exits, rename it and re-excute the code.")
         else:
-            with open(fpath+"/"+fname, "w") as f:
+            with open(fpath+"/"+fname, "w", newline="\n") as f:
                 f.writelines(potcar)
 
 
