@@ -55,11 +55,11 @@ def qe_conv_extractor(wkdir:str="./"):
     caltype = parser_inputlines(wkdir+"/caldetails")["caltype"]
 
     conv_name_list = []
-    for _ in os.listdir(wkdir):
-        if ".out" in _:
-            conv_name_list.append(_)
         
     if caltype == "qe_conv_kmesh":
+        for _ in os.listdir(wkdir):
+            if "kmesh_" in _:
+                conv_name_list.append(_)
         kpoints = np.array([])
         final_ene = np.array([])
         for conv_f in conv_name_list:
@@ -75,6 +75,10 @@ def qe_conv_extractor(wkdir:str="./"):
         with open(wkdir+"/kmesh_ene.gnu", "w", newline="\n") as f:
             f.write(gnu2dline % ("kmesh_ene.png", "Convergence test of kpoints", "Kpoints", "Total energy(eV)", "kmesh_ene.dat"))
     elif caltype == "qe_conv_ecutwfc":
+        for _ in os.listdir(wkdir):
+            if "ecutwfc_" in _:
+                conv_name_list.append(_)
+
         ecutwfc = np.array([])
         final_ene = np.array([])
         for conv_f in conv_name_list:
@@ -90,6 +94,9 @@ def qe_conv_extractor(wkdir:str="./"):
         with open(wkdir+"/ecutwfc_ene.gnu", "w", newline="\n") as f:
             f.write(gnu2dline % ("ecutwfc_ene.png", "Convergence test of Kinetic energy cutoff", "Kinetic energy cutoff(Ry)", "Total energy(eV)", "ecutwfc_ene.dat"))
     elif caltype == "qe_conv_degauss":
+        for _ in os.listdir(wkdir):
+            if "degauss_" in _:
+                conv_name_list.append(_)
         degauss = np.array([])
         final_ene = np.array([])
         for conv_f in conv_name_list:
@@ -123,7 +130,10 @@ def qe_output_extractor(output_file:str="tmp.out"):
     
     # total energy, fermi energy
     final_ene = float(subprocess.getoutput('grep "!    total energy " %s' % output_file).split()[-2]) * uc_ry2ev
-    fermi_ene = float(subprocess.getoutput('grep "the Fermi energy is " %s' % output_file).split()[-2])
+    try:
+        fermi_ene = float(subprocess.getoutput('grep "the Fermi energy is " %s' % output_file).split()[-2])
+    except:
+        fermi_ene = 'nan'
 
     # return
     return {

@@ -613,7 +613,7 @@ def ngt_til(pattern_square, pattern_triangle, pattern_rhombus):
     ngt_tiling.add_pattern(pattern_triangle, 59)
     ngt_tiling.add_pattern(pattern_square, 62)
     ngt_tiling.add_pattern(pattern_triangle, 58)
-    ngt_tiling.add_pattern(pattern_triangle, 69)
+    ngt_tiling.add_pattern(patte1rn_triangle, 69)
     ngt_tiling.add_pattern(pattern_square, 72)
     ngt_tiling.add_pattern(pattern_triangle, 65)
     ngt_tiling.add_pattern(pattern_triangle, 63)

@@ -25,6 +25,7 @@ about:
 
 Functions
 ---------
+list_index_by_list     : index a list with another list, the way in numpy
 trans_reflection_xy    :
 split_list             : 
 arith_prog_split_even  : split the arithmetic progression into approximate 
@@ -62,6 +63,13 @@ listcross              : get cross product of two list,
 frac2cart              :  
 cart2frac              : 
 """
+
+
+def list_index_by_list(list1, index):
+    """
+    T = [L[i] for i in Idx]
+    """
+    return [list1[i] for i in index]
 
 
 def trans_reflection_xy(vector, method, inp):
@@ -313,8 +321,14 @@ def relaxation_time(cii, effect_mass, ed, T, dimension:str="3d"):
         optional [3d, 2d]
     """
     if dimension == "3d":
-        tau = 2 * np.sqrt(2*np.pi) * cons_hbar**4 * cii * effect_mass 
-        tau /= 3 * cons_emass**(3/2) * (cons_kb*T)**(3/2) * ed**2
+        #tau = 2 * np.sqrt(2*np.pi) * cons_hbar**4 * cii * effect_mass 
+        #tau /= 3 * cons_emass**(3/2) * (cons_kb*T)**(3/2) * ed**2
+        tau = 2 * np.sqrt(2*np.pi) * cons_hbar**4 * cii * uc_gpa2nm2
+        tau /= 3 * (cons_emass*effect_mass)**(3/2) * (cons_kb*T)**(3/2) * (ed * uc_ev2j)**2
+    elif dimension == "2d":
+        mu = cons_echarge * cons_hbar**3 * cii
+        mu /= cons_kb * T * (effect_mass * cons_emass)**2 * (ed * uc_ev2j)**2
+        tau = mu * (effect_mass * cons_emass) / cons_echarge
     return tau
 
 
@@ -599,11 +613,18 @@ def parser_inputpara(inputstring):
     :return : dictionary
     """
     input_dict = {}
-    if "," in inputstring: separator_outkey = ","
-    elif ";" in inputstring: separator_outkey = ";"
+
+    if "," in inputstring: 
+        separator_outkey = ","
+    elif ";" in inputstring: 
+        separator_outkey = ";"
     else: separator_outkey = " "
-    if ":" in inputstring: separator_inkey = ":"
-    elif "=" in inputstring: separator_inkey = "="
+
+    if ":" in inputstring: 
+        separator_inkey = ":"
+    elif "=" in inputstring: 
+        separator_inkey = "="
+        
     try:
         for inp in inputstring.split(separator_outkey):
             inp_key_para = inp.split(separator_inkey)
@@ -748,18 +769,23 @@ class struct(object):
 
     Attributs
     ---------
+    atom_continous_num
+        The continous indexing of atom number
+        atom number [60 18 12  4] --> [60, 78, 90, 94]
     nearest_neighbor, array
         The list of 5 nearest neighbor and their distance
         [[atom1, neighbor1, distance_to_neighbor1, neighbor2, dis...],
          [atom2, neighbor1, distance_to_neighbor1, neighbor2, dis...],
          ...]]
     struct_dict
-        A dictionary 
+        A dictionary
     
     Functions
     ---------
     return_dict
         return a dictionary of the structure
+    del_atom
+        delete atoms by elements name, by index, by coordinates
     """
 
     def __init__(self, inp): 
@@ -796,6 +822,7 @@ class struct(object):
             lexit("Cannot find the structure file: ", inp)
         self.atoms_sequence = listcross(self.atom_type, self.atom_num)
         self.find_neighbor()
+        self.atom_continous_num = self.find_continous_atom_idex()
 
     def __repr__(self) -> str:
         """"""
@@ -803,6 +830,9 @@ class struct(object):
         pringinfo = "This is a Class containing structures information:\n"
         pringinfo += "Lattice direct: {}\n".format(struct_dict["lattice"])
         return pringinfo
+    
+    def find_continous_atom_idex(self):
+        return [int(np.sum(np.array(self.atom_num)[:i+1])) for i in range(len(self.atom_type))]
     
     def find_neighbor(self):
         """ """
@@ -1208,6 +1238,50 @@ class struct(object):
         else:
             with open(fpath+"/"+fname, "w", newline="\n") as f:
                 f.writelines(potcar)
+    
+    def del_atom(self,
+                 by="element",
+                 parameters=""):
+        """ """
+        if by == "element":
+            try:
+                parameters = parameters.split()
+            except:
+                print("Specify the parameter like: Pt Ti O")
+            
+            # checking
+            if isinstance(parameters, list) and all(item in self.atom_type for item in parameters):
+                pass
+            else:
+                lexit("Some element specified cannot find in the structure.")
+            
+            # find the index
+            del_pos_idx = []
+            del_atom_idx = []
+            atom_continous_num = [0] + self.atom_continous_num
+            for i in parameters:
+                idx = self.atom_type.index(i)
+                del_atom_idx.append(idx)
+                del_pos_idx += list(range(atom_continous_num[idx],
+                                          atom_continous_num[idx+1]))
+            
+            # get complement of the del index
+            # reserving index
+            reserve_atom_idx = list(set(list(range(len(self.atom_type)))) - set(del_atom_idx))
+            reserve_pos_idx = list(set(range(self.total_atom_num)) - set(del_pos_idx))
+
+            # delete term in struct dictionary
+            self.atom_index = list_index_by_list(self.atom_index, reserve_atom_idx)
+            self.atom_type = list_index_by_list(self.atom_type, reserve_atom_idx)
+            self.atom_num = self.atom_num[reserve_atom_idx]
+            self.atoms_sequence = listcross(self.atom_type, self.atom_num)
+            self.coord_direct = list_index_by_list(self.coord_direct, reserve_pos_idx)
+            self.coord_cart = list_index_by_list(self.coord_cart, reserve_pos_idx)
+            if self.dyn:
+                self.atom_dyn = self.atom_dyn[reserve_pos_idx]
+            
+
+
 
 
 class about(object):

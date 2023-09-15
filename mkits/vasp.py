@@ -955,7 +955,7 @@ def vasp_potcar_gen(poscar_dict, potpath, fpath="./"):
         except:
             lexit("The POTCAR of " + atom + " doesn't exit.")
     if os.path.exists(fpath+"/POTCAR"):
-        lexit("POTCAT exits, rename it and re-excute the code.")
+        lexit("POTCAR exits, rename it and re-excute the code.")
     else:
         with open(fpath+"/"+"POTCAR", "w", newline="\n") as f:
             f.writelines(potcar)
@@ -1236,38 +1236,95 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR",
     # scf
     # =================================================================================
     def dft_scf(incar=incar):
-        incar.update(incar_scf)
-        update_incar(incar, params, incar_tag)
-        incar = ch_functional(incar)
-
-        vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.15, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_scf")
+        vasp_kpoints_gen(poscar.return_dict(), 
+                         kspacing=float(params["kmesh"]) if "kmesh" in params else 0.15, 
+                         kmesh=params["oddeven"] if "oddeven" in params else "odd", 
+                         fpath=wdir, 
+                         fname="KPOINTS_scf")
 
         poscar.write_struct(fpath=wdir, fname="POSCAR_init")
 
-        write_incar(incar, fpath=wdir, fname="INCAR_%s" % dft)
+        # for multi-scf: need inputs from kwargs: ["params2", "params3"]
 
-        cmd = "# scf calculation\n"
-        cmd += "cp INCAR_%s INCAR\n" % dft
-        cmd += "cp POSCAR_init POSCAR\n"
-        cmd += "cp KPOINTS_scf KPOINTS\n"
-        cmd += execode + "\n"
-        cmd += savevaspsh(["OUTCAR", "OSZICAR", "REPORT", "IBZKPT", "CONTCAR", 
-                           "EIGENVAL", "vasprun.xml", "CHGCAR", "WAVECAR", "DOSCAR"],
-                           dft)
-        cmd += "rm -f CHG POSCAR REPORT XDATCAR vaspout.h5\n"
-        write_runsh(wdir+"/run.sh", cmd)
+        if "mulscf" in params:
+            mulstep = int(params["mulscf"]) + 1
+            step = 1
+
+            incar_dft = deepcopy(incar)
+            incar_dft.update(incar_scf)
+            update_incar(incar_dft, params, incar_tag)
+            incar_dft = ch_functional(incar_dft)
+
+            write_incar(incar_dft, 
+                        fpath=wdir, 
+                        fname="INCAR_%s_%d" %(dft, step))
+            poscar.write_struct(fpath=wdir, 
+                                fname="POSCAR_init")
+
+            cmd = "# opt step %d\n" % step
+            cmd += "  cp POSCAR_init POSCAR\n"
+            cmd += "  cp KPOINTS_scf KPOINTS\n"
+            cmd += "  cp INCAR_%s_%d INCAR\n\n" % (dft, step)
+            cmd += "  " + execode + " >& vasp.out 2>&1\n\n"
+            cmd += savevaspsh(["OUTCAR", "OSZICAR", "REPORT", "IBZKPT", \
+                               "CONTCAR", "EIGENVAL", "vasprun.xml", \
+                               "CHGCAR", "WAVECAR", "DOSCAR", "vasp.out"],
+                               dft+"_"+str(step))
+            write_runsh(wdir+"/run_%d.sh" % step, cmd)
+
+            # write folowing steps
+            for step in range(2, mulstep):
+                
+                incar_dft = deepcopy(incar)
+                incar_dft.update(incar_scf)
+                params_tmp = parser_inputpara(kwargs["params%d" % step])
+                update_incar(incar_dft, params_tmp, incar_tag)
+                incar_dft = ch_functional(incar_dft)
+
+                write_incar(incar_dft, 
+                            fpath=wdir, 
+                            fname="INCAR_%s_%d" % (dft, step))
+            
+                cmd = "# opt step %d\n" % step
+                cmd += "  cp POSCAR_init POSCAR\n"
+                cmd += "  cp INCAR_%s_%d INCAR\n" % (dft, step)
+                cmd += "  cp KPOINTS_scf KPOINTS\n\n"
+                cmd += "  " + execode + " >& vasp.out 2>&1\n\n"
+                cmd += savevaspsh(["OUTCAR", "OSZICAR", "REPORT", "IBZKPT", \
+                                   "CONTCAR", "EIGENVAL", "vasprun.xml", \
+                                   "CHGCAR", "WAVECAR", "DOSCAR", "vasp.out"],
+                                   dft+"_"+str(step))
+                write_runsh(wdir+"/run_%d.sh" % step, cmd)
+
+        else:
+            incar.update(incar_scf)
+            update_incar(incar, params, incar_tag)
+            incar = ch_functional(incar)
+            write_incar(incar, fpath=wdir, fname="INCAR_%s" % dft)
+
+            cmd = "# scf calculation\n"
+            cmd += "  cp INCAR_%s INCAR\n" % dft
+            cmd += "  cp POSCAR_init POSCAR\n"
+            cmd += "  cp KPOINTS_scf KPOINTS\n"
+            cmd += "  " + execode + " >& vasp.out 2>&1\n\n"
+            cmd += savevaspsh(["OUTCAR", "OSZICAR", "REPORT", "IBZKPT", \
+                               "CONTCAR", "EIGENVAL", "vasprun.xml", \
+                               "CHGCAR", "WAVECAR", "DOSCAR", "vasp.out"],
+                            dft)
+            #cmd += "rm -f CHG POSCAR REPORT XDATCAR vaspout.h5\n"
+            write_runsh(wdir+"/run.sh", cmd)
     
     # =================================================================================
     # opt
     # =================================================================================
     def dft_opt(incar=incar):
+        # enable WAVECAR by default
+        incar["LWAVE"] = ".TRUE."
+        incar["LCHARG"] = ".TRUE."
+
         incar.update(incar_opt)
         update_incar(incar, params, incar_tag)
         incar = ch_functional(incar)
-
-        # enable WAVECAR
-        incar["LWAVE"] = ".TRUE."
-        incar["LCHARG"] = ".TRUE."
 
         # default ISIF = 3
         isif = {"ISIF": "3"}
@@ -1297,12 +1354,12 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR",
                                 fname="POSCAR_opt_init")
 
             cmd = "# opt step %d\n" % step
-            cmd += "cp POSCAR_opt_init POSCAR\n"
-            cmd += "cp KPOINTS_opt KPOINTS\n"
-            cmd += "cp INCAR_%s_%d INCAR\n" % (dft, step)
-            cmd += execode + "\n"
+            cmd += "  cp POSCAR_opt_init POSCAR\n"
+            cmd += "  cp KPOINTS_opt KPOINTS\n"
+            cmd += "  cp INCAR_%s_%d INCAR\n\n" % (dft, step)
+            cmd += "  " + execode + " >& vasp.out 2>&1\n\n"
             cmd += savevaspsh(["OUTCAR", "XDATCAR", "OSZICAR", "REPORT", \
-                               "PCDAT", "CONTCAR", "vasprun.xml"],
+                               "PCDAT", "CONTCAR", "vasprun.xml", "vasp.out"],
                                dft+"_"+str(step))
             write_runsh(wdir+"/run_%d.sh" % step, cmd)
 
@@ -1316,12 +1373,12 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR",
                         fname="INCAR_%s_%d" % (dft, step))
             
                 cmd = "# opt step %d\n" % step
-                cmd += "cp CONTCAR_%s_%d POSCAR\n" % (dft, step-1)
-                cmd += "cp INCAR_%s_%d INCAR\n" % (dft, step)
-                cmd += "cp KPOINTS_opt KPOINTS\n"
-                cmd += execode + "\n"
+                cmd += "  cp CONTCAR_%s_%d POSCAR\n" % (dft, step-1)
+                cmd += "  cp INCAR_%s_%d INCAR\n" % (dft, step)
+                cmd += "  cp KPOINTS_opt KPOINTS\n\n"
+                cmd += "  " + execode + " >& vasp.out 2>&1\n\n"
                 cmd += savevaspsh(["OUTCAR", "XDATCAR", "OSZICAR", "REPORT", \
-                                   "PCDAT", "CONTCAR", "vasprun.xml"],
+                                   "PCDAT", "CONTCAR", "vasprun.xml", "vasp.out"],
                                    dft+"_"+str(step))
                 write_runsh(wdir+"/run_%d.sh" % step, cmd)
 
@@ -1513,31 +1570,30 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR",
                             else 0.3, 
                          kmesh=params["oddeven"] \
                             if "oddeven" in params else "odd", 
-                         fpath=wdir, 
+                         fpath=wdir,
                          fname="KPOINTS_md")
         
         if "mulmd" not in params:
             dftgga = dft+"_"+gga
             write_incar(incar, 
                         fpath=wdir, 
-                        fname="INCAR_%s" % dftgga)
+                        fname="INCAR_nvt")
             
             cmd = "# md nvt calculation\n"
-            cmd += "cp INCAR_%s INCAR\n" % dftgga
+            cmd += "cp INCAR_nvt INCAR\n"
             cmd += "cp POSCAR_md_init POSCAR\n"
             cmd += "cp KPOINTS_md KPOINTS\n"
             cmd += "for step in 1; do\n"
             cmd += execode + "\n"
-            cmd += "mv OUTCAR OUTCAR_%s_$step\n" % dftgga
-            cmd += "mv vasprun.xml vasprun_%s_$step.xml\n" % dftgga
-            cmd += "mv XDATCAR XDATCAR_%s_$step\n" % dftgga
-            cmd += "mv OSZICAR OSZICAR_%s_$step\n" % dftgga
-            cmd += "mv REPORT REPORT_%s_$step\n" % dftgga
-            cmd += "mv PCDAT PCDAT_%s_$step\n" % dftgga
-            cmd += "cp CONTCAR CONTCAR_%s_$step\n" % dftgga
+            cmd += "mv OUTCAR OUTCAR_$step\n"
+            cmd += "mv vasprun.xml vasprun_$step.xml\n"
+            cmd += "mv XDATCAR XDATCAR_$step\n"
+            cmd += "mv OSZICAR OSZICAR_$step\n"
+            cmd += "mv REPORT REPORT_$step\n"
+            cmd += "mv PCDAT PCDAT_$step\n"
+            cmd += "cp CONTCAR CONTCAR_$step\n"
             cmd += "mv CONTCAR POSCAR\n" 
             cmd += "done\n"
-            cmd += "rm -f CHG KPOINTS DOSCAR EIGENVAL INCAR vaspout.h5\n"
             write_runsh(wdir+"/run.sh", cmd)
 
         else:
@@ -1759,10 +1815,17 @@ def savevaspsh(savelist, savelabel):
     ------
     String 
     """
-    savestring = ""
     
+    savelist2string = ""
     for i in savelist:
-        savestring += """mv %s %s_%s\n""" % (i, i, savelabel)
+        savelist2string += "'" + i + "' "
+    
+    savestring = '''  ffin=( %s )
+  for ifin in ${ffin[@]}; do
+    mv $ifin "$ifin"_%s
+  done
+    ''' % (savelist2string, savelabel)
+    
     return savestring
 
 

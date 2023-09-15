@@ -118,17 +118,32 @@ qe_system_key = ["ibrav", "celldm", "A", "B", "C", "cosAB", "cosAC", "cosBC",
                  "eopreg", "eamp", "angle1", "angle2", "lforcet", 
                  "constrained_magnetization", "fixed_magnetization", "lambda", "report", "lspinorb", "assume_isolated", "esm_bc", "esm_w", "esm_efield", "esm_nfit", "lgcscf", "gcscf_mu", "gcscf_conv_thr", "gcscf_beta", "vdw_corr", "london", "london_s6", "london_c6", "london_rvdw", "london_rcut", "dftd3_version", "dftd3_threebody", "ts_vdw_econv_thr", "ts_vdw_isolated", "xdm", "xdm_a1", "xdm_a2", "space_group", "uniqueb", "origin_choice", "rhombohedral", "zgate", "relaxz", "block", "block_1", "block_2", "block_height"]
 
-qe_electrons_key = ["electron_maxstep", "scf_must_converge", "conv_thr", "adaptive_thr", "conv_thr_init", "conv_thr_multi", "mixing_mode", "mixing_beta", "mixing_ndim", "mixing_fixed_ns", "diagonalization", "diago_thr_init", "diago_cg_maxiter", "diago_ppcg_maxiter", "diago_david_ndim", "diago_rmm_ndim", "diago_rmm_conv", "diago_gs_nblock", "diago_full_acc", "efield", "efield_cart", "efield_phase", "startingpot", "startingwfc", "tqr", "real_space"]
+qe_electrons_key = ["electron_maxstep", "scf_must_converge", "conv_thr", 
+                    "adaptive_thr", "conv_thr_init", "conv_thr_multi", 
+                    "mixing_mode", "mixing_beta", "mixing_ndim", 
+                    "mixing_fixed_ns", "diagonalization", "diago_thr_init", 
+                    "diago_cg_maxiter", "diago_ppcg_maxiter", 
+                    "diago_david_ndim", "diago_rmm_ndim", "diago_rmm_conv", 
+                    "diago_gs_nblock", "diago_full_acc", "efield", 
+                    "efield_cart", "efield_phase", "startingpot", 
+                    "startingwfc", "tqr", "real_space"]
 
-qe_ions_key = ["ion_positions", "ion_velocities", "ion_dynamics", "pot_extrapolation", "wfc_extrapolation", "remove_rigid_rot", "ion_temperature", "tempw", "tolp", "delta_t", "nraise", "refold_pos", "upscale", "bfgs_ndim", "trust_radius_max", "trust_radius_min", "trust_radius_ini", "w_1", "w_2", "fire_alpha_init", "fire_falpha", "fire_nmin", "fire_f_inc", "fire_f_dec", "fire_dtmax"]
+qe_ions_key = ["ion_positions", "ion_velocities", "ion_dynamics", 
+               "pot_extrapolation", "wfc_extrapolation", "remove_rigid_rot", 
+               "ion_temperature", "tempw", "tolp", "delta_t", "nraise", 
+               "refold_pos", "upscale", "bfgs_ndim", "trust_radius_max", 
+               "trust_radius_min", "trust_radius_ini", "w_1", "w_2", 
+               "fire_alpha_init", "fire_falpha", "fire_nmin", "fire_f_inc", 
+               "fire_f_dec", "fire_dtmax"]
 
-qe_cell_key = ["cell_dynamics", "press", "wmass", "cell_factor", "press_conv_thr", "cell_dofree"]
+qe_cell_key = ["cell_dynamics", "press", "wmass", "cell_factor", 
+               "press_conv_thr", "cell_dofree"]
 
 
 # :database vasp: VASP input tag ====================== #
-incar_tag = ["ENCUT", "PREC", "ALGO", "IDIPOL", "ISMEAR", "SIGMA", "ISTART", 
-             "LORBIT", "NELM", "LDIPOL", "LVTOT", "LWAVE", "LREAL", "AMIX", 
-             "BMIX", "NCORE", "ISIF", "NELECT", "IOPTCELL",
+incar_tag = ["ENCUT", "PREC", "ALGO", "ISMEAR", "SIGMA", "ISTART", 
+             "LORBIT", "NELM", "LWAVE", "LREAL", "AMIX", 
+             "BMIX", "NCORE", "NELECT", "IOPTCELL",
             # DFT+U
             "LDAU", "LDAUTYPE", "LDAUL", "LDAUU", "LDAUJ", "LDAUPRINT", 
             # spin
@@ -136,11 +151,15 @@ incar_tag = ["ENCUT", "PREC", "ALGO", "IDIPOL", "ISMEAR", "SIGMA", "ISTART",
             # so
             "LNONCOLLINEAR", "VOSKOWN", "LSORBIT", "SAXIS", "NBANDS",
             # opt
-            "EDIFF", "EDIFFG", "NSW",
+            "EDIFF", "EDIFFG", "NSW", "ISIF", 
             # md
             "TEBEG", "TEEND", "SMASS",
             # sym
-            "ISYM"
+            "ISYM",
+            # dipole
+            "LDIPOL", "IDIPOL",
+            # work function
+            "LVTOT", "LVHAR"
             ]
 
 
