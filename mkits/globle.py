@@ -1269,6 +1269,8 @@ class struct(object):
             # reserving index
             reserve_atom_idx = list(set(list(range(len(self.atom_type)))) - set(del_atom_idx))
             reserve_pos_idx = list(set(range(self.total_atom_num)) - set(del_pos_idx))
+            reserve_atom_idx.sort()
+            reserve_pos_idx.sort()  
 
             # delete term in struct dictionary
             self.atom_index = list_index_by_list(self.atom_index, reserve_atom_idx)
