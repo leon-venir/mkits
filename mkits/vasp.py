@@ -28,11 +28,14 @@ xml_block                 : search the block with specific block_name and return
 vasp_split_IBZKPT         : split IBZKPT for huge kpoints calculations
 vasp_dp_effect_mass       : 
 vasp_defomation_potential : generate structures for deformation potential calculation
-gen_gnu_bandcar           : generate gnuplot scripts 
-add_selective_dyn         : add the 4-, 5-, 6th columns for selective dynamic POSCAR
+gen_gnu_bandcar           : Generate gnuplot scripts 
+add_selective_dyn         : Add the 4-, 5-, 6th columns for selective dynamic 
+                          : POSCAR
 vaspxml_parser            : parse the vasprun.xml file
-vasp_dos_extractor        : extract data from vasprun.xml and create a gnuplot format dos_num.dat
-vasp_band_extractor       : extract data from EIGNVAL and create a gnuplot format BANDCAR
+vasp_dos_extractor        : extract data from vasprun.xml and create a gnuplot 
+                          : format dos_num.dat
+vasp_band_extractor       : extract data from EIGNVAL and create a gnuplot 
+                          : format BANDCAR
 parse_vasp_incar          : parse the INCAR file
 parse_vasp_incarstring    : parse string-like INCAR
 parse_vasp_outcar         : parse the OUTCAR file 
@@ -961,12 +964,27 @@ def vasp_potcar_gen(poscar_dict, potpath, fpath="./"):
             f.writelines(potcar)
 
 
-def vasp_kpoints_gen(poscar_dict, kspacing=0.3, kmesh="none", fpath="./", fname="KPOINTS"):
+def vasp_kpoints_gen(poscar_dict, 
+                     kspacing=0.3, 
+                     kmesh="none", 
+                     fpath="./", 
+                     fname="KPOINTS",
+                     kfix="-1 -1 -1"):
     """
     Generate kpoints
-    :param poscar_dict  : dictionary, structure dict
-    :param kspacing     : float
-    :param kmesh        : string: odd, even, none(default); generate even or odd kmesh
+
+    Parameters
+    ----------
+    poscar_dict: 
+        dictionary, structure dict
+    kspacing: 
+        float
+    kmesh: 
+        string: odd, even, none(default); generate even or odd kmesh
+    fix:
+        Fix k-mesh in specific direction to a given number
+        -1 -1 -1 means no fix
+        -1 -1  1 means fix the k-mesh in z-axis direction to 1
     """
     
     a1 = np.sqrt(np.dot(poscar_dict["lattice"][0,:], poscar_dict["lattice"][0,:]))
@@ -985,6 +1003,15 @@ def vasp_kpoints_gen(poscar_dict, kspacing=0.3, kmesh="none", fpath="./", fname=
     n1 = int(np.max(np.array([1, round_even_odd(b1/(kspacing), oddeven)])))
     n2 = int(np.max(np.array([1, round_even_odd(b2/(kspacing), oddeven)])))
     n3 = int(np.max(np.array([1, round_even_odd(b3/(kspacing), oddeven)])))
+
+    # check fix
+    kfix = [int(i) for i in kfix.split()]
+    if kfix[0] != -1:
+        n1 = kfix[0]
+    if kfix[1] != -1:
+        n2 = kfix[1]
+    if kfix[2] != -1:
+        n3 = kfix[2]
     
     with open(fpath+fname, "w", newline="\n") as f:
         f.write("mesh auto\n0\nG\n%s %s %s\n0 0 0" %(str(n1), str(n2), str(n3)))
@@ -1066,6 +1093,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR",
                 :                 ->             optB88, optPBE]
                 :                 ->  oddeven  = [odd, even]
                 :                 ->  kspacing = 0.15
+                :                 ->  kfix     = "-1 -1 1"
                 :                 ->  charged  = -1
                 :                 ->  any tag in INCAR
                 : dft=opt         ->  mulisif  = 2/6/3
@@ -1144,7 +1172,7 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR",
     
     # write run.sh file and add x permission
     def write_runsh(runsh, cmd):
-        with open(runsh, "a", newline="\n") as f:
+        with open(runsh, "w", newline="\n") as f:
             f.write(cmd)
         os.chmod(runsh, 0o775)
     
@@ -1232,24 +1260,43 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR",
              poscar.lattice6[2] > 50,]):   # lattice c
         incar["AMIN"] = "0.01"
     
+    # save file list
+    save_output_list = ["OUTCAR", "OSZICAR", "REPORT", "IBZKPT", \
+                        "CONTCAR", "EIGENVAL", "vasprun.xml", \
+                        "CHGCAR", "WAVECAR", "DOSCAR", "vasp.out"]
+    def update_save_list(save_output_list, dft, incar):
+        if gga == "opt":
+            save_output_list.remove("WAVECAR")
+            save_output_list.remove("CHGCAR")
+        
+        if "LVHAR" in incar:
+            save_output_list.append("LOCPOT")
+            save_output_list.append("POT")
+        if "LORBIT" in incar:
+            save_output_list.append("PROCAR")
+        
+        return save_output_list
+    
+    # kpoints parameters
+    def update_kpoints_para(params):
+        kspacing = float(params["kspacing"]) if "kspacing" in params else 0.15
+        kmesh=params["oddeven"] if "oddeven" in params else "odd"
+        kfix=params["kfix"] if "kfix" in params else "-1 -1 -1"
+        return kspacing, kmesh, kfix
+    
     # =================================================================================
     # scf
     # =================================================================================
     def dft_scf(incar=incar):
-        vasp_kpoints_gen(poscar.return_dict(), 
-                         kspacing=float(params["kmesh"]) if "kmesh" in params else 0.15, 
-                         kmesh=params["oddeven"] if "oddeven" in params else "odd", 
-                         fpath=wdir, 
-                         fname="KPOINTS_scf")
 
         poscar.write_struct(fpath=wdir, fname="POSCAR_init")
 
         # for multi-scf: need inputs from kwargs: ["params2", "params3"]
-
         if "mulscf" in params:
             mulstep = int(params["mulscf"]) + 1
             step = 1
 
+            # incar 
             incar_dft = deepcopy(incar)
             incar_dft.update(incar_scf)
             update_incar(incar_dft, params, incar_tag)
@@ -1261,15 +1308,15 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR",
             poscar.write_struct(fpath=wdir, 
                                 fname="POSCAR_init")
 
-            cmd = "# opt step %d\n" % step
-            cmd += "  cp POSCAR_init POSCAR\n"
-            cmd += "  cp KPOINTS_scf KPOINTS\n"
-            cmd += "  cp INCAR_%s_%d INCAR\n\n" % (dft, step)
-            cmd += "  " + execode + " >& vasp.out 2>&1\n\n"
-            cmd += savevaspsh(["OUTCAR", "OSZICAR", "REPORT", "IBZKPT", \
-                               "CONTCAR", "EIGENVAL", "vasprun.xml", \
-                               "CHGCAR", "WAVECAR", "DOSCAR", "vasp.out"],
-                               dft+"_"+str(step))
+            # kpoints
+            kspacing, kmesh, kfix = update_kpoints_para(params)
+            vasp_kpoints_gen(poscar.return_dict(), kspacing, kmesh, 
+                             wdir, "KPOINTS_scf_%d" % step, kfix)
+
+            cmd = "# scf step %d\n" % step
+            cmd += initvaspsh(dft, execode, 1, True)
+            cmd += savevaspsh(update_save_list(save_output_list, dft, incar_dft),
+                              dft+"_"+str(step))
             write_runsh(wdir+"/run_%d.sh" % step, cmd)
 
             # write folowing steps
@@ -1281,22 +1328,27 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR",
                 update_incar(incar_dft, params_tmp, incar_tag)
                 incar_dft = ch_functional(incar_dft)
 
+                # kpoints
+                kspacing, kmesh, kfix = update_kpoints_para(params_tmp)
+                vasp_kpoints_gen(poscar.return_dict(), kspacing, kmesh,
+                                 wdir, "KPOINTS_scf_%d" % step, kfix)
+
                 write_incar(incar_dft, 
                             fpath=wdir, 
                             fname="INCAR_%s_%d" % (dft, step))
             
-                cmd = "# opt step %d\n" % step
-                cmd += "  cp POSCAR_init POSCAR\n"
-                cmd += "  cp INCAR_%s_%d INCAR\n" % (dft, step)
-                cmd += "  cp KPOINTS_scf KPOINTS\n\n"
-                cmd += "  " + execode + " >& vasp.out 2>&1\n\n"
-                cmd += savevaspsh(["OUTCAR", "OSZICAR", "REPORT", "IBZKPT", \
-                                   "CONTCAR", "EIGENVAL", "vasprun.xml", \
-                                   "CHGCAR", "WAVECAR", "DOSCAR", "vasp.out"],
-                                   dft+"_"+str(step))
+                cmd = "# scf step %d\n" % step
+                cmd += initvaspsh(dft, execode, step, True)
+                cmd += savevaspsh(update_save_list(save_output_list, dft, incar_dft),
+                                  dft+"_"+str(step))
                 write_runsh(wdir+"/run_%d.sh" % step, cmd)
 
         else:
+            # kpoints
+            kspacing, kmesh, kfix = update_kpoints_para(params)
+            vasp_kpoints_gen(poscar.return_dict(), kspacing, kmesh, 
+                             wdir, "KPOINTS_scf", kfix)
+            # incar
             incar.update(incar_scf)
             update_incar(incar, params, incar_tag)
             incar = ch_functional(incar)
@@ -1331,11 +1383,9 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR",
         if "ISIF" in params:
             isif["ISIF"] = params["ISIF"]
 
-        vasp_kpoints_gen(poscar.return_dict(), 
-                         kspacing=float(params["kmesh"]) if "kmesh" in params else 0.3, 
-                         kmesh=params["oddeven"] if "oddeven" in params else "odd", 
-                         fpath=wdir, 
-                         fname="KPOINTS_opt")
+        kspacing, kmesh, kfix = update_kpoints_para(params)
+        vasp_kpoints_gen(poscar.return_dict(), kspacing, kmesh, wdir, 
+                         "KPOINTS_scf", kfix)
         
         poscar.write_struct(fpath=wdir, fname="POSCAR_opt_init")
 
@@ -1413,7 +1463,9 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR",
         else:
             encut = ["300", "350", "400", "450", "500", "550", "600", "650", "700", "750", "800"]
         incar["ENCUT"] = "xxx"
-        vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.15, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_scf")
+        kspacing, kmesh, kfix = update_kpoints_para(params)
+        vasp_kpoints_gen(poscar.return_dict(), kspacing, kmesh, wdir, 
+                         "KPOINTS_scf", kfix)
 
 
         write_incar(incar, fpath=wdir, fname="INCAR_%s_%s" %(dft, gga))
@@ -1446,7 +1498,10 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR",
             kspacing = [0.08, 0.1, 0.12, 0.14, 0.15, 0.2, 0.25, 0.3, 0.35]
         
         for _ in kspacing:
-            vasp_kpoints_gen(poscar.return_dict(), _, kmesh="odd", fpath=wdir, fname="KPOINTS_kconv_k%s" % _)
+            vasp_kpoints_gen(poscar.return_dict(), _, 
+                             kmesh="odd", fpath=wdir, 
+                             fname="KPOINTS_kconv_k%s" % _,
+                             kfix="-1 -1 -1")
         
         write_incar(incar, fpath=wdir, fname="INCAR_%s_%s" %(dft, gga))
         poscar.write_struct(fpath=wdir, fname="POSCAR_init")
@@ -1497,7 +1552,9 @@ def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR",
         update_incar(incar, params, ["ENCUT", "PREC", "NBAND"])
         incar = ch_functional(incar)
 
-        vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.1, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_dos")
+        kspacing, kmesh, kfix = update_kpoints_para(params)
+        vasp_kpoints_gen(poscar.return_dict(), kspacing, kmesh, wdir, 
+                         "KPOINTS_dos", kfix)
 
         dftgga = dft+"_"+gga
         write_incar(incar, fpath=wdir, fname="INCAR_%s" % dftgga)
@@ -1817,16 +1874,62 @@ def savevaspsh(savelist, savelabel):
     """
     
     savelist2string = ""
+    breakline = 0
     for i in savelist:
+        if breakline > 3:
+            savelist2string += " \\\n          "
+            breakline = 0
         savelist2string += "'" + i + "' "
+        breakline += 1
+        
     
-    savestring = '''  ffin=( %s )
-  for ifin in ${ffin[@]}; do
-    mv $ifin "$ifin"_%s
+    savestring = '''  ffout=( %s )
+  for ifout in ${ffout[@]}; do
+    mv $ifout "$ifout"_%s
   done
     ''' % (savelist2string, savelabel)
     
     return savestring
+
+
+def initvaspsh(dftlabel, execode, step=0, iswave=False):
+    """
+    Write a bash scripts to prepare the vasp files.
+    Parameters
+    ----------
+    dftlabel:
+        The label of POSCAR
+
+    Return
+    ------
+    String 
+    """
+    initstring = ""
+    
+    poscarlabel = "init"
+    if dftlabel == "opt":
+        poscarlabel = "opt_init"
+
+    if step == 0:
+        initstring = "  cp POSCAR_%s POSCAR\n" % poscarlabel
+        initstring += "  cp INCAR_%s INCAR\n" % (dftlabel, step)
+        initstring += "  cp KPOINTS_%s KPOINTS\n" % dftlabel
+    elif step == 1:
+        initstring = "  cp POSCAR_%s POSCAR\n" % poscarlabel
+        initstring += "  cp INCAR_%s_%d INCAR\n" % (dftlabel, step)
+        initstring += "  cp KPOINTS_%s_%d KPOINTS\n" % (dftlabel, step)
+    else:
+        initstring = "  cp POSCAR_%s POSCAR\n" % poscarlabel
+        initstring += "  cp INCAR_%s_%d INCAR\n" % (dftlabel, step)
+        initstring += "  cp KPOINTS_%s_%d KPOINTS\n" % (dftlabel, step)
+        if iswave:
+            initstring += "  mv WAVECAR_%s_%d WAVECAR\n" % (dftlabel, step-1)
+            initstring += "  cp CHGCAR_%s_%d CHGCAR\n" % (dftlabel, step-1)
+    
+    initstring += "\n"
+    initstring += "  " + execode + " >& vasp.out 2>&1\n\n"
+    
+    return initstring
 
 
 def struct_diff(structname1, structname2):

@@ -25,7 +25,8 @@ about:
 
 Functions
 ---------
-list_index_by_list     : index a list with another list, the way in numpy
+list_index_by_list: 
+    index a list with another list, the way in numpy
 trans_reflection_xy    :
 split_list             : 
 arith_prog_split_even  : split the arithmetic progression into approximate 
@@ -614,12 +615,20 @@ def parser_inputpara(inputstring):
     """
     input_dict = {}
 
+    # get the separator
     if "," in inputstring: 
         separator_outkey = ","
     elif ";" in inputstring: 
         separator_outkey = ";"
     else: separator_outkey = " "
 
+    # delete the redundant separator
+    if inputstring[0] == separator_outkey:
+        inputstring = inputstring[1:]
+    if inputstring[-1] == separator_outkey:
+        inputstring = inputstring[:-1]
+
+    # get the assignment symbol
     if ":" in inputstring: 
         separator_inkey = ":"
     elif "=" in inputstring: 

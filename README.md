@@ -128,3 +128,18 @@ mkits is a python written tool containing many helpful initial- or post-processi
  |        |--------findex           : specify the index
  |        |--------params           : additional parameters
  ```
+
+
+## VASP initial helper
+
+### VASP input files generator (vasp_gen_input)
+
+#### Functions
+
+#### Parameters
+
+  1. k-mesh
+
+      kfix: 3 numbers separated by blank space. If redundant numbers are given, only the first three numbers will be considered. This parameter is to fix k-mesh in specific direction to a given number. "-1 -1 -1" means no fix, whereas "-1 -1  1" means fix the k-mesh in z-axis direction to 1.
+
+      kspacing: determines the number of k points.

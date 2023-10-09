@@ -7,12 +7,16 @@ import subprocess
 
 
 """
-:func qe_vasp2qe_struct: convert vasp structures to qe
-:func qe_add_ifpos: add
-:func qe_input_parser
-:func qe_conv_extractor: extract data from convergence test calculation, [input files are generated from func qe_gen_input, ie conv_encut, conv_kmesh
-:func qe_input_lines_parser: get 
-:func qe_get_struct: return a standard output for QE input file
+Functions
+---------
+qe_vasp2qe_struct    : convert vasp structures to qe
+qe_add_ifpos         : add
+qe_input_parser      : 
+qe_conv_extractor    : extract data from convergence test calculation, [input 
+                       files are generated from func qe_gen_input, ie 
+                       conv_encut, conv_kmesh
+qe_input_lines_parser: get 
+qe_get_struct        : return a standard output for QE input file
 """
 
 
@@ -332,17 +336,38 @@ def qe_upf_valence_e(upf_file:str):
 
 def qe_get_upf(atom_num, atomic_species_block:list, upfpath:str="", wkdir:str="./"):
     """
-    :param atom_num: array with atomic number, make sure all upf named with following format: Atom_*
-    :param atomic_species_block: str
-    :param upfpath: path to 
-    :return : atomic_species_block, valence_num, is_uspp
-    :write  : write UPF files to working directory
+    Parameter
+    ---------
+    atom_num                   : array with atomic number, make sure all upf 
+                                 named starting with elemental name: 
+                                 elementName_*, Ba_*, ba_* or
+                                 elementName.*, Ba.*, ba.*
+    atomic_species_block: str
+    upfpath: path to
+
+    Return
+    ------
+    atomic_species_block
+    valence_num
+    is_uspp
+    
+    Write
+    -----
+    write UPF files to working directory
     """
     z_valence = {}
     valence_num = 0
     is_uspp = False
 
     upflist = os.listdir(upfpath)
+    # check if the name contains .upf or .UPF
+    for i in upflist:
+        if ".upf" not in i or ".UPF" not in i:
+            upflist.remove(i)
+    # check if the element name start with capital letter
+    # if not, change it to capital letter
+    for i in range(len(upflist)):
+        upflist[i] = upflist[i][0].upper() + upflist[i][1:]
 
     for i in range(len(atomic_species_block)):
         if "None" in atomic_species_block[i]:
@@ -459,10 +484,21 @@ def write_runsh(runsh, cmd):
             f.write("\n")
 
 
-def qe_geninput(calculation:str="scf", wpath:str="./", struct_inp:str="cu.cif", dryrun:bool=False, upf_path:str="./", metal:bool=True, functional:str="pbe", execcode:str='srun --mpi=pmi2 -K1 --resv-ports -n $SLURM_NTASKS pw.x -nimage 1 -npool 1 -ntg 1 -inp %s > %s', params_file:str="caldetail"):
+def qe_geninput(calculation="scf", 
+                wpath="./", 
+                struct_inp="cu.cif", 
+                dryrun=False, 
+                upf_path="./", 
+                metal=True, 
+                functional:str="pbe", 
+                execcode:str='srun --mpi=pmi2 pw.x -nimage 1 -npool 1 -ntg 1 -inp %s > %s', 
+                params_file:str="caldetail"):
     """
     Generate input file for QE calculations
-    :param       calculation: [scf, nscf, dos, relax, vc-relax, conv_kmesh, conv_ecutwfc]
+
+    Parameter
+    ---------
+    calculation: [scf, nscf, dos, relax, vc-relax, conv_kmesh, conv_ecutwfc]
     :                       : scf
     :                       : nscf
     :                       : dos
@@ -471,7 +507,7 @@ def qe_geninput(calculation:str="scf", wpath:str="./", struct_inp:str="cu.cif", 
     :                       : vc-relax
     :                       : 
     :                       : 
-    :param             wpath: 
+    wpath: 
     :param        struct_inp: 
     :param            dryrun: 
     :param          upf_path: 
