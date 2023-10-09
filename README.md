@@ -142,4 +142,4 @@ mkits is a python written tool containing many helpful initial- or post-processi
 
       kfix: 3 numbers separated by blank space. If redundant numbers are given, only the first three numbers will be considered. This parameter is to fix k-mesh in specific direction to a given number. "-1 -1 -1" means no fix, whereas "-1 -1  1" means fix the k-mesh in z-axis direction to 1.
 
-      kspacing: determines the number of k points.
+      kspacing: determines the number of k points. $k_1 = 2\pi/a_1/\text{kspacing}$
