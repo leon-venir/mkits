@@ -1,10 +1,15 @@
 import numpy as np
 
+"""
+
+"""
+
 
 """
 :constants
 """
 cons_hbar = 1.0545718e-34  # m^2kg/s
+cons_planck = 6.62607015e-34 # J/Hz
 cons_kb = 1.38064852e-23  # m^2kg/(Ks^2)
 cons_pi = 3.14159265359
 cons_emass = 9.10938356e-31  # electron mass kg
@@ -22,6 +27,7 @@ uc_bohr2ang = 0.529177 # bohr to angstrom
 uc_ang2m = 1e-10
 uc_ry2ev = 13.6056980659 # Rydberg to electonic volt
 uc_d2a = np.pi/180 # degree to radian
+uc_atomsphere2nm2 = 101325 
 
 
 """
@@ -53,33 +59,37 @@ local_rot_matrix = """LOCAL ROT MATRIX:    1.0000000 0.0000000 0.0000000
 
 # :database quantum: VASP input tempelates ====================== #
 qe_control_block = {
-    "calculation": '"scf"',
+    "qeblock": "control",
     "restart_mode": '"from_scratch"',
     "nstep": "100",
     "outdir": '"./outdir"',
     "max_seconds": "4.d+4",
     "etot_conv_thr": "1.d-4",
-    "pseudo_dir": '"./"'
+    "pseudo_dir": '"./pseudo"'
 }
 
 
 qe_system_block = {
-    "ecutwfc":  "50",
+    "qeblock": "system",
+    "ecutwfc":  "80",
 }
 
 
 qe_electrons_block = {
+    "qeblock": "electrons",
     "electron_maxstep": "200",
-    "conv_thr": "1.d-6",
+    "conv_thr": "1.d-8",
     "mixing_beta": "0.7",
-    "mixing_mode": '"local-TF" ! not converging? try "TF" for highly homogeneous, "local-TF" for highly inhomogeneous system'
+    "mixing_mode": '"TF" ! not converging? try "TF" for highly homogeneous, "local-TF" for highly inhomogeneous system'
 }
 
 qe_ions_block = {
+    "qeblock": "ions",
     "ion_dynamics": '"bfgs"'
 }
 
 qe_cell_block = {
+    "qeblock": "cell",
     "cell_dynamics": '"bfgs"',
     "press": "0.d0",
     "press_conv_thr": "0.01d0",
@@ -88,45 +98,52 @@ qe_cell_block = {
 }
 
 qe_dos_block = {
+    "qeblock": "dos",
     "outdir": './outdir',
     "fildos": 'dos.dat',
     "emin": "-10",
     "emax": "35"
 }
 
-qe_control_key = ["calculation", "title", "verbosity", "restart_mode", 
-                  "wf_collect", "nstep", "iprint", "tstress", "tprnfor", "dt", 
-                  "outdir", "wfcdir", "prefix", "lkpoint_dir", "max_seconds", 
-                  "etot_conv_thr", "forc_conv_thr", "disk_io", "pseudo_dir", 
-                  "tefield", "dipfield", "lelfield", "nberrycyc", "lorbm", 
-                  "lberry", "gdir", "nppstr", "gate", "lfcp", "trism"]
+qe_control_key = [
+    "calculation", "title", "verbosity", "restart_mode", 
+    "wf_collect", "nstep", "iprint", "tstress", "tprnfor", "dt", 
+    "outdir", "wfcdir", "prefix", "lkpoint_dir", "max_seconds", 
+    "etot_conv_thr", "forc_conv_thr", "disk_io", "pseudo_dir", 
+    "tefield", "dipfield", "lelfield", "nberrycyc", "lorbm", 
+    "lberry", "gdir", "nppstr", "gate", "lfcp", "trism"
+]
 
-qe_system_key = ["ibrav", "celldm", "A", "B", "C", "cosAB", "cosAC", "cosBC", 
-                 "nat", "ntyp", "nbnd", "tot_charge", "starting_charge", 
-                 "tot_magnetization", "starting_magnetization", "ecutwfc", 
-                 "ecutrho", "ecutfock", "nr1", "nr2", "nr3", "nr1s", "nr2s", 
-                 "nr3s", "nosym", "nosym_evc", "noinv", "no_t_rev", 
-                 "force_symmorphic", "use_all_frac", "occupations", 
-                 "one_atom_occupations", "starting_spin_angle", "degauss", 
-                 "smearing", "nspin", "noncolin", "ecfixed", "qcutz", 
-                 "q2sigma", "input_dft", "ace", "exx_fraction", 
-                 "screening_parameter", "exxdiv_treatment", 
-                 "x_gamma_extrapolation", "ecutvcut", "nqx1", "nqx2", "nqx3", 
-                 "localization_thr", "Hubbard_occ", "Hubbard_alpha", 
-                 "Hubbard_beta", "starting_ns_eigenvalue", "dmft", 
-                 "dmft_prefix", "ensemble_energies", "edir", "emaxpos", 
-                 "eopreg", "eamp", "angle1", "angle2", "lforcet", 
-                 "constrained_magnetization", "fixed_magnetization", "lambda", "report", "lspinorb", "assume_isolated", "esm_bc", "esm_w", "esm_efield", "esm_nfit", "lgcscf", "gcscf_mu", "gcscf_conv_thr", "gcscf_beta", "vdw_corr", "london", "london_s6", "london_c6", "london_rvdw", "london_rcut", "dftd3_version", "dftd3_threebody", "ts_vdw_econv_thr", "ts_vdw_isolated", "xdm", "xdm_a1", "xdm_a2", "space_group", "uniqueb", "origin_choice", "rhombohedral", "zgate", "relaxz", "block", "block_1", "block_2", "block_height"]
+qe_system_key = [
+    "ibrav", "celldm", "A", "B", "C", "cosAB", "cosAC", "cosBC", 
+    "nat", "ntyp", "nbnd", "tot_charge", "starting_charge", 
+    "tot_magnetization", "starting_magnetization", "ecutwfc", 
+    "ecutrho", "ecutfock", "nr1", "nr2", "nr3", "nr1s", "nr2s", 
+    "nr3s", "nosym", "nosym_evc", "noinv", "no_t_rev", 
+    "force_symmorphic", "use_all_frac", "occupations", 
+    "one_atom_occupations", "starting_spin_angle", "degauss", 
+    "smearing", "nspin", "noncolin", "ecfixed", "qcutz", 
+    "q2sigma", "input_dft", "ace", "exx_fraction", 
+    "screening_parameter", "exxdiv_treatment", 
+    "x_gamma_extrapolation", "ecutvcut", "nqx1", "nqx2", "nqx3", 
+    "localization_thr", "Hubbard_occ", "Hubbard_alpha", 
+    "Hubbard_beta", "starting_ns_eigenvalue", "dmft", 
+    "dmft_prefix", "ensemble_energies", "edir", "emaxpos", 
+    "eopreg", "eamp", "angle1", "angle2", "lforcet", 
+    "constrained_magnetization", "fixed_magnetization", "lambda", "report", "lspinorb", "assume_isolated", "esm_bc", "esm_w", "esm_efield", "esm_nfit", "lgcscf", "gcscf_mu", "gcscf_conv_thr", "gcscf_beta", "vdw_corr", "london", "london_s6", "london_c6", "london_rvdw", "london_rcut", "dftd3_version", "dftd3_threebody", "ts_vdw_econv_thr", "ts_vdw_isolated", "xdm", "xdm_a1", "xdm_a2", "space_group", "uniqueb", "origin_choice", "rhombohedral", "zgate", "relaxz", "block", "block_1", "block_2", "block_height"
+]
 
-qe_electrons_key = ["electron_maxstep", "scf_must_converge", "conv_thr", 
-                    "adaptive_thr", "conv_thr_init", "conv_thr_multi", 
-                    "mixing_mode", "mixing_beta", "mixing_ndim", 
-                    "mixing_fixed_ns", "diagonalization", "diago_thr_init", 
-                    "diago_cg_maxiter", "diago_ppcg_maxiter", 
-                    "diago_david_ndim", "diago_rmm_ndim", "diago_rmm_conv", 
-                    "diago_gs_nblock", "diago_full_acc", "efield", 
-                    "efield_cart", "efield_phase", "startingpot", 
-                    "startingwfc", "tqr", "real_space"]
+qe_electrons_key = [
+    "electron_maxstep", "scf_must_converge", "conv_thr", 
+    "adaptive_thr", "conv_thr_init", "conv_thr_multi", 
+    "mixing_mode", "mixing_beta", "mixing_ndim", 
+    "mixing_fixed_ns", "diagonalization", "diago_thr_init", 
+    "diago_cg_maxiter", "diago_ppcg_maxiter", 
+    "diago_david_ndim", "diago_rmm_ndim", "diago_rmm_conv", 
+    "diago_gs_nblock", "diago_full_acc", "efield", 
+    "efield_cart", "efield_phase", "startingpot", 
+    "startingwfc", "tqr", "real_space"
+]
 
 qe_ions_key = ["ion_positions", "ion_velocities", "ion_dynamics", 
                "pot_extrapolation", "wfc_extrapolation", "remove_rigid_rot", 
@@ -136,36 +153,56 @@ qe_ions_key = ["ion_positions", "ion_velocities", "ion_dynamics",
                "fire_alpha_init", "fire_falpha", "fire_nmin", "fire_f_inc", 
                "fire_f_dec", "fire_dtmax"]
 
-qe_cell_key = ["cell_dynamics", "press", "wmass", "cell_factor", 
-               "press_conv_thr", "cell_dofree"]
+qe_cell_key = [
+    "cell_dynamics", "press", "wmass", "cell_factor", "press_conv_thr", 
+    "cell_dofree"
+]
+
+qe_rism_key = [
+    "nsolv", "closure", "tempv", "ecutsolv", "solute_lj", "solute_epsilon", 
+    "solute_sigma", "starting1d", "starting3d", "smear1d", "smear3d", 
+    "rism1d_maxstep", "rism3d_maxstep", "rism1d_conv_thr", "rism3d_conv_thr", 
+    "mdiis1d_size", "mdiis3d_size", "mdiis1d_step", "mdiis3d_step", 
+    "rism1d_bond_width", "rism1d_dielectric", "rism1d_molesize", 
+    "rism1d_nproc", "rism3d_conv_level", "rism3d_planar_average", 
+    "laue_nfit", "laue_expand_right", "laue_expand_left", 
+    "laue_starting_right", "laue_starting_left", "laue_buffer_right", 
+    "laue_buffer_left", "laue_both_hands", "laue_wall", "laue_wall_z", 
+    "laue_wall_rho", "laue_wall_epsilon", "laue_wall_sigma", "laue_wall_lj6"
+]
 
 
-# :database vasp: VASP input tag ====================== #
-incar_tag = ["ENCUT", "PREC", "ALGO", "ISMEAR", "SIGMA", "ISTART", 
-             "NELM", "LWAVE", "LREAL", "AMIX", 
-             "BMIX", "NCORE", "NELECT", "IOPTCELL",
-             # dos band
-             "ICHARG", "EMIN", "EMAX", "NEDOS", "LORBIT",
-             # DFT+U
-             "LDAU", "LDAUTYPE", "LDAUL", "LDAUU", "LDAUJ", "LDAUPRINT", 
-             # spin
-             "ISPIN", "MAGMOM",
-             # so
-             "LNONCOLLINEAR", "VOSKOWN", "LSORBIT", "SAXIS", "NBANDS",
-             # opt
-             "EDIFF", "EDIFFG", "NSW", "ISIF", 
-             # md
-             "TEBEG", "TEEND", "SMASS",
-             # sym
-             "ISYM",
-             # dipole
-             "LDIPOL", "IDIPOL",
-             # work function
-             "LVTOT", "LVHAR"
-             ]
+# :database vasp: VASP input tag ==============================================
+incar_tag = [
+    "ENCUT", "PREC", "ALGO", "ISMEAR", "SIGMA", "ISTART", "NELM", "LWAVE", 
+    "LREAL", "AMIX", "NFREE", "BMIX", "NCORE", "NELECT", "IOPTCELL", "LAECHG",
+    "LELF", "TIME", "LCHARG",
+    # dos band
+    "ICHARG", "EMIN", "EMAX", "NEDOS", "LORBIT",
+    # DFT+U
+    "LDAU", "LDAUTYPE", "LDAUL", "LDAUU", "LDAUJ", "LDAUPRINT", 
+    # spin
+    "ISPIN", "MAGMOM", 
+    # so
+    "LNONCOLLINEAR", "VOSKOWN", "LSORBIT", "SAXIS", "NBANDS",
+    # opt
+    "EDIFF", "EDIFFG", "NSW", "ISIF", "IBRION",
+    # md
+    "TEBEG", "TEEND", "SMASS",
+    # sym
+    "ISYM",
+    # dipole
+    "LDIPOL", "IDIPOL",
+    # work function
+    "LVTOT", "LVHAR",
+    # vdw
+    "IVDW",
+    # optic
+    "LOPTICS", "CSHIFT"
+]
 
 
-# :database vasp: VASP input tempelates ====================== #
+# :database vasp: VASP input tempelates =======================================
 incar_glob = {
     "PREC": "Normal",
     "EDIFF": "1e-6",
@@ -177,19 +214,24 @@ incar_glob = {
     "BMIX": "1.0 # try 0.5"
 }
 incar_opt = {
+    "NELM": "60",
     "IBRION": "2",
     "ISIF": "3",
     "NSW": "500",
-    "ISMEAR": "0",
-    "EDIFFG": "-1e-2",
-    "SIGMA": "0.05",
+    "EDIFFG": "-0.05",
     "POTIM": "0.5",
     "LWAVE": ".FALSE.",
     "LCHARG": ".FALSE."
 }
 incar_scf = {
     "IBRION": "-1",
-    "NSW": "0",
+    "NSW": "0"
+}
+incar_metal = {
+    "ISMEAR": "2",
+    "SIGMA" : "0.2"
+}
+incar_semi = {
     "ISMEAR": "0",
     "SIGMA" : "0.05"
 }
@@ -199,19 +241,39 @@ incar_dos = {
     "IBRION": "-1", 
     "NSW": "0", 
     "ISMEAR": "-5", 
-    "SIGMA": "0.1", 
+    "SIGMA": "0.05", 
+    "EMIN": "-6",
+    "EMAX": "6",
     "NEDOS": "2500", 
-    "NBANDS": "set_your_own_value"
-}
+} # "NBANDS": "set_your_own_value"
 incar_band = {
     "ICHARG": "11", 
-    "LORBIT": "11", 
     "IBRION": "-1", 
     "NSW": "0", 
     "ISMEAR": "0", 
     "SIGMA": "0.05", 
-    "NBANDS": "set_your_own_value" 
+} # "NBANDS": "set_your_own_value"
+incar_optic = {
+    "ICHARG": "11", 
+    "LORBIT": "11", 
+    "IBRION": "-1", 
+    "NSW": "0", 
+    "ISMEAR": "-5", 
+    "SIGMA": "0.05", 
+    "EMIN": "-6",
+    "EMAX": "6",
+    "NEDOS": "2500", 
 }
+incar_freq = {
+    "IBRION": "5", 
+    "NSW": "500", 
+    "ISMEAR": "0", 
+    "SIGMA": "0.05",
+    "ISIF": "2",
+    "POTIM": "0.02",
+    "NFREE": "2",
+    "ALGO": "Fast"
+} # "NBANDS": "set_your_own_value"
 incar_nvt = {
     "IBRION": "0",
     "MDALGO": "2 # 1 Andersen 2 Nose-Hoover 3 Langevin 4 Multiple Andersen",
@@ -328,7 +390,7 @@ incar_functionals = {
         "LHFCALC": ".TRUE.",
         "GGA": "PE",
         "HFSCREEN": "0.2",
-        "ALGO": "Damped",
+        "ALGO": "All",
         "AEXX": "0.25",
         "AGGAX": "0.75",
         "AGGAC": "1.0",
@@ -337,121 +399,138 @@ incar_functionals = {
 }
 
 
+"""
+: Recommend PBE
+"""
+vasp_upf_recommend=[
+    "H", "He", "Li_sv", "Be", "B", "C", "N", "OF", "Ne", "Na_pv", "Mg", "Al", 
+    "Si", "P", "S", "Cl", "Ar", "K_sv", "Ca_sv", "Sc_sv", "Ti_sv", 
+    "V_sv", "Cr_pv", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga_d", 
+    "Ge_d", "As", "Se", "Br", "Kr", "Rb_sv", "Sr_sv", "Y_sv", 
+    "Zr_sv", "Nb_sv", "Mo_sv", "Tc_pv", "Ru_pv", "Rh_pv", "Pd", 
+    "Ag", "Cd", "In_d", "Sn_d", "Sb", "Te", "I", "Xe", "Cs_sv", 
+    "Ba_sv", "La", "Ce", "Pr_3", "Nd_3", "Pm_3", "Sm_3", "Eu_2", 
+    "Gd_3", "Tb_3", "Dy_3", "Ho_3", "Er_3", "Tm_3", "Yb_2", "Lu_3", 
+    "Hf_pv", "Ta_pv", "W_sv", "Re", "Os", "Ir", "Pt", "Au", "Hg", 
+    "Tl_d", "Pb_d", "Bi_d", "Po_d", "At", "Rn", "Fr_sv", "Ra_sv", 
+    "Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm"
+    ]
+
 atom_data = [ 
-    #  0   1    2       3             4
-    [  0, "N", "Name", "atomic mass", "magnetic"], # 0
-    [  1, "H", "Hydrogen", 1.00794, "nan"], # 1
-    [  2, "He", "Helium", 4.002602, "nan"], # 2
-    [  3, "Li", "Lithium", 6.941], # 3
-    [  4, "Be", "Beryllium", 9.012182], # 4
-    [  5, "B", "Boron", 10.811], # 5
-    [  6, "C", "Carbon", 12.0107], # 6
-    [  7, "N", "Nitrogen", 14.0067], # 7
-    [  8, "O", "Oxygen", 15.9994], # 8
-    [  9, "F", "Fluorine", 18.9984032], # 9
-    [ 10, "Ne", "Neon", 20.1797], # 10
-    [ 11, "Na", "Sodium", 22.98976928], # 11
-    [ 12, "Mg", "Magnesium", 24.3050], # 12
-    [ 13, "Al", "Aluminium", 26.9815386], # 13
-    [ 14, "Si", "Silicon", 28.0855], # 14
-    [ 15, "P", "Phosphorus", 30.973762], # 15
-    [ 16, "S", "Sulfur", 32.065], # 16
-    [ 17, "Cl", "Chlorine", 35.453], # 17
-    [ 18, "Ar", "Argon", 39.948], # 18
-    [ 19, "K", "Potassium", 39.0983], # 19
-    [ 20, "Ca", "Calcium", 40.078], # 20
-    [ 21, "Sc", "Scandium", 44.955912], # 21
-    [ 22, "Ti", "Titanium", 47.867, "nan"], # 22
-    [ 23, "V", "Vanadium", 50.9415], # 23
-    [ 24, "Cr", "Chromium", 51.9961], # 24
-    [ 25, "Mn", "Manganese", 54.938045, "1"], # 25
-    [ 26, "Fe", "Iron", 55.845], # 26
-    [ 27, "Co", "Cobalt", 58.933195], # 27
-    [ 28, "Ni", "Nickel", 58.6934], # 28
-    [ 29, "Cu", "Copper", 63.546], # 29
-    [ 30, "Zn", "Zinc", 65.38], # 30
-    [ 31, "Ga", "Gallium", 69.723], # 31
-    [ 32, "Ge", "Germanium", 72.64], # 32
-    [ 33, "As", "Arsenic", 74.92160], # 33
-    [ 34, "Se", "Selenium", 78.96], # 34
-    [ 35, "Br", "Bromine", 79.904], # 35
-    [ 36, "Kr", "Krypton", 83.798], # 36
-    [ 37, "Rb", "Rubidium", 85.4678], # 37
-    [ 38, "Sr", "Strontium", 87.62], # 38
-    [ 39, "Y", "Yttrium", 88.90585], # 39
-    [ 40, "Zr", "Zirconium", 91.224], # 40
-    [ 41, "Nb", "Niobium", 92.90638], # 41
-    [ 42, "Mo", "Molybdenum", 95.96], # 42
-    [ 43, "Tc", "Technetium", None], # 43
-    [ 44, "Ru", "Ruthenium", 101.07], # 44
-    [ 45, "Rh", "Rhodium", 102.90550], # 45
-    [ 46, "Pd", "Palladium", 106.42], # 46
-    [ 47, "Ag", "Silver", 107.8682], # 47
-    [ 48, "Cd", "Cadmium", 112.411], # 48
-    [ 49, "In", "Indium", 114.818], # 49
-    [ 50, "Sn", "Tin", 118.710], # 50
-    [ 51, "Sb", "Antimony", 121.760], # 51
-    [ 52, "Te", "Tellurium", 127.60], # 52
-    [ 53, "I", "Iodine", 126.90447], # 53
-    [ 54, "Xe", "Xenon", 131.293], # 54
-    [ 55, "Cs", "Caesium", 132.9054519], # 55
-    [ 56, "Ba", "Barium", 137.327], # 56
-    [ 57, "La", "Lanthanum", 138.90547], # 57
-    [ 58, "Ce", "Cerium", 140.116], # 58
-    [ 59, "Pr", "Praseodymium", 140.90765], # 59
-    [ 60, "Nd", "Neodymium", 144.242], # 60
-    [ 61, "Pm", "Promethium", None], # 61
-    [ 62, "Sm", "Samarium", 150.36], # 62
-    [ 63, "Eu", "Europium", 151.964], # 63
-    [ 64, "Gd", "Gadolinium", 157.25], # 64
-    [ 65, "Tb", "Terbium", 158.92535], # 65
-    [ 66, "Dy", "Dysprosium", 162.500], # 66
-    [ 67, "Ho", "Holmium", 164.93032], # 67
-    [ 68, "Er", "Erbium", 167.259], # 68
-    [ 69, "Tm", "Thulium", 168.93421], # 69
-    [ 70, "Yb", "Ytterbium", 173.054], # 70
-    [ 71, "Lu", "Lutetium", 174.9668], # 71
-    [ 72, "Hf", "Hafnium", 178.49], # 72
-    [ 73, "Ta", "Tantalum", 180.94788], # 73
-    [ 74, "W", "Tungsten", 183.84], # 74
-    [ 75, "Re", "Rhenium", 186.207], # 75
-    [ 76, "Os", "Osmium", 190.23], # 76
-    [ 77, "Ir", "Iridium", 192.217], # 77
-    [ 78, "Pt", "Platinum", 195.084], # 78
-    [ 79, "Au", "Gold", 196.966569], # 79
-    [ 80, "Hg", "Mercury", 200.59], # 80
-    [ 81, "Tl", "Thallium", 204.3833], # 81
-    [ 82, "Pb", "Lead", 207.2], # 82
-    [ 83, "Bi", "Bismuth", 208.98040], # 83
-    [ 84, "Po", "Polonium", None], # 84
-    [ 85, "At", "Astatine", None], # 85
-    [ 86, "Rn", "Radon", None], # 86
-    [ 87, "Fr", "Francium", None], # 87
-    [ 88, "Ra", "Radium", None], # 88
-    [ 89, "Ac", "Actinium", None], # 89
-    [ 90, "Th", "Thorium", 232.03806], # 90
-    [ 91, "Pa", "Protactinium", 231.03588], # 91
-    [ 92, "U", "Uranium", 238.02891], # 92
-    [ 93, "Np", "Neptunium", None], # 93
-    [ 94, "Pu", "Plutonium", None], # 94
-    [ 95, "Am", "Americium", None], # 95
-    [ 96, "Cm", "Curium", None], # 96
-    [ 97, "Bk", "Berkelium", None], # 97
-    [ 98, "Cf", "Californium", None], # 98
-    [ 99, "Es", "Einsteinium", None], # 99
-    [100, "Fm", "Fermium", None], # 100
-    [101, "Md", "Mendelevium", None], # 101
-    [102, "No", "Nobelium", None], # 102
-    [103, "Lr", "Lawrencium", None], # 103
-    [104, "Rf", "Rutherfordium", None], # 104
-    [105, "Db", "Dubnium", None], # 105
-    [106, "Sg", "Seaborgium", None], # 106
-    [107, "Bh", "Bohrium", None], # 107
-    [108, "Hs", "Hassium", None], # 108
-    [109, "Mt", "Meitnerium", None], # 109
-    [110, "Ds", "Darmstadtium", None], # 110
-    [111, "Rg", "Roentgenium", None], # 111
-    [112, "Cn", "Copernicium", None], # 112
+    #  0   1     2            3             4
+    [  0, "N",   "Name",      "atomic mass", "magnetic", "mag_diret"], # 0
+    [  1, "H",   "Hydrogen",  1.00794, 0], # 1
+    [  2, "He",  "Helium",    4.002602, 0], # 2
+    [  3, "Li",  "Lithium",   6.941, 0], # 3
+    [  4, "Be",  "Beryllium", 9.012182], # 4
+    [  5, "B",   "Boron",     10.811], # 5
+    [  6, "C",   "Carbon",    12.0107], # 6
+    [  7, "N",   "Nitrogen",  14.0067], # 7
+    [  8, "O",   "Oxygen",    15.9994, 0], # 8
+    [  9, "F",   "Fluorine",  18.9984032], # 9
+    [ 10, "Ne",  "Neon",      20.1797], # 10
+    [ 11, "Na",  "Sodium", 22.98976928], # 11
+    [ 12, "Mg",  "Magnesium", 24.3050], # 12
+    [ 13, "Al",  "Aluminium", 26.9815386], # 13
+    [ 14, "Si",  "Silicon", 28.0855], # 14
+    [ 15, "P",   "Phosphorus", 30.973762], # 15
+    [ 16, "S",   "Sulfur", 32.065], # 16
+    [ 17, "Cl",  "Chlorine", 35.453, 0], # 17
+    [ 18, "Ar",  "Argon", 39.948], # 18
+    [ 19, "K",   "Potassium", 39.0983], # 19
+    [ 20, "Ca",  "Calcium", 40.078], # 20
+    [ 21, "Sc",  "Scandium", 44.955912], # 21
+    [ 22, "Ti",  "Titanium", 47.867, 0], # 22
+    [ 23, "V",   "Vanadium", 50.9415, 2], # 23
+    [ 24, "Cr",  "Chromium", 51.9961, 2], # 24
+    [ 25, "Mn",  "Manganese", 54.938045, 2], # 25
+    [ 26, "Fe",  "Iron", 55.845, 2], # 26
+    [ 27, "Co",  "Cobalt", 58.933195, 3], # 27
+    [ 28, "Ni",  "Nickel", 58.6934, 2], # 28
+    [ 29, "Cu",  "Copper", 63.546, 0], # 29
+    [ 30, "Zn",  "Zinc", 65.38], # 30
+    [ 31, "Ga",  "Gallium", 69.723], # 31
+    [ 32, "Ge",  "Germanium", 72.64], # 32
+    [ 33, "As",  "Arsenic", 74.92160], # 33
+    [ 34, "Se",  "Selenium", 78.96], # 34
+    [ 35, "Br",  "Bromine", 79.904], # 35
+    [ 36, "Kr",  "Krypton", 83.798], # 36
+    [ 37, "Rb",  "Rubidium", 85.4678], # 37
+    [ 38, "Sr",  "Strontium", 87.62], # 38
+    [ 39, "Y",   "Yttrium", 88.90585], # 39
+    [ 40, "Zr",  "Zirconium", 91.224], # 40
+    [ 41, "Nb",  "Niobium", 92.90638], # 41
+    [ 42, "Mo",  "Molybdenum", 95.96], # 42
+    [ 43, "Tc",  "Technetium", None], # 43
+    [ 44, "Ru",  "Ruthenium", 101.07, 2], # 44
+    [ 45, "Rh",  "Rhodium", 102.90550], # 45
+    [ 46, "Pd",  "Palladium", 106.42], # 46
+    [ 47, "Ag",  "Silver", 107.8682], # 47
+    [ 48, "Cd",  "Cadmium", 112.411], # 48
+    [ 49, "In",  "Indium", 114.818], # 49
+    [ 50, "Sn",  "Tin", 118.710], # 50
+    [ 51, "Sb",  "Antimony", 121.760], # 51
+    [ 52, "Te",  "Tellurium", 127.60], # 52
+    [ 53, "I",   "Iodine", 126.90447], # 53
+    [ 54, "Xe",  "Xenon", 131.293], # 54
+    [ 55, "Cs",  "Caesium", 132.9054519], # 55
+    [ 56, "Ba",  "Barium", 137.327], # 56
+    [ 57, "La",  "Lanthanum", 138.90547], # 57
+    [ 58, "Ce",  "Cerium", 140.116], # 58
+    [ 59, "Pr",  "Praseodymium", 140.90765], # 59
+    [ 60, "Nd",  "Neodymium", 144.242], # 60
+    [ 61, "Pm",  "Promethium", None], # 61
+    [ 62, "Sm",  "Samarium", 150.36], # 62
+    [ 63, "Eu",  "Europium", 151.964], # 63
+    [ 64, "Gd",  "Gadolinium", 157.25], # 64
+    [ 65, "Tb",  "Terbium", 158.92535], # 65
+    [ 66, "Dy",  "Dysprosium", 162.500], # 66
+    [ 67, "Ho",  "Holmium", 164.93032], # 67
+    [ 68, "Er",  "Erbium", 167.259], # 68
+    [ 69, "Tm",  "Thulium", 168.93421], # 69
+    [ 70, "Yb",  "Ytterbium", 173.054], # 70
+    [ 71, "Lu",  "Lutetium", 174.9668], # 71
+    [ 72, "Hf",  "Hafnium", 178.49], # 72
+    [ 73, "Ta",  "Tantalum", 180.94788], # 73
+    [ 74, "W",   "Tungsten", 183.84], # 74
+    [ 75, "Re",  "Rhenium", 186.207], # 75
+    [ 76, "Os",  "Osmium", 190.23], # 76
+    [ 77, "Ir",  "Iridium", 192.217], # 77
+    [ 78, "Pt",  "Platinum", 195.084], # 78
+    [ 79, "Au",  "Gold", 196.966569], # 79
+    [ 80, "Hg",  "Mercury", 200.59], # 80
+    [ 81, "Tl",  "Thallium", 204.3833], # 81
+    [ 82, "Pb",  "Lead", 207.2], # 82
+    [ 83, "Bi",  "Bismuth", 208.98040], # 83
+    [ 84, "Po",  "Polonium", None], # 84
+    [ 85, "At",  "Astatine", None], # 85
+    [ 86, "Rn",  "Radon", None], # 86
+    [ 87, "Fr",  "Francium", None], # 87
+    [ 88, "Ra",  "Radium", None], # 88
+    [ 89, "Ac",  "Actinium", None], # 89
+    [ 90, "Th",  "Thorium", 232.03806], # 90
+    [ 91, "Pa",  "Protactinium", 231.03588], # 91
+    [ 92, "U",   "Uranium", 238.02891], # 92
+    [ 93, "Np",  "Neptunium", None], # 93
+    [ 94, "Pu",  "Plutonium", None], # 94
+    [ 95, "Am",  "Americium", None], # 95
+    [ 96, "Cm",  "Curium", None], # 96
+    [ 97, "Bk",  "Berkelium", None], # 97
+    [ 98, "Cf",  "Californium", None], # 98
+    [ 99, "Es",  "Einsteinium", None], # 99
+    [100, "Fm",  "Fermium", None], # 100
+    [101, "Md",  "Mendelevium", None], # 101
+    [102, "No",  "Nobelium", None], # 102
+    [103, "Lr",  "Lawrencium", None], # 103
+    [104, "Rf",  "Rutherfordium", None], # 104
+    [105, "Db",  "Dubnium", None], # 105
+    [106, "Sg",  "Seaborgium", None], # 106
+    [107, "Bh",  "Bohrium", None], # 107
+    [108, "Hs",  "Hassium", None], # 108
+    [109, "Mt",  "Meitnerium", None], # 109
+    [110, "Ds",  "Darmstadtium", None], # 110
+    [111, "Rg",  "Roentgenium", None], # 111
+    [112, "Cn",  "Copernicium", None], # 112
     [113, "Uut", "Ununtrium", None], # 113
     [114, "Uuq", "Ununquadium", None], # 114
     [115, "Uup", "Ununpentium", None], # 115
@@ -807,3 +886,40 @@ else:
     ase.io.vasp.write_vasp(ciffile[:-4]+'.vasp', atoms, direct=True)"""
 
 
+
+"""
+: Useful equations
+"""
+def o_chemical_potential(t, p, e_tot_o2, e_zpe_o2, ):
+    """
+    This is the equation to calculation the chemical potential for 
+    oxygen, 
+
+    Parameters
+    ----------
+
+    
+    
+    
+    
+    The $\mu_{\mathrm{O}}$ is defined as:
+
+    $$
+    \mu_{\mathrm{O}} (T,P) = \frac{1}{2} E_{\mathrm{O_2}}^{\mathrm{total}} +
+    \frac{1}{2} E_{\mathrm{O_2}}^{\mathrm{ZPE}} \Delta \mu_{\mathrm{O}} (T,P)
+    $$
+
+    $$ \Delta \mu_{\mathrm{O}} (T,P) = -\frac{1}{2}k_\mathrm{B}T 
+    \left\{\begin{matrix}
+    \overset{\mathrm{Translational}}{\overbrace{\ln \left [ \left ( 
+    \frac{2 \pi m}{h^2}\right )^{3/2} \frac{ \left ( k_\mathrm{b} T \right ) 
+    ^{5/2} }{P} \right ]}} + \overset{\mathrm{Rotational}}{\overbrace{ 
+    \ln \left (\frac{k_\mathrm{B} T}{ \sigma^{\mathrm{sym}} B_0 }\right ) }}
+    -\end{matrix}\right. $$
+
+    $$\left.\begin{matrix}
+    \overset{\mathrm{Vibrational}}{\overbrace{\ln \left [ 1 - \exp \left ( \frac{\hbar \omega_0}{k_\mathrm{B} T} \right ) \right ]}} + \overset{\mathrm{Electronic}}{\overbrace{\ln \left ( I^{\mathrm{spin}} \right )}}\end{matrix}\right\} $$
+
+    where $E_{\mathrm{O_2}}^{\mathrm{ZPE}}$ is the zero point energy, $\hbar$ is the reduced Planck constant, $\sigma^{\mathrm{sym}}$ is the symmetry number for the O2 molecule, $B_0 = \hbar / 2 I$ is the rotational constant, $I$ is the the moment of inertia, $\omega_0$ is the vibrational mode of the O2 molecule considering an harmonic oscillator, and $I^{\mathrm{spin}}$ is the electronic spin degeneracy of the ground state.
+    """
+    pass
