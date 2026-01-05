@@ -1,5 +1,0 @@
-spglib
-numpy
-ase
-pandas
-shapely
