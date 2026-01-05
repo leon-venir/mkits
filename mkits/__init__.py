@@ -1,3 +1,3 @@
 # -*- coding: utf-8 -*-
 
-__all__ = ["globle", "sysfc"]
+__all__ = ["functions", "structure"]
