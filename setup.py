@@ -6,7 +6,7 @@ setup(
     long_description=
     """mkits is a python written tool containing many helpful initial- or post-processing commands for some popular first-principles calculation codes.
     """,
-    version="0.89",
+    version="0.91",
     author="Leon Ma",
     author_email="blustery.med@hotmail.com",
     license="GPLv3+",
@@ -20,9 +20,9 @@ setup(
     entry_points={"console_scripts": ["mkits = mkits.main:mkits_main"]},
     
     install_requires=[
-        "spglib", "numpy", "ase", "pandas", "shapely"
+        "spglib", "numpy", "shapely", "scipy", "matplotlib", "pandas"
     ],
-    python_requires=">=3.5",
+    python_requires=">=3.7",
     url="https://github.com/leon-venir/mkits",
     download_url=(
         "https://github.com/leon-venir/mkits"
