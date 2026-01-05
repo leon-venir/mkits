@@ -1,975 +1,189 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import xml.etree.ElementTree as ET
+import spglib as spg
 import os
-import re
-import math
-import ase.io
-import ase.geometry
-import ase.dft.kpoints
-import subprocess
-import shutil
-from copy import deepcopy
-from mkits.globle import *
-from mkits.sysfc import *
-from mkits.database import *
+import sys
+import logging
+import xml.etree.ElementTree as ET
+from mkits import structure
+from mkits import functions
+from mkits import database
+import pandas as pd
 
 
-"""
-Functinons
-----------
-supercar                  : generate the supercell for charge density
-vasp_show_incar           : show several INCARs 
-gapshifter                : shift gap
-vasp_opt_2d               : 
-vasp_gen_IBZKPT           : generate k-points list
-xml_block                 : search the block with specific block_name and return 
-                            the block or the index
-vasp_split_IBZKPT         : split IBZKPT for huge kpoints calculations
-vasp_dp_effect_mass       : 
-vasp_defomation_potential : generate structures for deformation potential calculation
-gen_gnu_bandcar           : Generate gnuplot scripts 
-add_selective_dyn         : Add the 4-, 5-, 6th columns for selective dynamic 
-                          : POSCAR
-vaspxml_parser            : parse the vasprun.xml file
-vasp_dos_extractor        : extract data from vasprun.xml and create a gnuplot 
-                          : format dos_num.dat
-vasp_band_extractor       : extract data from EIGNVAL and create a gnuplot 
-                          : format BANDCAR
-parse_vasp_incar          : parse the INCAR file
-parse_vasp_incarstring    : parse string-like INCAR
-parse_vasp_outcar         : parse the OUTCAR file 
-vasp_potcar_gen           : generate the POTCAR file
-vasp_kpoints_gen          : generate the KPOINTS file
-vasp_build_low_dimension  : generate 2-d structure from vasp-format crystal structures
-vasp_gen_input            : generate input files for VASP valculations
-vasp_struct_diff          : compare the absolute value of the difference between 2 structure in angstrom)
-vasp_build_low_dimension  : build 2-dimensinal structure
-xdatcar_parser            : path to XDATCAR, parse XDATCAR and return a series of struct dict
-mse_xdatcar               : Mean squared error of structure compared with crystalline structure during md process
-extract_conv_test         : extract data from convergence test calculation, [input files are generated from
-                            func vasp_gen_input, ie encut, kmesh, ]
-getvbmcbm                 : extract the valence maximum band and conduction minimum band
-arbitrary_klist           : Generate arbitrary klist for effective mass calculation
-"""
 
-
-def supercar(car, supercell):
+def vasp_gap_scissor(
+        inp = "vasprun.xml",
+        gap = 1.0, # in eV
+        eperband = 2
+):
     """
-    Generate the supercell for charge density file
-    ELFCAR, CHGCAR
-
-    Parameters
-    ----------
-    car, string
-        CHGCAR or ELFCAR
-    supercell, string
-        "6 6 1"
-    """
-
-    supercell = [int(i) for i in supercell.split()]
-    if len(supercell) != 3:
-        print("Error supercell.")
-        exit()
-    out = car + "_%d%d%d" % (supercell[0], supercell[1], supercell[2])
-    mulsp = math.prod(supercell)
-
-    with open(car, "r") as f:
-        lines = f.readlines()
-
-    lattice_uc = np.loadtxt(car, skiprows=2, max_rows=3)
-    atom_num_uc = [int(i) for i in lines[6].split()]
-    atom_typ_uc = [str(i) for i in lines[5].split()]
-    atom_tot_uc = sum(atom_num_uc)
-    atom_pos_uc = np.loadtxt(car, skiprows=8, max_rows=atom_tot_uc)
-    grid_x_uc, grid_y_uc, grid_z_uc = [int(i) for i in lines[9+atom_tot_uc].split()]
-    grid_x_sc = grid_x_uc * supercell[0]
-    grid_y_sc = grid_y_uc * supercell[1]
-    grid_z_sc = grid_z_uc * supercell[2]
-
-    grid_1st_len = len(lines[10+atom_tot_uc].split())
-
-    # check
-    grid_row_len = (grid_x_uc*grid_y_uc*grid_z_uc)//grid_1st_len
-
-    grid_dat_uc = np.loadtxt(car, 
-                             skiprows=10+atom_tot_uc, 
-                             max_rows=grid_row_len).flatten()
-
-    if (grid_x_uc*grid_y_uc*grid_z_uc)%grid_1st_len !=0:
-        grid_dat_last = np.loadtxt(car, 
-                                   skiprows=(10+atom_tot_uc+grid_row_len), 
-                                   max_rows=1)
-        grid_dat_uc = np.hstack((grid_dat_uc, grid_dat_last))
-
-    # reshape grid to 3D
-    grid_dat_uc = grid_dat_uc.reshape((grid_z_uc, grid_y_uc, grid_x_uc))
-
-    atom_pos_sc = atom_pos_uc
-    grid_dat_sc = grid_dat_uc
-
-    atom_pos_uc_tmp = atom_pos_uc
-    grid_dat_uc_tmp = grid_dat_uc
-    for a in range(1, supercell[0]):
-        atom_pos_sc = np.vstack((atom_pos_sc, 
-                                atom_pos_uc_tmp+np.array([a, 0, 0])))
-        grid_dat_sc = np.concatenate((grid_dat_sc, grid_dat_uc_tmp), axis=2)
-
-    atom_pos_uc_tmp = atom_pos_sc
-    grid_dat_uc_tmp = grid_dat_sc
-    for b in range(1, supercell[1]):
-        atom_pos_sc = np.vstack((atom_pos_sc, 
-                                atom_pos_uc_tmp+np.array([0, b, 0])))
-        grid_dat_sc = np.concatenate((grid_dat_sc, grid_dat_uc_tmp), axis=1)
-
-    atom_pos_uc_tmp = atom_pos_sc
-    grid_dat_uc_tmp = grid_dat_sc
-    for c in range(1, supercell[2]):
-        atom_pos_sc = np.vstack((atom_pos_sc, 
-                                 atom_pos_uc_tmp+np.array([0, 0, c])))
-        grid_dat_sc = np.concatenate((grid_dat_sc, grid_dat_uc_tmp), axis=0)
-    atom_pos_sc /= np.array(supercell)
-
-    grid_dat_sc = grid_dat_sc.flatten()
-    grid_row_len = len(grid_dat_sc)//grid_1st_len
-    grid_dat_sc_1st = grid_dat_sc[:grid_row_len*grid_1st_len]
-    grid_dat_sc_1st = grid_dat_sc_1st.reshape((-1, grid_1st_len))
-    grid_dat_sc_2nd = grid_dat_sc[grid_row_len*grid_1st_len:]
-
-    # lattice 
-    lattice_sc = lattice_uc * np.array(supercell).reshape((3,1))
-
-    # sort atoms
-    atom_typ_sc = np.array(listcross(atom_typ_uc, atom_num_uc) * mulsp)
-    atom_sort = np.argsort(atom_typ_sc)
-    atom_typ_sc = atom_typ_sc[atom_sort]
-    atom_pos_sc = atom_pos_sc[atom_sort]
-    atom_num = np.array([])
-    atom_typ = np.array([i for i in set(atom_typ_sc)])
-    atom_typ = np.sort(atom_typ)
-    for atom in atom_typ:
-        num = 0
-        for idx in range(len(atom_typ_sc)):
-            if atom_typ_sc[idx] == atom:
-                num += 1
-        atom_num = np.append(atom_num, num)
-
-    with open(out, "w", newline="\n") as f:
-        f.write(lines[0])
-        f.write(lines[1])
-        np.savetxt(f, lattice_sc, fmt="%15.6f")
-        f.write("   ".join(atom_typ) + "\n")
-        np.savetxt(f, np.array([atom_num]), fmt="%5d")
-        f.write(lines[7])
-        np.savetxt(f, atom_pos_sc, fmt="%15.6f")
-        f.write("\n")
-
-        # grids
-        f.write("%5d%5d%5d\n" % (grid_x_sc, grid_y_sc, grid_z_sc))
-        np.savetxt(f, grid_dat_sc_1st, fmt="%12.5e")
-        np.savetxt(f, np.array([grid_dat_sc_2nd]), fmt="%12.5e")
-
-
-def vasp_show_incar(*arguments:str):
-    """
-    """
-    maxrow = 0
-    maxchr = 0
-
-    for arg in arguments:
-        with open(arg, "r") as f:
-            lines = f.readlines()
-        if len(lines) > maxrow:
-            maxrow = len(lines)
-        for line in lines:
-            if len(line) >  maxchr:
-                maxchr = len(line)
-    maxchr += 2
-
-    totlines = []
-    for arg in arguments:
-        with open(arg, "r") as f:
-            lines = f.readlines()
-        if len(lines) < maxrow:
-            totlines += lines + ["\n"]*int(maxrow - len(lines))
-        else:
-            totlines += lines
+    DESCRIPTION:
+    ------------
+    Expand band gap to specific value, even for metal
+    Use it carefully
     
-    for i in range(len(totlines)):
-        totlines[i] = totlines[i].replace("\n", " "*(maxchr - len(totlines[i])))
-    
-    #
-    for i in range(maxrow):
-        print("|".join(totlines[i::maxrow]))
+    PARAMETERS:
+    -----------
+    inp:
+        input
+    gap:
+    eperband:
 
-
-def gapshifter(code:str, shift:float, inp:str, out:str="shifted.o", absolute:bool=True):
+    RETURN:
+    -------
     """
-    Shift to/or shift specific value
+
+    if "xml" in inp:
+        # number of electrons
+        nvalence = float(next(
+            functions.find_lines_with_keyword(
+            file_path=inp,
+            keyword="NELECT",
+            returnall=False
+            )
+        )[1][17:-5].replace(" ", "")) / eperband
+        # get the number of band
+        # if half occupied, treat it as a valence band
+        nvalence = int(np.ceil(nvalence))
+
+        # number of energy states
+        #nkpoints = next(functions.find_lines_with_keyword(inp, "weights", False))[0] - \
+        #           next(functions.find_lines_with_keyword(inp, "kpointlist", False))[0] - 2
+        # get eigenvalue lineindex
+        eigenindex = [int(i) for i, j in functions.find_lines_with_keyword(inp, '<set comment="kpoint')]
+        
+        # eigenstates
+        # only support kpoints >= 2
+        nstates = eigenindex[1] - eigenindex[0] - 2
+
+        # scissors
+        lines = open(inp, "r").readlines()
+        for i in eigenindex:
+            for j in range(i+nvalence, i+nstates):
+                print(float(lines[j][10:20])+gap, lines[j][20:])
+        #        lines[j] = "       <r>%10.4f%s" % (float(lines[j][10:20])+gap, lines[20:])
+
+        # write 
+        #open("%s_gap1" % inp, "w").writelines(lines)
+
+    elif "EIGENVAL" in inp:
+        pass
+    elif "OUTCAR" in inp:
+        pass
+    else:
+        print("Only xml, OUTCAR, EIGENVAL are supported.")
+
+
+def contcar_statistics(
+    wkdir="./",
+    contcar="CONTCAR_opt"
+):
+    """
+    
+    """
+    lattice6 = np.array([0, 0, 0, 0, 0, 0])
+    func = os.listdir(wkdir)
+    for _ in func:
+        cell = structure.struct(wkdir+"/"+_+"/"+contcar)
+
+        lattice6 = np.vstack((lattice6, cell.lattice6))
+    lattice6 = pd.DataFrame(
+        lattice6,
+        columns=[r"$a$", r"$b$", r"$c$", r"$\alpha$", r"$\beta$", r"\gamma$"]
+    )
+    return lattice6
+
+
+
+def extract_conv_test(
+    wdir="./",
+    plot=False
+):
+    """
+    Description:
+    ------------
+    Extract data from convergence test calculation, 
+    [input files are generated from func vasp_gen_input, ie encut, kmesh
 
     Parameters:
     -----------
-    code: str [vasp, wien2k]
-    absolute: bool, default True shift gap to specific value; otherwise shift specific value
-    shift: float, the value of gap 
-    inp: string, the input file
-    out: string, the output file
+    :param wdir: working directory
     """
-    with open(inp, "r") as f:
-        inplines = f.readlines()
+    conv_name_list = []
+    for _ in os.listdir(wdir):
+        if "vasprun.xml_conv_" in _:
+            conv_name_list.append(_)
 
-    if code == "vasp" and ".xml" in inp:
-        # get the number of valence bands
-        valenceband = 0
-        incar = vaspxml_parser(select_attrib="incar", xmlfile=inp)
-        nelect = vaspxml_parser(select_attrib="parameters", xmlfile=inp)["NELECT"]
+    # check the type of convergence: vasprun_conv_[kmesh, encut]_[gga]
+    if "vasprun.xml_conv_encut_" in conv_name_list[0]:
         
-        if "LSORBIT" in incar:
-            if "T" in incar["LSORBIT"] or "t" in incar["LSORBIT"]:
-                valenceband = int(nelect)
-            else:
-                valenceband = int(nelect/2)
-        else:
-            valenceband = int(nelect/2)
+        ene = [
+            vaspxml_parser(
+                wdir+"/"+_, 
+                "final_ene"
+            )
+            for _ in conv_name_list
+        ]
+            
+        encut = [
+            float((_.replace(".xml", "")).split("_encut_")[-1]) for _ in conv_name_list
+            ]
+        ene = np.array(ene)[np.argsort(encut)]
+        encut = np.array(encut)[np.argsort(encut)]
         
-        if absolute:
-            energygap = getvbmcbm(inp)["ene_gap"]
-            realshift = shift - energygap
-
-        else:
-            realshift = shift
-        
-        # get eigenvalue block and 
-        eigen_beg = 0
-        eigen_end = 0
-        for i in range(len(inplines)):
-            if "<eigenvalues>" in inplines[i]:
-                eigen_beg = i
-            elif "</eigenvalues>" in inplines[i]:
-                eigen_end = i
-
-        with open(out, "w", newline="\n") as f:
-            # the part before eigenvalues
-            f.writelines(inplines[:eigen_beg])
-
-            # eigenvalue part
-            eigen_indx = 1
-            for i in range(eigen_beg, eigen_end+1):
-                if "kpoint" in inplines[i]:
-                    eigen_indx = 1
-                    f.write(inplines[i])
-                elif "<r>" in inplines[i] and "<r>" in inplines[i]:
-                    if eigen_indx <= valenceband:
-                        f.write(inplines[i])
-                        eigen_indx += 1
-                    else:
-                        f.write("       <r>%10.4f%s" % (float(inplines[i][11:20])+realshift, inplines[i][20:]))
-                        eigen_indx += 1
-                else:
-                    f.write(inplines[i])
-
-            # the part after eigenvalues
-            f.writelines(inplines[eigen_end+1:])
-        
-        
-    elif code == "vasp" and ".hdf5" in inp:
-        pass
-    elif code == "wien2k":
-        pass
-
-
-def vasp_opt_2d():
-    """
-    optimization -> position(ISIF=2) -> ab/ac -> aob/aoc
-    :param CONTCAR_to_opt: 
-    :param opt_choice:
-    :param step: the step of shape changes in percentage
-    :param runsh: 
-    """
-
-
-def vasp_gen_IBZKPT(wkdir:str="./", 
-                    fname:str="IBZKPT_666", 
-                    poscar:str="POSCAR", 
-                    kmesh:str="6,6,6", 
-                    write_file:bool=True):
-    """
-    Generate irreducible k-list and the weights
-    
-    Parameters:
-    ----------
-    :param wkdir:
-    :param fname: 
-    :param poscar:
-    :param kmesh:
-    :write
-    """
-    ase.dft.kpoints.ibz_points()
-
-
-
-def xml_block(xmlfile, block_name:str, block_indx:int=-1, block:bool=True):
-    """
-    :param xmlfile: str: absolute path to xml file or a list of xml lines
-    :param block_name: the target block name to search { <eigenvalues> }, the ending gives as { </eigenvalues> }
-    :param block_indx: default return the last block with an index of -1
-    :param block: return the block or just return the index of the target block
-    :return list: line list 
-    search the block with specific block_name and return the block or the index
-    """
-    if isinstance(xmlfile, str):
-        with open(xmlfile, "r") as f:
-            lines = f.readlines()
-    elif isinstance(xmlfile, list):
-        lines = xmlfile
-
-    beg_indx = []
-    end_indx = []
-    for i in range(len(lines)):
-        if "<%s" % block_name in lines[i]:
-            beg_indx.append(i)
-        if "</%s" % block_name in lines[i]:
-            end_indx.append(i)
-    
-    if block:
-        return lines[beg_indx[block_indx]:end_indx[block_indx]+1]
-    else:
-        return beg_indx[block_indx], end_indx[block_indx]
-
-
-def vasp_split_IBZKPT(wkdir:str="./", fname:str="vasprun_merged.xml", ibzkpt:str="IBZKPT", kperibzkpt:int=30, split_merge:str="split"):
-    """
-    This function can split a huge k-points calculation to several smaller ones and merge 
-    the results into an unitary vasprun_merged.xml file.
-
-    :param wkdir            : absolute path to the working folder
-    :param fname            : the name of the merged xml file
-    :param ibzkpt           : the IBZKPT file
-    :param kperibzkpt       : the number of k-points in each sub-calculation
-    :param split_merge      : optional [split,merge] 
-                            : "split" the IBZKPT to several files, make sure you have all 
-                            :         the INPUTs, including INCAR with ICHARG=11, POSCAR, 
-                            :         POTCAR, CHGCAR_scf_pbelda and WAVECAR_scf_pbelda (optional)  
-                            :         from previous SCF calculation. Please modify the  
-                            :         run_IBZKPT_split.sh file with your own settings. 
-                            : "merge" the splitted vasprun.xml into an unitary one.
-    """
-    if split_merge == "split" or split_merge == "s":
-        print("Make sure you have all the required INPUTs, including INCAR with ICHARG=11, POSCAR, POTCAR, CHGCAR_scf_pbelda and WAVECAR_scf_pbelda (optional) from previous SCF calculation. Please modify the run_IBZKPT_split.sh file with your own settings.")
-
-        with open(ibzkpt, "r") as f:
-            lines = f.readlines()
-        total_k = int(lines[1].split()[0])
-        start_line_indx = 3
-        
-        group_num = total_k//kperibzkpt
-
-        for i in range(1, group_num+1):
-            with open(wkdir+"/IBZKPT_%d" % i, "w", newline="\n") as f:
-                f.write("Automatically generated mesh\n")
-                f.write("%8s\n" % kperibzkpt)
-                f.write("Reciprocal lattice\n")
-                f.writelines(lines[start_line_indx:start_line_indx+kperibzkpt])
-            start_line_indx += kperibzkpt
-        
-        if total_k%kperibzkpt != 0:
-            with open("%s/IBZKPT_%d" % (wkdir, int(group_num+1)), "w", newline="\n") as f:
-                f.write("Automatically generated mesh\n")
-                f.write("%8d\n" % int(total_k%kperibzkpt))
-                f.write("Reciprocal lattice\n")
-                f.writelines(lines[start_line_indx:])
-            group_num += 1
-        
-        cmd = "# split dos\n"
-        cmd += "for ibz in {1..%d}; do \n" % group_num
-        cmd += "        cp WAVECAR_scf_pbelda WAVECAR\n"
-        cmd += "        cp CHGCAR_scf_pbelda CHGCAR\n"
-        cmd += "        cp IBZKPT_$ibz KPOINTS \n"
-        cmd += "        mpirun -np $SLURM_NTASKS vasp_std\n"
-        cmd += "        mv vasprun.xml vasprun_IBZKPT_$ibz.xml\n"
-        cmd += "done\n"
-        with open("%s/run_IBZKPT_split.sh" % wkdir, "w", newline="\n") as f:
-            f.write(cmd)
-        os.chmod("%s/run_IBZKPT_split.sh" % wkdir, 0o775)
-        
-    elif split_merge == "merge" or split_merge == "m":
-        xmlfile_list = subprocess.getoutput("ls %s/vasprun_IBZKPT_*.xml" % wkdir).split()
-        kpoints_beg, kpoints_end = xml_block(xmlfile=xmlfile_list[0], block_name="kpoints", block=False)
-        eigen_beg, eigen_end = xml_block(xmlfile=xmlfile_list[0], block_name="eigenvalues", block=False)
-        #print(kpoints_beg, kpoints_end)
-        #print(eigen_beg, eigen_end)
-        #print(xmlfile_list)
-        with open(xmlfile_list[0], "r") as f:
-            lines = f.readlines()
-        block_before_kpoints = lines[:kpoints_beg]
-        block_kpoints2eigen = lines[kpoints_end+1:eigen_beg]
-        block_after_eigen = lines[eigen_end+1:]
-
-        block_kpoints = []
-        block_weight = []
-        block_eigen = []
-
-        for i in range(len(xmlfile_list)):
-            xmlfile = wkdir + "/vasprun_IBZKPT_%d.xml" % (i+1)
-            kpoints_lines = xml_block(xmlfile=xmlfile, block_name="kpoints", block=True)
-            block_kpoints += xml_block(xmlfile=kpoints_lines, block_name="varray", block_indx=0, block=True)[1:-1]
-            block_weight += xml_block(xmlfile=kpoints_lines, block_name="varray", block_indx=1, block=True)[1:-1]
-
-            # eigenvalue
-            eigenvalues_lines = xml_block(xmlfile=xmlfile, block_name="eigenvalues", block=True)
-            #print(eigenvalues_lines)
-            block_eigen += eigenvalues_lines[9:-4]
-        
-        # add index in block_eigen
-        kpoint_index = 1
-        for i in range(len(block_eigen)):
-            if '<set comment="kpoint' in block_eigen[i]:
-                block_eigen[i] = '      <set comment="kpoint %d">\n' % kpoint_index
-                kpoint_index += 1
-
-        total_block = []
-        total_block += block_before_kpoints
-        total_block += [' <kpoints>\n', '  <varray name="kpointlist" >\n']
-        total_block += block_kpoints
-        total_block += ['  </varray>\n']
-        total_block += ['  <varray name="weights" >\n']
-        total_block += block_weight
-        total_block += ['  </varray>\n', ' </kpoints>\n']
-        total_block += block_kpoints2eigen
-        total_block += ['  <eigenvalues>\n', '   <array>\n', '    <dimension dim="1">band</dimension>\n', '    <dimension dim="2">kpoint</dimension>\n', '    <dimension dim="3">spin</dimension>\n', '    <field>eigene</field>\n', '    <field>occ</field>\n', '    <set>\n', '     <set comment="spin 1">\n']
-        total_block += block_eigen
-        total_block += ['     </set>\n', '    </set>\n', '   </array>\n', '  </eigenvalues>\n']
-        total_block += block_after_eigen
-
-
-        with open(wkdir+"/"+fname, "w", newline="\n") as f:
-            f.writelines(total_block)        
-
-    else:
-        lexit("Only ")
-
-
-def vasp_dp_effect_mass(fpath:str="./", xmlfile:str="vasprun.xml", carrier:str="electron", specifyrange=False):
-    """
-    1, Read a xml file with a line-like kpoints, and calculate the effective mass with parabolic approximation.
-    :param fpath:
-    :param xmlfile:
-    :param carrier: str, optional [electron, hole]
-    """
-    vbm_index, cbm_index = vasp_cbmvbm_index(xmlfile="%s/%s" % (fpath, xmlfile))
-    print("The number of valence bands top is %d." % vbm_index)
-    print("The number of conduction bands bottom is %d." % cbm_index)
-    if carrier == "electron":
-        # get eigen states, kpath
-        eigen, eigen2 = vaspxml_parser(select_attrib="eigen", xmlfile="%s/%s" % (fpath, xmlfile))
-        kpath = vaspxml_parser(select_attrib="klist", xmlfile="%s/%s" % (fpath, xmlfile))[:, -1]
-        cbm_band = eigen[:, cbm_index, 0]
-        # get best-fitting range
-        if specifyrange:
-            bestfitting = np.array([[specifyrange[0], specifyrange[1], 0]])
-        else:
-            bestfitting = best_polyfit_range(kpath, cbm_band, 2, 5, 20)
-        
-        # data to write and units conversion
-        print(bestfitting)
-        dat_to_write = np.vstack((kpath[int(bestfitting[0,0]):int(bestfitting[0,1])]/uc_ang2m, cbm_band[int(bestfitting[0,0]):int(bestfitting[0,1])]*uc_ev2j))
-        with open("%s/%s" % (fpath, "effect_electron.dat"), "w", newline="\n") as f:
-            f.write("# kpath(angstrom^-1)    eigen_states(J)\n")
-            f.write("# rsqures: %15.9f\n" % bestfitting[0, 2])
-            np.savetxt(f, dat_to_write.reshape(-1, 2))
-        # calculate effective mass
-        print(kpath[int(bestfitting[0,0]):int(bestfitting[0,1])])
-        print(cbm_band[int(bestfitting[0,0]):int(bestfitting[0,1])])
-        effective_mass_calculator(kpath=kpath[int(bestfitting[0,0]):int(bestfitting[0,1])]/uc_ang2m, eigen=cbm_band[int(bestfitting[0,0]):int(bestfitting[0,1])]*uc_ev2j, fpath=fpath, fname="eff_mass_electron.png", plot=True)
-
-    elif carrier == "hole":
-        pass
-    else:
-        lexit("Carrier type: electron or hole")
-
-
-def vasp_cbmvbm_index(xmlfile:str="vasprun.xml"):
-    """
-    1, get the index number of conduction bottom band and valence top band
-    :param xmlfile: the input file
-    :return two integers vbm_index, cbm_index
-    """
-    nelect = vaspxml_parser(select_attrib="parameters", xmlfile=xmlfile)["NELECT"]
-    incar = vaspxml_parser(select_attrib="incar", xmlfile=xmlfile)
-    if nelect % 2 == 1:
-        nelect += 1
-    if "LSORBIT" in incar:
-        cbm_index = int(nelect)
-        vbm_index = int(nelect-1)
-    else:
-        cbm_index = int(np.ceil(nelect/2.))
-        vbm_index = int(np.ceil(nelect/2.-1))
-    return vbm_index, cbm_index
-
-
-def vasp_defomation_potential(fpath:str="./", poscar_file:str="POSCAR", direction:str="ac", step:float=0.005, num:int=5, init_analy:str="init"):
-    """
-    :param poscar:
-    :param direction:
-    :param step:
-    :param num:
-    :param init_analy: optional [init, analysis]
-    """
-    if init_analy == "init": 
-        deformation = center_array(center=1, step=step, total_num=num)
-        if "a" in direction:
-            for _ in deformation:
-                poscar = struct(fpath + "/" + poscar_file)
-                poscar_dict = poscar.return_dict()
-                poscar_dict["lattice"] = poscar_dict["lattice"]*np.array([[_], [1], [1]])
-                poscar.update_struct_dict(poscar_dict)
-                poscar.write_struct(fpath=fpath, fname="POSCAR_a_%5.3f" % _)
-        if "c" in direction:
-            for _ in deformation:
-                poscar = struct(fpath + "/" + poscar_file)
-                poscar_dict = poscar.return_dict()
-                poscar_dict["lattice"] = poscar_dict["lattice"]*np.array([[1], [1], [_]])
-                poscar.update_struct_dict(poscar_dict)
-                poscar.write_struct(fpath=fpath, fname="POSCAR_c_%5.3f" % _)
-
-    elif init_analy == "analysis":
-        xml_file_list = subprocess.getoutput("ls %s/*.xml" % fpath).split()
-        if "a" in direction:
-            with open("%s/dp_a.dat" % fpath, "w", newline="\n") as f:
-                f.write("%5s%15s%15s\n" % ("#dp(%)", "VBM", "CBM"))
-                for _ in xml_file_list:
-                    if "_a_" in _:
-                        vbm_index, cbm_index = vasp_cbmvbm_index(xmlfile=_)
-                        eigen, eigen2 = vaspxml_parser(select_attrib="eigen", xmlfile=_)
-                        cbm = np.min(eigen[:, cbm_index, 0])
-                        vbm = np.max(eigen[:, vbm_index, 0])
-                        f.write("%5s%15.5f%15.5f\n" % (_[-9:-4], vbm, cbm))
-            dp_dat_a = np.loadtxt("%s/dp_a.dat" % fpath)
-            dp_vbm = np.polyfit(dp_dat_a[:, 0], dp_dat_a[:, 1], deg=1)
-            dp_cbm = np.polyfit(dp_dat_a[:, 0], dp_dat_a[:, 2], deg=1)
-            dp_vbm_x = np.linspace(dp_dat_a[0, 0], dp_dat_a[-1, 0], num=100)
-            dp_cbm_x = np.linspace(dp_dat_a[0, 0], dp_dat_a[-1, 0], num=100)
-            dp_vbm_y = dp_vbm[0]*dp_vbm_x + dp_vbm[1]
-            dp_cbm_y = dp_cbm[0]*dp_cbm_x + dp_cbm[1]
-            plt.plot(dp_vbm_x, dp_vbm_y, c="red", label="VBM, dp=%7.3f" % dp_vbm[0])
-            plt.plot(dp_cbm_x, dp_cbm_y, c="blue", label="CBM, dp=%7.3f" % dp_cbm[0])
-            plt.scatter(dp_dat_a[:, 0], dp_dat_a[:, 1], c="red", marker="x")
-            plt.scatter(dp_dat_a[:, 0], dp_dat_a[:, 2], c="blue", marker="x")
-            plt.legend(frameon=False)
-            plt.xlabel("Strain in a-axis (%)")
+        if plot:
+            plt.plot(encut, ene, marker="x", lw=1.5)
+            plt.xlabel("Kinetic Energy Cutoff (eV)")
             plt.ylabel("Energy (eV)")
-            plt.savefig("%s/dp_a.png" % fpath)
-            plt.close()
-        if "b" in direction:
-            with open("%s/dp_b.dat" % fpath, "w", newline="\n") as f:
-                f.write("%5s%15s%15s\n" % ("#dp(%)", "VBM", "CBM"))
-                for _ in xml_file_list:
-                    if "_b_" in _:
-                        vbm_index, cbm_index = vasp_cbmvbm_index(xmlfile=_)
-                        eigen, eigen2 = vaspxml_parser(select_attrib="eigen", xmlfile=_)
-                        cbm = np.min(eigen[:, cbm_index, 0])
-                        vbm = np.max(eigen[:, vbm_index, 0])
-                        f.write("%5s%15.5f%15.5f\n" % (_[-9:-4], vbm, cbm))
-            dp_dat_b = np.loadtxt("%s/dp_b.dat" % fpath)
-            dp_vbm = np.polyfit(dp_dat_b[:, 0], dp_dat_b[:, 1], deg=1)
-            dp_cbm = np.polyfit(dp_dat_b[:, 0], dp_dat_b[:, 2], deg=1)
-            dp_vbm_x = np.linspace(dp_dat_b[0, 0], dp_dat_b[-1, 0], num=100)
-            dp_cbm_x = np.linspace(dp_dat_b[0, 0], dp_dat_b[-1, 0], num=100)
-            dp_vbm_y = dp_vbm[0]*dp_vbm_x + dp_vbm[1]
-            dp_cbm_y = dp_cbm[0]*dp_cbm_x + dp_cbm[1]
-            plt.plot(dp_vbm_x, dp_vbm_y, c="red", label="VBM, dp=%7.3f" % dp_vbm[0])
-            plt.plot(dp_cbm_x, dp_cbm_y, c="blue", label="CBM, dp=%7.3f" % dp_cbm[0])
-            plt.scatter(dp_dat_b[:, 0], dp_dat_b[:, 1], c="red", marker="x")
-            plt.scatter(dp_dat_b[:, 0], dp_dat_b[:, 2], c="blue", marker="x")
-            plt.legend(frameon=False)
-            plt.xlabel("Strain in b-axis (%)")
+        else:
+            np.savetxt(
+                wdir+"/encut-ene.dat", 
+                (np.vstack((np.array(encut), np.array(ene))).T)[np.argsort(encut)[::-1], :], 
+                header="encut(eV) ene(eV)"
+            )
+            with open(wdir+"/encut-ene.gnu", "w", newline="\n") as f:
+                f.write(gnu2dline % ("encut-ene.png", 
+                "Convergence test of kinetic energy cutoff", 
+                "Kinetic energy cutoff(eV)", 
+                "Total energy(eV)", 
+                "encut-ene.dat"))
+    
+    if "vasprun.xml_conv_kmesh_" in conv_name_list[0]:
+        ene = [
+            vaspxml_parser(
+                wdir+"/"+_,
+                "final_ene"
+            ) 
+            for _ in conv_name_list
+        ]
+        kmesh = [
+            float((_.replace(".xml", "")).split("_kmesh_")[-1]) for _ in conv_name_list
+        ]
+        ene = np.array(ene)[np.argsort(kmesh)]
+        kmesh = np.array(kmesh)[np.argsort(kmesh)]
+
+        if plot:
+            plt.plot(kmesh, ene, marker="x", lw=1.5)
+            plt.xlabel(r"K-spacing ($\AA^{-1}$)")
             plt.ylabel("Energy (eV)")
-            plt.savefig("%s/dp_b.png" % fpath)
-            plt.close()
-        if "c" in direction:
-            with open("%s/dp_c.dat" % fpath, "w", newline="\n") as f:
-                f.write("%5s%15s%15s\n" % ("#dp(%)", "VBM", "CBM"))
-                for _ in xml_file_list:
-                    if "_c_" in _:
-                        vbm_index, cbm_index = vasp_cbmvbm_index(xmlfile=_)
-                        eigen, eigen2 = vaspxml_parser(select_attrib="eigen", xmlfile=_)
-                        cbm = np.min(eigen[:, cbm_index, 0])
-                        vbm = np.max(eigen[:, vbm_index, 0])
-                        f.write("%5s%15.5f%15.5f\n" % (_[-9:-4], vbm, cbm))
-            dp_dat_c = np.loadtxt("%s/dp_c.dat" % fpath)
-            dp_vbm = np.polyfit(dp_dat_c[:, 0], dp_dat_c[:, 1], deg=1)
-            dp_cbm = np.polyfit(dp_dat_c[:, 0], dp_dat_c[:, 2], deg=1)
-            dp_vbm_x = np.linspace(dp_dat_c[0, 0], dp_dat_c[-1, 0], num=100)
-            dp_cbm_x = np.linspace(dp_dat_c[0, 0], dp_dat_c[-1, 0], num=100)
-            dp_vbm_y = dp_vbm[0]*dp_vbm_x + dp_vbm[1]
-            dp_cbm_y = dp_cbm[0]*dp_cbm_x + dp_cbm[1]
-            plt.plot(dp_vbm_x, dp_vbm_y, c="red", label="VBM, dp=%7.3f" % dp_vbm[0])
-            plt.plot(dp_cbm_x, dp_cbm_y, c="blue", label="CBM, dp=%7.3f" % dp_cbm[0])
-            plt.scatter(dp_dat_c[:, 0], dp_dat_c[:, 1], c="red", marker="x")
-            plt.scatter(dp_dat_c[:, 0], dp_dat_c[:, 2], c="blue", marker="x")
-            plt.legend(frameon=False)
-            plt.xlabel("Strain in c-axis (%)")
-            plt.ylabel("Energy (eV)")
-            plt.savefig("%s/dp_c.png" % fpath)
-            plt.close()
-
-    else:
-        lexit("Available choice of init_analy: init, analysis")
-
-
-
-def add_selective_dyn(inp:str="POSCAR", out:str="POSCAR_init" ):
-    """"""
-    pass
-
-
-def vaspxml_parser(select_attrib:str, xmlfile:str="vasprun.xml"):
-    """
-    
-    :param select_arrib : optional [tdos, pdos, eigen, final_ene, paramters, incar]
-    :return    final_ene: the total energy
-    :               kist: 
-    :               tdos:
-    :               pdos:
-    :              eigen:
-    :         parameters: return a dictionary parameters_dict, available key: NELECT, NBAND, efermi
-    :              incar:
-    :            fermi_e: 
-    :return final_ene         : the 
-    :return klist             : array like kpoints list and the the accumulative k length [frac_reciprocal_x,y,z, abs_reciprocal_x,y,z, kpath_length]
-    :return highsympoint      : 
-    :return eigen             : return two eigenval arrays with a shape of (kpoint, [eigenvalues, occupation])
-    :return paramters         : parameters_dict key  : NELECT
-                                                     : NBANDS
-    :return incar: incar_dict : 
-    """ 
-    try:
-        vaspxml = ET.parse(xmlfile)
-        vasproot = vaspxml.getroot()
-        calculation = vasproot.find("calculation")
-        atominfo = vasproot.find("atominfo")
-    except:
-        lexit("Cannot find "+xmlfile+".")
-
-    # parser
-    if select_attrib == "dos":
-        dos = calculation.find("dos")
-        # fermi : dos[0]
-        # total dos: dos[1] -> data: dos[1][0][5][0]
-        # partial dos: dos[2] -> data: dos[2][0][5][0]
-        fermi = dos[0].text
-        dos_lines_tot = "#" + "%s" % fermi + "".join(dos[1][0][5][0].itertext())
-        # column field: energy s py pz ...
-        col_field = ''
-        for _ in dos[2][0][3:-2]: 
-            col_field += _.text
-        # ion num
-        ion_num = int(atominfo[0].text)
-        # partial dos
-        dos_lines_partial = [ "#" + col_field + "%s" % fermi + "".join(dos[2][0][-1][_][0].itertext()) for _ in range(ion_num) ]
-        return dos_lines_tot, dos_lines_partial, ion_num
-    elif select_attrib == "final_ene":
-        calculation = vasproot.find("calculation")
-        return float(calculation.find("energy")[-1].text)
-    elif select_attrib == "eigen":
-        calculation = vasproot.find("calculation")
-        eigenvalues = calculation.find("eigenvalues")
-
-        is_ispin = False
-        incar = vaspxml_parser(select_attrib="incar", xmlfile=xmlfile)
-        if "ISPIN" in incar:
-            if incar["ISPIN"] == 2:
-                is_ispin = True
-
-        eigen_spin1 = []
-        eigen_spin2 = []
-        for k in range(len(eigenvalues[0][5][0])):
-            for e in range(len(eigenvalues[0][5][0][k])):
-                eigen_spin1.append([float(i) for i in eigenvalues[0][5][0][k][e].text.split()])
-
-        if is_ispin:
-            return np.array(eigen_spin1).reshape(-1, len(eigenvalues[0][5][0][0]), 2), np.array(eigen_spin2(-1, len(eigenvalues[0][5][0][0]), 2))
         else:
-            return np.array(eigen_spin1).reshape(-1, len(eigenvalues[0][5][0][0]), 2), eigen_spin2
-
-    elif select_attrib == "klist":
-        kpoints = vasproot.find("kpoints")
-        klist = []
-        kpoints = kpoints.findall("varray")
-        attributes = [_.attrib["name"] for _ in kpoints]
-        kpoints = kpoints[attributes.index("kpointlist")]
-        for _ in range(len(kpoints)):
-            klist.append([float(i) for i in kpoints[_].text.split()])
-        klist = np.array(klist)
-        reciprocal = vaspxml_parser(select_attrib="cell", xmlfile=xmlfile)["rec_basis_end"]
-        kpath_abs = [0]
-        cartesian_reciprocal = frac2cart(reciprocal, klist)
-        for _ in range(1, len(klist)):
-            kpath_abs.append(kpath_abs[_-1]+np.sqrt(np.dot(cartesian_reciprocal[_]-cartesian_reciprocal[_-1], cartesian_reciprocal[_]-cartesian_reciprocal[_-1])))
-        return np.hstack((klist, cartesian_reciprocal, np.array(kpath_abs[:]).reshape(-1,1)))
-    elif select_attrib == "highsympoints":
-        kpoints = vasproot.find("kpoints")
-        highsympoints_frac = []
-        highsympoints = kpoints.findall("generation")
-        attributes = [_.attrib["param"] for _ in highsympoints]
-        highsympoints = kpoints[attributes.index("listgenerated")]
-        for _ in range(1, len(highsympoints)):
-            highsympoints_frac.append([float(i) for i in highsympoints[_].text.split()])
-        reciprocal = vaspxml_parser(select_attrib="cell", xmlfile=xmlfile)["rec_basis_end"]
-        cartesian_reciprocal = frac2cart(reciprocal, np.array(highsympoints_frac))
-        highsympoints_abs = [0]
-        for _ in range(1, len(highsympoints_frac)):
-            highsympoints_abs.append(highsympoints_abs[_-1]+np.sqrt(np.dot(cartesian_reciprocal[_]-cartesian_reciprocal[_-1], cartesian_reciprocal[_]-cartesian_reciprocal[_-1])))
-        return np.array(highsympoints_abs)
-    elif select_attrib == "parameters":
-        parameters = vasproot.find("parameters")
-        parameters = parameters.findall("separator")
-        attributes = [_.attrib["name"] for _ in parameters]
-        parameters_electronic = parameters[attributes.index("electronic")]
-        attributes_electronic = [_.attrib["name"] for _ in parameters_electronic]
-
-        calculation = vasproot.find("calculation")
-        dos = calculation.find("dos")
-        efermi = float(dos[0].text)
-
-        parameters_dict = {}
-        parameters_dict["NELECT"] = float(parameters_electronic[attributes_electronic.index("NELECT")].text)
-        parameters_dict["NBANDS"] = float(parameters_electronic[attributes_electronic.index("NBANDS")].text)
-        parameters_dict["efermi"] = efermi
-
-        return parameters_dict
-    elif select_attrib == "incar":
-        incars = vasproot.find("incar")
-        attributes = [_.attrib["name"] for _ in incars]
-        incars_dict = {}
-        for _ in attributes:
-            incars_dict[_] = incars[attributes.index(_)].text
-        return incars_dict
-    elif select_attrib == "cell":
-        structure = vasproot.findall("structure")
-        structure_beg = structure[0]
-        structure_end = structure[-1]
-        basis_beg = []
-        basis_end = []
-        for _ in range(len(structure_beg[0][0])):
-            basis_beg.append([float(i) for i in structure_beg[0][0][_].text.split()])
-        for _ in range(len(structure_end[0][0])):
-            basis_end.append([float(i) for i in structure_end[0][0][_].text.split()])
-
-        rec_basis_beg = []
-        rec_basis_end = []
-        for _ in range(len(structure_beg[0][2])):
-            rec_basis_beg.append([float(i) for i in structure_beg[0][2][_].text.split()])
-        for _ in range(len(structure_end[0][2])):
-            rec_basis_end.append([float(i) for i in structure_end[0][2][_].text.split()])
-
-        position_beg = []
-        position_end = []
-        for _ in range(len(structure_beg[1])):
-            position_beg.append([float(i) for i in structure_beg[1][_].text.split()])
-        for _ in range(len(structure_end[0][1])):
-            position_end.append([float(i) for i in structure_end[1][_].text.split()])
-
-        volum_beg = float(structure_beg[0][1].text)
-        volum_end = float(structure_end[0][1].text)
-
-        return {
-            "basis_beg": np.array(basis_beg),
-            "basis_end": np.array(basis_end),
-            "volum_beg": np.array(volum_beg),
-            "volum_end": np.array(volum_end),
-            "rec_basis_beg": np.array(rec_basis_beg),
-            "rec_basis_end": np.array(rec_basis_end),
-            "position_beg": np.array(position_beg),
-            "position_end": np.array(position_end)
-        }
-    else:
-        lexit("Cannot find selected attribution of %s.")
+            np.savetxt(wdir+"/kmesh-ene.dat", (np.vstack((np.array(kmesh), np.array(ene))).T)[np.argsort(kmesh)[::-1], :], header="k-mesh ene(eV)")
+            with open(wdir+"/kmesh-ene.gnu", "w", newline="\n") as f:
+                f.write(gnu2dline % ("kmesh-ene.png", 
+                                     "Convergence test of k-mesh", 
+                                     "K-Spacing", 
+                                     "Total energy(eV)", 
+                                     "kmesh-ene.dat"))
 
 
-def vasp_dos_extractor(xmlfile="vasprun.xml"):
-    """  """
-    dos_tot, dos_partial, ion_num = vaspxml_parser("dos", xmlfile)
-    with open("dos_tot.dat", "w", newline="\n") as f:
-        f.write(dos_tot)
-    for _ in range(ion_num):
-        with open ("dos_ion%d.dat" % _, "w", newline="\n") as f:
-            f.write(dos_partial[_])
-
-
-def vasp_band_extractor_previous(eign:str='EIGENVAL', poscar:str="POSCAR", kpoint:str="KPOINTS"):
-    """
-    get eigen value from EIGNVAL
-    electron num; kpoints; states
-    :param eign: string, input file EIGENVAL
-    :param poscar: string, input file POSCAR
-    :param kpoint: string, the input file of KPOINTS for band structure calculation, "line mode" need to be used in KPOINTS
-    """
-    try:
-        kpoints_states_num = np.loadtxt(eign, skiprows=5, max_rows=1, usecols=[0,1,2])
-        kpoints_states = np.loadtxt(eign, skiprows=7, usecols=[0,1,2])
-        kpoints_states = np.reshape(kpoints_states, (-1, int(kpoints_states_num[2]+1), 3))
-    except:
-        lexit("Cannot find eigen value: ", eign)
-    
-    try:
-        kpoints_high_sym = np.loadtxt(kpoint, skiprows=4, usecols=[0,1,2])
-        kpoints_line = np.loadtxt(kpoint, skiprows=1, max_rows=1)
-        #print(kpoints_line)
-    except:
-        lexit("Cannot find KPOINTS")
-
-    # get reciprocal lattice
-    try:
-        ucell = ase.io.read(poscar)
-        recip = ase.geometry.Cell.reciprocal(ucell.cell)
-    except:
-        lexit("Cannot find ", poscar)
-
-    # get kpath 
-    kpath_abs = np.array([0])
-    kpath_high_point = np.array([0])
-    for i in range(int(len(kpoints_high_sym)/2)):
-        n2 = kpoints_high_sym[2*i+1,0]*recip[0,:] + kpoints_high_sym[2*i+1,1]*recip[1,:] + kpoints_high_sym[2*i+1,2]*recip[2,:]
-        n1 = kpoints_high_sym[2*i,0]*recip[0,:] + kpoints_high_sym[2*i,1]*recip[1,:] + kpoints_high_sym[2*i,2]*recip[2,:]
-        n1n2 = np.linalg.norm(n2-n1)
-        kpath_abs = np.hstack((kpath_abs, np.linspace(kpath_abs[-1], kpath_abs[-1]+n1n2, int(kpoints_line))))
-        kpath_high_point = np.append(kpath_high_point, kpath_high_point[-1]+n1n2)
-    kpath_abs = kpath_abs[1:]
-    kpath_high_point = np.array([kpath_high_point[1:]])
-
-
-    # write file
-    with open('BANDCAR', 'w') as f:
-        f.write('# high symmetry points: ')
-        np.savetxt(f, kpath_high_point)
-        kpath_abs_T = np.reshape(kpath_abs, (-1,1))
-        for i in range(len(kpoints_states[0,1:,0])):
-            f.write('# %s \n' % str(i+1))
-            states_2_write = np.hstack((kpath_abs_T, kpoints_states[:, i+1, 1:]))
-            np.savetxt(f, states_2_write)
-            f.write('\n\n')
-
-
-def vasp_band_extractor(fpath:str="./", fname:str="BANDCAR", xmlfile:str="vasprun.xml"):
-    """
-    get eigen value from EIGNVAL
-    electron num; kpoints; states
-    :param fpath: string, input file EIGENVAL
-    :param fname: string, input file POSCAR
-    :param xmlfile: string, the input file of KPOINTS for band structure calculation, "line mode" need to be used in KPOINTS
-    """
-    kpoint_high_sym = vaspxml_parser(select_attrib="highsympoints", xmlfile=xmlfile)
-    kpath = vaspxml_parser(select_attrib="klist", xmlfile=xmlfile)[:, -1]
-    eigen1, eigen2 = vaspxml_parser(select_attrib="eigen", xmlfile=xmlfile)
-    efermi = vaspxml_parser(select_attrib="parameters", xmlfile=xmlfile)["efermi"]
-
-    # write file
-    with open(fpath+"/"+fname, "w", newline="\n") as f:
-        f.write('# high symmetry points:  ')
-        f.write(' %s\n' % ''.join("{:15.8f}".format(i) for i in kpoint_high_sym))
-        f.write('# efermi: %.8f\n' % efermi)
-        for _ in range(len(eigen1[0,:,0])):
-            f.write('# %s \n' % str(_+1))
-            np.savetxt(f, np.hstack((kpath.reshape(-1, 1), eigen1[:,_,:])), fmt="%12.8f" "%10.4f" "%10.4f")
-            f.write('\n\n')
-    
-    # write the gnuplot script
-    x_max = kpoint_high_sym[-1] * 1.001
-    xtics = ''
-    K_label = 1
-    for i in kpoint_high_sym:
-        xtics += '"K%d" %.8f, ' % (K_label, i)
-        K_label += 1
-    high_points = ''.join("{:15.8f}".format(i) for i in kpoint_high_sym[1:-1])
-
-    with open(fpath+"/"+fname+".gnu", "w", newline="\n") as f:
-        f.write(gnubandcar % (fname, x_max, xtics[:-2], high_points, efermi))
-
-
-def parse_vasp_incar(fpath="./", fname="INCAR"):
-    """ parse the INCAR file and return a dictionary """
-    incar_dict = {}
-    try:
-        linesincar = open(fpath+fname, "r").readlines()
-    except:
-        lexit("Cannot find INCAR")
-    # delete comments
-    for i in range(len(linesincar)):
-        if "#" in linesincar[i]:
-            linesincar[i] = linesincar[i][:linesincar[i].index("#")]
-        else:
-            linesincar[i] = linesincar[i][:-1]
-    linesincar = "\n".join(linesincar)
-    linesincar = linesincar.replace(" ", "")
-    linesincar = re.split(",|\n", linesincar)
-    linesincar = [i for i in linesincar if i]
-    for line in linesincar:
-        para = re.split("=", line)
-        incar_dict[para[0].upper()] = para[-1]
-    return incar_dict
-
-
-def parse_vasp_incarstring(fstring):
-    incar_dict = {}
-    linesincar = (fstring.replace(" ", "")).split("\n")
-    for i in range(len(linesincar)):
-        if "#" in linesincar[i]:
-            linesincar[i] = linesincar[i][:linesincar[i].index("#")]
-        else:
-            linesincar[i] = linesincar[i][:]
-    linesincar = [i for i in linesincar if i]
-    for line in linesincar:
-        para = line.split("=")
-        incar_dict[para[0]] = para[-1]
-    return incar_dict
-
-
-def parse_vasp_outcar(fpath="./", fname="OUTCAR"):
-    outcar_dict = {}
-    try:
-        linesoutcar = open(fpath+"/"+fname, "r").readlines()
-    except:
-        lexit("Cannot find OUTCAR.")
-    # get optmization information
-    outcar_dict["opt_state"] = "none"
-    for i in range(1, 50):
-        if "reached required accuracy - stopping structural energy minimisation" in linesoutcar[-i]:
-            outcar_dict['opt_state'] = "opted"
-
-    # get last total energy
-    cmd = 'grep "free  energy   TOTEN  =" %sOUTCAR | tail -1' %fpath
-    if subprocess.getoutput(cmd):
-        outcar_dict["energy"] = subprocess.getoutput(cmd).split()[-2]
-    return outcar_dict
-
-
-def vasp_potcar_gen(poscar_dict, potpath, fpath="./"):
-    """ 
-    generate POTCAR
-    :param poscar_dict  : dictionary from Class struct
-    :param potpath      : path to POTCAR database
-    """
-    atoms = poscar_dict["atoms_type"]
-    potcar = []
-    for atom in atoms:
-        try:
-            potcar += open(str(potpath)+"/POTCAR_"+atom, "r").readlines()
-        except:
-            lexit("The POTCAR of " + atom + " doesn't exit.")
-    if os.path.exists(fpath+"/POTCAR"):
-        lexit("POTCAR exits, rename it and re-excute the code.")
-    else:
-        with open(fpath+"/"+"POTCAR", "w", newline="\n") as f:
-            f.writelines(potcar)
-
-
-def vasp_kpoints_gen(poscar_dict, 
-                     kspacing=0.3, 
-                     kmesh="none", 
-                     fpath="./", 
-                     fname="KPOINTS",
-                     kfix="-1 -1 -1"):
+def vasp_kpoints_gen(
+        lattice9,
+        kspacing=0.3, 
+        kmesh="none", 
+        fname="KPOINTS",
+        kfix="-1 -1 -1"
+):
     """
     Generate kpoints
 
@@ -987,9 +201,15 @@ def vasp_kpoints_gen(poscar_dict,
         -1 -1  1 means fix the k-mesh in z-axis direction to 1
     """
     
-    a1 = np.sqrt(np.dot(poscar_dict["lattice"][0,:], poscar_dict["lattice"][0,:]))
-    a2 = np.sqrt(np.dot(poscar_dict["lattice"][1,:], poscar_dict["lattice"][1,:]))
-    a3 = np.sqrt(np.dot(poscar_dict["lattice"][2,:], poscar_dict["lattice"][2,:]))
+    a1 = np.sqrt(
+        np.dot(lattice9[0,:], lattice9[0,:])
+    )
+    a2 = np.sqrt(
+        np.dot(lattice9[1,:], lattice9[1,:])
+    )
+    a3 = np.sqrt(
+        np.dot(lattice9[2,:], lattice9[2,:])
+    )
     b1 = 2*np.pi/a1
     b2 = 2*np.pi/a2
     b3 = 2*np.pi/a3
@@ -999,10 +219,32 @@ def vasp_kpoints_gen(poscar_dict,
         oddeven = 1
     elif kmesh=="even" or kmesh=="EVEN":
         oddeven = 0
+    oddeven = -1
 
-    n1 = int(np.max(np.array([1, round_even_odd(b1/(kspacing), oddeven)])))
-    n2 = int(np.max(np.array([1, round_even_odd(b2/(kspacing), oddeven)])))
-    n3 = int(np.max(np.array([1, round_even_odd(b3/(kspacing), oddeven)])))
+    n1 = int(
+        np.max(
+            np.array([1, functions.round_even_odd(
+                b1/(kspacing), 
+                oddeven
+            )])
+        )
+    )
+    n2 = int(
+        np.max(
+            np.array([1, functions.round_even_odd(
+                b2/(kspacing), 
+                oddeven
+            )])
+        )
+    )
+    n3 = int(
+        np.max(
+            np.array([1, functions.round_even_odd(
+                b3/(kspacing), 
+                oddeven
+            )])
+        )
+    )
 
     # check fix
     kfix = [int(i) for i in kfix.split()]
@@ -1013,863 +255,686 @@ def vasp_kpoints_gen(poscar_dict,
     if kfix[2] != -1:
         n3 = kfix[2]
     
-    with open(fpath+fname, "w", newline="\n") as f:
-        f.write("mesh auto\n0\nG\n%s %s %s\n0 0 0" %(str(n1), str(n2), str(n3)))
+    with open(fname, "w", newline="\n") as f:
+        f.write("mesh auto\n0\nG\n%s %s %s\n0 0 0" % (str(n1), str(n2), str(n3)))
 
 
-def vasp_build_low_dimension(poscar="POSCAR", direction="z", vacuum=20, type="add"):
+def vasp_extract_band(xmlfile,
+                      out="./band.dat",
+                      thresholdfactor=5):
     """
-    :param vacuum   :float, vacuum
-    :param type     :string add, add vacuum to structure; fit, fit vacuum to vacuum, here vacuum is the lattice parameter""" 
-    poscar = struct(poscar)
-    struct_dict = poscar.return_dict()
-    lattice_para = struct_dict["lattice"]
-    fraction = struct_dict["pos_frac"]
-    abs_fraction = fraction*np.array([1,1,lattice_para[2,2]])
-    if type == "add": pass
-    elif type == "fit": vacuum = vacuum - lattice_para[2,2]
-    lattice_para[2,2] = lattice_para[2,2]+vacuum
-    new_fraction = np.vstack((fraction[:,0], fraction[:,1], (abs_fraction[:,2]+vacuum/2)/lattice_para[2,2])).T
-
-    struct_dict["lattice"] = lattice_para
-    struct_dict["pos_frac"] = new_fraction
-    poscar.update_struct_dict(struct_dict)
-    poscar.write_struct(fpath="./", fname="POSCAR_vacuum.vasp")
-
-
-def write_incar(incar_dict, fpath="./", fname="INCAR"):
-    """ write INCAR """
-    with open(fpath+fname, "w", newline="\n") as f:
-        for item in incar_dict.keys():
-            f.write(item+"="+incar_dict[item]+"\n")
-
-
-def update_incar(incar_dict, new_dict, new_key):
-    """ add new_dict to incar_dict, if the key is duplicated then updates it """
-    for key in new_key:
-        try:
-            if key in incar_dict.keys() and key in new_dict.keys():
-                incar_dict[key] = new_dict[key]
-            elif key not in incar_dict.keys() and key in new_dict.keys():
-                incar_dict.update({key: new_dict[key]})
-            else:
-                pass
-        except:
-            pass
-    return incar_dict
-
-
-def vasp_gen_input(dft="scf", potpath="./", poscar="POSCAR", 
-                   dryrun=False, wpath="./", wname:str="none", 
-                   execode="srun --mpi=pmi2 vasp_std", 
-                   params="gga=pbelda", **kwargs):
-    func_help = """
-    generate inputs for vasp
-    --dft       : optional   opt  ->  
-                :            scf  ->  
-                :           band  ->  
-                :            dos  ->  
-                :     conv_encut  ->  
-                :     conv_kmesh  ->  
-                :     conv_sigma  ->  
-                :          xanes  ->  
-                :  ifc3-phono3py  ->  
-                :           born  ->  
-                :          elast  ->  
-                :             dp  -> 
-                :       aimd-nvt  -> 
-                :       aimd-npt  ->
-                :       aimd-nve  ->
-                :
-                :
-                :
-    --potpath   : absolute path to the PP library and renames them as POTCAR_Ti
-    --poscar    : poscar
-    --dryrun    : show this help
-    --wpath     : the parent path containing the working diectory 
-    --wname     : The name of working folder. If specified, generate working
-                  direction with given name instead of default one.
-    --param     : dft=any         ->  gga      = [pbelda, pbesol, hse06, hsesol, rev-vdW-DF2, 
-                :                 ->             optB88, optPBE]
-                :                 ->  oddeven  = [odd, even]
-                :                 ->  kspacing = 0.15
-                :                 ->  kfix     = "-1 -1 1"
-                :                 ->  charged  = -1
-                :                 ->  any tag in INCAR
-                : dft=opt         ->  mulisif  = 2/6/3
-                :                 ->  mulprec  = Low/Normal/Normal
-                :                 ->  
-                :                 ->  
-                :                 ->  
-
-
-
-    write       : create a folder containing all the necessary input files for VASP, a file 
-                : of cal_details, 
-
-                      : [dft=opt]           ->    
-                      : [dft=scf]           ->    
-                      : [dft=band]          ->    NBAND=200, 
-                      : [dft=conv_encut]    ->    ENCUT=200-300-400-500, kmesh [0.05-0.1-0.2]
-                      : [dft=conv_kmesh]    ->    kspacing [0.05-0.07-0.1-0.15-0.2-0.3]
-                      : [dft=xanes]         ->    hole [1s,2s,2p,...]
-                      : [dft=born]          ->    
-                      : [dft=if3-phono3py]  ->    dim = ["2 2 2", ...]
-                      : [dft=dp]            ->    direct=[a b c], step=0.05, range=0.1, e.g. --param direct=ac,step=0.05,range=0.1
-                      : [dft=ml_heat]       -> 
     """
-    if dryrun:
-        print(func_help)
-        exit()
-    
-    poscar = struct(poscar)
-    val_electron = 0
-    incar = {}
-    
-    params = parser_inputpara(params)
-    gga = params["gga"]
+    klist = vaspxml_parser(xmlfile, "klist")
+    eigen1, eigen2 = vaspxml_parser(xmlfile, "eigenvalues")
+    recp_lattice = vaspxml_parser(xmlfile, "reciprocal_parameter")
 
-    # =================================================================================
-    # global setting
-    # =================================================================================
-    # gen directory
-    if wpath == "./": 
-        wpath = os.path.abspath("./")
-    wdir = wpath+"/"+dft+"/"
-    if wname != "none":
-        wdir = wpath+"/"+wname+"/"
-    if not os.path.exists(wpath):
-        os.mkdir(wpath)
-    if not os.path.exists(wdir):
-        os.mkdir(wdir)
+    lines = functions.extractband(
+        recp_lattice,
+        klist,
+        eigen1,
+        thresholdfactor
+    )
 
-    # gen POTCAR and get electron of valence
-    if os.path.exists(wdir+"/POTCAR"):
-        os.remove(wdir+"/POTCAR")
-    potcar_lines = []
-    for _ in range(len(poscar.atom_type)):
-        atom = poscar.return_dict()["atoms_type"][_]
-        with open("%s/POTCAR_%s" %(potpath, atom)) as f:
-            lines = f.readlines()
-        val_electron += float(lines[1][:-1])* poscar.atom_num[_]
-        potcar_lines += lines
-    with open(wdir+"/POTCAR", "w", newline="\n") as f:
-        f.writelines(potcar_lines)
-
-    # global incar
-    incar.update(incar_glob)
-    # update setting: "d" for d-elements, "f" for f-elements; set the LMAXMIX=2/4/6
-    if max(poscar.return_dict()["atoms_index"]) > 57:
-        incar["LMAXMIX"] = "6"
-    elif max(poscar.return_dict()["atoms_index"]) > 20:
-        incar["LMAXMIX"] = "4"
+    if out == "none":
+        return lines
     else:
-        incar["LMAXMIX"] = "2"
+        with open(out, "w") as f:
+            f.writelines(lines)
 
-    # charged system with charged=-1 in parameters
-    if "charged" in params:
-        incar["NELECT"] = str(val_electron - int(params["charged"]))
-    
-    # write run.sh file and add x permission
-    def write_runsh(runsh, cmd):
-        with open(runsh, "w", newline="\n") as f:
-            f.write(cmd)
-        os.chmod(runsh, 0o775)
-    
-    # write notes
-    def write_note(fpath, note):
-        with open(fpath+"/calnotes.txt", "a", newline="\n") as f:
-            f.write(note)
 
-    # change gga functionals
-    def ch_functional(incar, wdir=wdir):
-        """change functional from parameters"""
-        update_incar(incar, incar_functionals[gga], list(incar_functionals[gga].keys()))
-        return incar
+def vasp_dos_extractor(
+        xmlfile="vasprun.xml",
+        shift_fermi=True,
+        datatype="tot",
+        fpath="./",
+        **kwargs):
+    """
+    datatype:
+        Options: [tot, ldos, pdos]
+    """
+
+    dos_tot, dos_partial, ion_num, orbit = vaspxml_parser(
+        xmlfile=xmlfile,
+        select_attrib="dos"
+    )
+
+    energy = dos_tot[:, 0].reshape(-1,1)
+    if shift_fermi:
+        energy -= vaspxml_parser(
+            xmlfile=xmlfile,
+            select_attrib="parameters"
+        )["efermi"]
     
-    # set GGA+U, need inputs from kwargs ["ggau"]
-    if "ggau" in params:
-        val_u = {}
-        val_j = {}
-        incar["# gga+u setting "] = " "
-        incar["LDAU"] = ".TRUE."
-        incar["LDAUTYPE"] = "2"
-        incar["LDAUL"] = ""
-        incar["LDAUU"] = ""
-        incar["LDAUJ"] = ""
-        try:
-            val_u = parser_inputpara(kwargs["ggau"])
-        except:
-            pass
-        try:
-            val_j = parser_inputpara(kwargs["ggaj"])
-        except:
-            pass
-        for atom in poscar.return_dict()["atoms_type"]:
-            if atom in val_u:
-                incar["LDAUL"] = incar["LDAUL"] + "  2"
-                incar["LDAUU"] = incar["LDAUU"] + "  " + val_u[atom]
-            else:
-                incar["LDAUL"] = incar["LDAUL"] + " -1"
-                incar["LDAUU"] = incar["LDAUU"] + "  0.00"
-            if atom in val_j:
-                incar["LDAUJ"] = incar["LDAUJ"] + "  " + val_j[atom]
-            else:
-                incar["LDAUJ"] = incar["LDAUJ"] + "  0.00"
-    
-    # copy vdw kernel to working folder
-    if params["gga"] in ["rev-vdW-DF2", "optB88", "optPBE"]:
-        try:
-            path2vdw = kwargs["vdw_kernel_path"]
-            shutil.copy(path2vdw, wdir)
-        except:
-            print("""Cannot find the vdw kernel, remember to copy it to the 
-            working folder. Or you can enable the path to the file with 
-            vdw_kernel=/path/to/vdw_kernel""")
-    
-    # nbands, specify the NBANDS based on the valence electrons
+    atomic_types = vaspxml_parser(
+            xmlfile=xmlfile,
+            select_attrib="atoms"
+        )
+
     try:
-        nbands = kwargs["nbands"]
-        if nbands > 4 or nbands <=0:
-            print("""The number of bands typically out of reasonable range.
-            I hope you know what you are doing!""")
-        incar["NBANDS"] = str(int(val_electron * float(nbands)))
-        params["NBANDS"] = incar["NBANDS"]
+        ispin = vaspxml_parser(
+            xmlfile=xmlfile,
+            select_attrib="incar"
+            )["ISPIN"]
     except:
+        ispin = "1"
+    
+    if datatype == "tot":
+        with open(
+            fpath+"/dos_tot.dat",
+            "w",
+            newline="\n"
+        ) as f:
+            f.write("# tot DOS \n")
+            f.write("# energy up up-integ (dn dn-integ if any) \n")
+            np.savetxt(
+                fname=f,
+                X=np.hstack((
+                    energy,
+                    dos_tot[:, 1:],
+                )),
+                fmt="%15.6f"
+            )
+    elif datatype == "pdos":
+        shape = dos_partial.shape
+        # ene s p d f px py pz
+        atomic_type = list(set(atomic_types))
+        atomic_types = np.array(atomic_types)
+        
+        orbit = np.array([_[0] for _ in orbit])
+        pdos_s = dos_partial[:, :, :, np.where(orbit=="s")[0]]
+        pdos_p = dos_partial[:, :, :, np.where(orbit=="p")[0]]
+        pdos_d = dos_partial[:, :, :, np.where(orbit=="d")[0]]
+
+        pdos_p_sum = np.sum(pdos_p, axis=3).reshape(2, shape[1], shape[2], 1)
+        pdos_d_sum = np.sum(pdos_d, axis=3).reshape(2, shape[1], shape[2], 1)
+
+        if True: # "2" in ispin:
+            with open(fpath+"/pdos_up.dat", "w", newline="\n") as f:
+                head = []
+                for i in ["s", "p", "d"]:
+                    for j in atomic_type:
+                        head.append(i+"-"+j)
+                f.write("# pdos-up %s\n"  % " ".join(head))
+                pdos_up = energy
+                for _ in atomic_type:
+                    pdos_up = np.hstack((
+                        pdos_up, 
+                        np.sum(pdos_s[0, np.where(atomic_types==_)[0], :], 
+                               axis=0)
+                    ))
+                    pdos_up = np.hstack((
+                        pdos_up, 
+                        np.sum(pdos_p_sum[0, np.where(atomic_types==_)[0], :], 
+                               axis=0)
+                    ))
+                    pdos_up = np.hstack((
+                        pdos_up, 
+                        np.sum(pdos_d_sum[0, np.where(atomic_types==_)[0], :], 
+                               axis=0)
+                    ))
+                np.savetxt(f, pdos_up, "%15.6f")
+            with open(fpath+"/pdos_dn.dat", "w", newline="\n") as f:
+                head = []
+                for i in ["s", "p", "d"]:
+                    for j in atomic_type:
+                        head.append(i+"-"+j)
+                f.write("# pdos-dn %s\n"  % " ".join(head))
+                pdos_up = energy
+                for _ in atomic_type:
+                    pdos_up = np.hstack((
+                        pdos_up, 
+                        np.sum(pdos_s[1, np.where(atomic_types==_)[0], :], 
+                               axis=0)
+                    ))
+                    pdos_up = np.hstack((
+                        pdos_up, 
+                        np.sum(pdos_p_sum[1, np.where(atomic_types==_)[0], :], 
+                               axis=0)
+                    ))
+                    pdos_up = np.hstack((
+                        pdos_up, 
+                        np.sum(pdos_d_sum[1, np.where(atomic_types==_)[0], :], 
+                               axis=0)
+                    ))
+                np.savetxt(f, pdos_up, "%15.6f")
+        
+    
+    elif datatype == "ldos":
+        shape = dos_partial.shape
+        # ene s p d f px py pz
+        atomic_type = list(set(atomic_types))
+        atomic_types = np.array(atomic_types)
+        
+        orbit = np.array([_[0] for _ in orbit])
+        pdos_s = dos_partial[:, :, :, np.where(orbit=="s")[0]]
+        pdos_p = dos_partial[:, :, :, np.where(orbit=="p")[0]]
+        pdos_d = dos_partial[:, :, :, np.where(orbit=="d")[0]]
+        pdos_p_sum = np.sum(pdos_p, axis=3).reshape(2, shape[1], shape[2], 1)
+        pdos_d_sum = np.sum(pdos_d, axis=3).reshape(2, shape[1], shape[2], 1)
+
+        select_idx = [int(_) for _ in kwargs["index"].split(",")]
+
+        if "2" in ispin:
+            with open(fpath+"/ldos_up.dat", "w", newline="\n") as f:
+                f.write("# ldos-up s, p, d %s\n"  % " ".join(kwargs["index"].split(",")))
+                pdos_up = energy
+                pdos_up = np.hstack((
+                    pdos_up,
+                    np.sum(pdos_s[0, select_idx, :],
+                        axis=0)
+                ))
+                pdos_up = np.hstack((
+                    pdos_up,
+                    np.sum(pdos_p_sum[0, select_idx, :],
+                        axis=0)
+                ))
+                pdos_up = np.hstack((
+                    pdos_up,
+                    np.sum(pdos_d_sum[0, select_idx, :],
+                        axis=0)
+                ))             
+                np.savetxt(f, pdos_up, "%15.6f")
+            with open(fpath+"/ldos_dn.dat", "w", newline="\n") as f:
+                f.write("# ldos-up s, p, d %s\n"  % " ".join(kwargs["index"].split(",")))
+                pdos_up = energy
+                pdos_up = np.hstack((
+                    pdos_up,
+                    np.sum(pdos_s[1, select_idx, :],
+                        axis=0)
+                ))
+                pdos_up = np.hstack((
+                    pdos_up,
+                    np.sum(pdos_p_sum[1, select_idx, :],
+                        axis=0)
+                ))
+                pdos_up = np.hstack((
+                    pdos_up,
+                    np.sum(pdos_d_sum[1, select_idx, :],
+                        axis=0)
+                ))             
+                np.savetxt(f, pdos_up, "%15.6f")
+
+
+def band_gap_overlapping(
+        xml_file
+):
+    """
+    
+    """
+    incar = read_vaspxml(
+        xml_file,
+        "incar"
+    )
+    eperband = 2
+    if "LSORBIT" in incar.keys():
+        eperband = 1
+    electron = read_vaspxml(
+        xml_file,
+        "nelectron"
+    )
+
+
+def vasp_get_vbm_cbm(
+        xml_file
+):
+    """
+    
+    """
+    incar = read_vaspxml(
+        xml_file,
+        "incar"
+    )
+    eperband = 2
+    if "LSORBIT" in incar.keys():
+        eperband = 1
+    electron = read_vaspxml(
+        xml_file,
+        "nelectron"
+    )
+    eigenvalues = read_vaspxml(
+        xml_file,
+        "eigenvalues"
+    )
+    if electron % 2 == 0:
+        vbm_idx = int(electron / eperband)
+        vbm = np.max(eigenvalues[:, vbm_idx-1, 0])
+        cbm = np.min(eigenvalues[:, vbm_idx, 0])
+        return vbm, cbm
+    else:
+        vbm_idx = int(electron / eperband)
+        vbm = np.max(eigenvalues[:, vbm_idx, 0])
+        cbm = np.min(eigenvalues[:, vbm_idx, 0])
+        return vbm, cbm
+    
+
+def vasp_get_vbm_near(
+        xml_file,
+        idx = 1
+):
+    """
+    
+    """
+    incar = read_vaspxml(
+        xml_file,
+        "incar"
+    )
+    eperband = 2
+    if "LSORBIT" in incar.keys():
+        eperband = 1
+    electron = read_vaspxml(
+        xml_file,
+        "nelectron"
+    )
+    eigenvalues = read_vaspxml(
+        xml_file,
+        "eigenvalues"
+    )
+    if electron % 2 == 0:
+        vbm_idx = int(electron / eperband)
+        vbm = np.sort(eigenvalues[:, vbm_idx-1, 0])[-idx-1]
+        return vbm
+    else:
+        vbm_idx = int(electron / eperband)
+        vbm = np.sort(eigenvalues[:, vbm_idx, 0])[-idx-1]
+        return vbm
+
+
+def vasp_get_band_gap_overlapping(
+        xml_file,
+        overlapping=False
+):
+    """
+    
+    """
+    
+    vbm, cbm = vasp_get_vbm_cbm(
+        xml_file
+    )
+    gap_overlapping = cbm - vbm
+    # treat overlapping as 0
+    if overlapping and gap_overlapping < 0:
+        return gap_overlapping
+    elif gap_overlapping < 0:
+        return 0
+    elif gap_overlapping >= 0:
+        return gap_overlapping
+
+
+def read_vaspxml(
+    xml_file,
+    select_entry
+):
+    """
+    
+    select_entry:
+        lattice_basis -> 3x3 numpy array
+        atom_position -> nx3 numpy array
+        rec_basis
+        nelectron
+        efermi
+        eigenvalues
+        eigenvalues2
+
+    """
+    tree = ET.parse(xml_file)
+    root = tree.getroot()
+
+    if select_entry == "rec_basis":
+        rec_basis = []
+        for varray in root.findall(
+            ".//structure[@name='primitive_cell']//crystal//varray[@name='rec_basis']"
+        ):
+            for v in varray.findall('v'):
+                rec_basis.append(
+                    [float(x) for x in v.text.split()]
+                )
+        return np.array(rec_basis)
+    
+    elif select_entry == "incar":
+        incar = {}
+        for key in root.findall(
+            ".//incar"
+        ):
+            for i in key.findall('i'):
+                incar[i.attrib.get("name")] = i.text
+        return incar
+
+    elif select_entry == "nelectron":
+        return float(
+            root.findall(
+                ".//parameters//separator[@name='electronic']//i[@name='NELECT']"
+            )[0].text.split()[0]
+        )
+
+    elif select_entry == "efermi":
         pass
 
-    # select the dynamic atoms
-    if "dynrange" in kwargs.keys():
-        selec_dyn = kwargs["dynrange"]
-        selec_dyn = parser_inputpara(selec_dyn)
-        dynrange = {"xmin": -1e8, "ymin": -1e8, "zmin": -1e8,
-                    "xmax": 1e8,  "ymax": 1e8,  "zmax": 1e8}
-        for key in selec_dyn.keys():
-            dynrange[key] = float(selec_dyn[key])
-        poscar.add_dyn(xmin=dynrange["xmin"],
-                       xmax=dynrange["xmax"],
-                       ymin=dynrange["ymin"],
-                       ymax=dynrange["ymax"],
-                       zmin=dynrange["zmin"],
-                       zmax=dynrange["zmax"])
+    elif select_entry == "lattice_basis":
+        lattice_basis = []
+        for varray in root.findall(
+            ".//structure[@name='primitive_cell']//crystal//varray[@name='basis']"
+        ):
+            for v in varray.findall('v'):
+                lattice_basis.append([float(x) for x in v.text.split()])
+        return np.array(lattice_basis)
+
+    elif select_entry =="kpointlist":
+        kpointlist = []
+        for varray in root.findall(
+            ".//kpoints//varray[@name='kpointlist']"
+        ):
+            for v in varray.findall('v'):
+                kpointlist.append([float(x) for x in v.text.split()])
+        return np.array(kpointlist)
+
+    elif select_entry =="atom_position":
+        atom_position = []
+        for varray in root.findall(
+            ".//structure[@name='primitive_cell']//varray[@name='positions']"
+        ):
+            for v in varray.findall('v'):
+                atom_position.append([float(x) for x in v.text.split()])
+        return np.array(atom_position)
     
-    # WARNING of very long lattice vectors (>50 A) 
-    # decrease AMIN to a smaller value (e.g. 0.01)
-    if any ([poscar.lattice6[0] > 50,     # lattice a
-             poscar.lattice6[1] > 50,     # lattice b
-             poscar.lattice6[2] > 50,]):   # lattice c
-        incar["AMIN"] = "0.01"
+    elif select_entry =="eigenvalues":
+        kpoint_num = len(read_vaspxml(xml_file, "kpointlist"))
+        eigenvalues_1 = []
+        for setspin in root.findall(
+            ".//calculation//eigenvalues//array//set//set[@comment='spin 1']"
+        ):
+            for setkpoint in setspin.findall(".//set"):
+                for r in setkpoint.findall('r'):
+                    eigenvalues_1.append([float(x) for x in r.text.split()])
+        return np.array(eigenvalues_1).reshape(kpoint_num, -1, 2)
     
-    # save file list
-    save_output_list = ["OUTCAR", "OSZICAR", "REPORT", "IBZKPT", \
-                        "CONTCAR", "EIGENVAL", "vasprun.xml", \
-                        "CHGCAR", "WAVECAR", "DOSCAR", "vasp.out"]
-    def update_save_list(save_output_list, dft, incar):
-        if gga == "opt":
-            save_output_list.remove("WAVECAR")
-            save_output_list.remove("CHGCAR")
+    elif select_entry =="eigenvalues2":
+        kpoint_num = len(read_vaspxml(xml_file, "kpointlist"))
+        eigenvalues_1 = []
+        for setspin in root.findall(
+            ".//calculation//eigenvalues//array//set//set[@comment='spin 2']"
+        ):
+            for setkpoint in setspin.findall(".//set"):
+                for r in setkpoint.findall('r'):
+                    eigenvalues_1.append([float(x) for x in r.text.split()])
+        return np.array(eigenvalues_1).reshape(kpoint_num, -1, 2)
+
+    
+    else:
+        print("Available Entry: ")
+
+
+def vaspxml_parser(xmlfile,
+                   select_attrib):
+    """
+    XML parser
+
+    PARAMETERS:
+    -----------
+    xmlfile:
+        The input xml file.
+    select_attrib: str
+        Options: [
+            incar, cell_parameter, reciprocal_parameter, parameters,
+            final_ene, eigenvalues, klist, 
+        ]
+    """
+
+    try:
+        xml = ET.parse(xmlfile)
+        xmlroot = xml.getroot()
+        incar = xmlroot.find("incar")
+        atominfo = xmlroot.find("atominfo")
+        structure = xmlroot.find("structure")
+        calculation = xmlroot.find("calculation")
+        parameters = xmlroot.find("parameters")      
+    except:
+        print("Error, cannot parse the xmlfile.")
+    
+    # incar
+    incartag = {}
+    for tag in incar:
+        incartag[tag.attrib["name"]] = tag.text
+    
+    # cell parameters
+    basis = []
+    rec_basis = []
+    for _ in range(len(structure[0][0])):
+        basis.append(
+            [float(i) for i in structure[0][0][_].text.split()]
+        )
+    for _ in range(len(structure[0][2])):
+        rec_basis.append(
+            [float(i) *2*3.14 
+             for i in structure[0][2][_].text.split()]
+        )
+    
+    # klist
+    kpoints = xmlroot.find("kpoints")
+    klist = []
+    kpoints = kpoints.findall("varray")
+    attributes = [_.attrib["name"] for _ in kpoints]
+    kpoints = kpoints[attributes.index("kpointlist")]
+    for _ in range(len(kpoints)):
+        klist.append([float(i) for i in kpoints[_].text.split()])
+    klist = np.array(klist)
+    
+    if select_attrib == "incar":    
+        return incartag
+    
+    elif select_attrib == "cell_parameter":
+        return basis
+    
+    elif select_attrib == "reciprocal_parameter":
+        return np.array(rec_basis)
+    
+    elif select_attrib == "parameters":
+        parameters = parameters.findall("separator")
+        attributes = [_.attrib["name"] for _ in parameters]
+        parameters_electronic = parameters[
+            attributes.index("electronic")
+        ]
+        attributes_electronic = [
+            _.attrib["name"] for _ in parameters_electronic
+        ]
+
+        dos = calculation.find("dos")
+        efermi = float(dos[0].text)
+
+        parameters_dict = {}
+        parameters_dict["NELECT"] = float(
+            parameters_electronic[
+                attributes_electronic.index("NELECT")
+            ].text
+        )
+        parameters_dict["NBANDS"] = float(
+            parameters_electronic[
+                attributes_electronic.index("NBANDS")
+            ].text
+        )
+        parameters_dict["efermi"] = efermi
+        return parameters_dict
+  
+    elif select_attrib == "final_ene":
+        return float(calculation.find("energy")[-1].text)
+    
+    elif select_attrib == "eigenvalues":
+        eigenvalues = calculation.find("eigenvalues")
+        eigen_spin1 = []
+        eigen_spin2 = []
         
-        if "LVHAR" in incar:
-            save_output_list.append("LOCPOT")
-            save_output_list.append("POT")
-        if "LORBIT" in incar:
-            save_output_list.append("PROCAR")
+        # 
+        if "ISPIN" in incartag and int(incartag["ISPIN"]) == 2:
+            pass
+        else:
+            for k in range(len(eigenvalues[0][5][0])):
+                for e in range(len(eigenvalues[0][5][0][k])):
+                    eigen_spin1.append(
+                        [float(i) 
+                         for i in eigenvalues[0][5][0][k][e].text.split()]
+                    )
+        eigen_spin1 = np.array(eigen_spin1).reshape(
+            (len(klist), -1)
+        )
+        eigen_spin2 = np.array(eigen_spin1).reshape(
+            (len(klist), -1)
+        )
+
+        return eigen_spin1, eigen_spin1
+
+    elif select_attrib == "klist":   
+        return np.array(klist)
+    
+    elif select_attrib == "atoms":
+        ion_num = int(atominfo[0].text)
+        atoms = []
+        for _ in range(ion_num):
+            atoms.append(atominfo[2][3][:][_][0].text)
+        return atoms
+    
+    elif select_attrib == "dos":
+        dos = calculation.find("dos")
+        # fermi : dos[0]
+        # total dos: dos[1] -> data: dos[1][0][5][0]
+        # partial dos: dos[2] -> data: dos[2][0][5][0]
+        dos_lines = "".join(dos[1][0][5][0].itertext())
+        dos_lines = np.array([_.split() 
+                                  for _ in dos_lines.split("\n")[1:-1]])
+        dos_lines_tot = dos_lines.astype(np.float64)
+
+        # ISPIN =2
+        if "ISPIN" in incartag.keys():
+            if "2" in incartag["ISPIN"]:
+                dos_lines = "".join(dos[1][0][5][1].itertext())
+                dos_lines = np.array([_.split()
+                                      for _ in dos_lines.split("\n")[1:-1]])
+                dos_lines_tot = np.hstack((
+                    dos_lines_tot,
+                    dos_lines.astype(np.float64)[:, 1:]
+                ))
+
+        # partial
+        dos_lines_partial = np.array([])
+        col_field = ''
         
-        return save_output_list
-    
-    # kpoints parameters
-    def update_kpoints_para(params):
-        kspacing = float(params["kspacing"]) if "kspacing" in params else 0.15
-        kmesh=params["oddeven"] if "oddeven" in params else "odd"
-        kfix=params["kfix"] if "kfix" in params else "-1 -1 -1"
-        return kspacing, kmesh, kfix
-    
-    # =================================================================================
-    # scf
-    # =================================================================================
-    def dft_scf(incar=incar):
-
-        poscar.write_struct(fpath=wdir, fname="POSCAR_init")
-
-        # for multi-scf: need inputs from kwargs: ["params2", "params3"]
-        if "mulscf" in params:
-            mulstep = int(params["mulscf"]) + 1
-            step = 1
-
-            # incar 
-            incar_dft = deepcopy(incar)
-            incar_dft.update(incar_scf)
-            update_incar(incar_dft, params, incar_tag)
-            incar_dft = ch_functional(incar_dft)
-
-            write_incar(incar_dft, 
-                        fpath=wdir, 
-                        fname="INCAR_%s_%d" %(dft, step))
-            poscar.write_struct(fpath=wdir, 
-                                fname="POSCAR_init")
-
-            # kpoints
-            kspacing, kmesh, kfix = update_kpoints_para(params)
-            vasp_kpoints_gen(poscar.return_dict(), kspacing, kmesh, 
-                             wdir, "KPOINTS_scf_%d" % step, kfix)
-
-            cmd = "# scf step %d\n" % step
-            cmd += initvaspsh(dft, execode, 1, True)
-            cmd += savevaspsh(update_save_list(save_output_list, dft, incar_dft),
-                              dft+"_"+str(step))
-            write_runsh(wdir+"/run_%d.sh" % step, cmd)
-
-            # write folowing steps
-            for step in range(2, mulstep):
+        if "LORBIT" in incartag.keys():
+            if "11" in incartag["LORBIT"]:
+                # ion num
+                ion_num = int(atominfo[0].text)
+                # column field: energy s py pz ...
+                for _ in dos[2][0][3:]: 
+                    col_field += "%s " % _.text
+                col_field = col_field.split()
                 
-                incar_dft = deepcopy(incar)
-                incar_dft.update(incar_scf)
-                params_tmp = parser_inputpara(kwargs["params%d" % step])
-                update_incar(incar_dft, params_tmp, incar_tag)
-                incar_dft = ch_functional(incar_dft)
+                dos_lines = [
+                    "".join(dos[2][0][-1][_][0].itertext()) 
+                    for _ in range(ion_num)
+                ]
 
-                # kpoints
-                kspacing, kmesh, kfix = update_kpoints_para(params_tmp)
-                vasp_kpoints_gen(poscar.return_dict(), kspacing, kmesh,
-                                 wdir, "KPOINTS_scf_%d" % step, kfix)
+                for i in dos_lines:
+                    dos_lines_partial = np.append(
+                        dos_lines_partial, 
+                        np.array([_.split() 
+                                  for _ in i.split("\n")[1:-1]])
+                    )
 
-                write_incar(incar_dft, 
-                            fpath=wdir, 
-                            fname="INCAR_%s_%d" % (dft, step))
-            
-                cmd = "# scf step %d\n" % step
-                cmd += initvaspsh(dft, execode, step, True)
-                cmd += savevaspsh(update_save_list(save_output_list, dft, incar_dft),
-                                  dft+"_"+str(step))
-                write_runsh(wdir+"/run_%d.sh" % step, cmd)
+                dos_lines_partial = dos_lines_partial.astype(np.float64)
+                dos_lines_partial = dos_lines_partial.reshape((
+                    ion_num, -1, len(col_field)
+                ))
 
-        else:
-            # kpoints
-            kspacing, kmesh, kfix = update_kpoints_para(params)
-            vasp_kpoints_gen(poscar.return_dict(), kspacing, kmesh, 
-                             wdir, "KPOINTS_scf", kfix)
-            # incar
-            incar.update(incar_scf)
-            update_incar(incar, params, incar_tag)
-            incar = ch_functional(incar)
-            write_incar(incar, fpath=wdir, fname="INCAR_%s" % dft)
-
-            cmd = "# scf calculation\n"
-            cmd += "  cp INCAR_%s INCAR\n" % dft
-            cmd += "  cp POSCAR_init POSCAR\n"
-            cmd += "  cp KPOINTS_scf KPOINTS\n"
-            cmd += "  " + execode + " >& vasp.out 2>&1\n\n"
-            cmd += savevaspsh(["OUTCAR", "OSZICAR", "REPORT", "IBZKPT", \
-                               "CONTCAR", "EIGENVAL", "vasprun.xml", \
-                               "CHGCAR", "WAVECAR", "DOSCAR", "vasp.out"],
-                            dft)
-            #cmd += "rm -f CHG POSCAR REPORT XDATCAR vaspout.h5\n"
-            write_runsh(wdir+"/run.sh", cmd)
-    
-    # =================================================================================
-    # opt
-    # =================================================================================
-    def dft_opt(incar=incar):
-        # enable WAVECAR by default
-        incar["LWAVE"] = ".TRUE."
-        incar["LCHARG"] = ".TRUE."
-
-        incar.update(incar_opt)
-        update_incar(incar, params, incar_tag)
-        incar = ch_functional(incar)
-
-        # default ISIF = 3
-        isif = {"ISIF": "3"}
-        if "ISIF" in params:
-            isif["ISIF"] = params["ISIF"]
-
-        kspacing, kmesh, kfix = update_kpoints_para(params)
-        vasp_kpoints_gen(poscar.return_dict(), kspacing, kmesh, wdir, 
-                         "KPOINTS_scf", kfix)
-        
-        poscar.write_struct(fpath=wdir, fname="POSCAR_opt_init")
-
-        # for multi-isif: need inputs from kwargs: ["params2", "params3"]
-        if "mulisif" in params:
-            mulstep = len(params["mulisif"]) + 1
-            step = 1
-            
-            # write first inputs
-            update_incar(incar, isif, ["ISIF"])
-
-            write_incar(incar, 
-                        fpath=wdir, 
-                        fname="INCAR_%s_%d" %(dft, step))
-            poscar.write_struct(fpath=wdir, 
-                                fname="POSCAR_opt_init")
-
-            cmd = "# opt step %d\n" % step
-            cmd += "  cp POSCAR_opt_init POSCAR\n"
-            cmd += "  cp KPOINTS_opt KPOINTS\n"
-            cmd += "  cp INCAR_%s_%d INCAR\n\n" % (dft, step)
-            cmd += "  " + execode + " >& vasp.out 2>&1\n\n"
-            cmd += savevaspsh(["OUTCAR", "XDATCAR", "OSZICAR", "REPORT", \
-                               "PCDAT", "CONTCAR", "vasprun.xml", "vasp.out"],
-                               dft+"_"+str(step))
-            write_runsh(wdir+"/run_%d.sh" % step, cmd)
-
-            # write folowing steps
-            for step in range(2, mulstep):
-                params_tmp = parser_inputpara(kwargs["params%d" % step])
-                update_incar(incar, params_tmp, incar_tag)
-
-                write_incar(incar, 
-                        fpath=wdir, 
-                        fname="INCAR_%s_%d" % (dft, step))
-            
-                cmd = "# opt step %d\n" % step
-                cmd += "  cp CONTCAR_%s_%d POSCAR\n" % (dft, step-1)
-                cmd += "  cp INCAR_%s_%d INCAR\n" % (dft, step)
-                cmd += "  cp KPOINTS_opt KPOINTS\n\n"
-                cmd += "  " + execode + " >& vasp.out 2>&1\n\n"
-                cmd += savevaspsh(["OUTCAR", "XDATCAR", "OSZICAR", "REPORT", \
-                                   "PCDAT", "CONTCAR", "vasprun.xml", "vasp.out"],
-                                   dft+"_"+str(step))
-                write_runsh(wdir+"/run_%d.sh" % step, cmd)
-
-        else:
-            update_incar(incar, isif, ["ISIF"])
-            write_incar(incar, 
-                        fpath=wdir, 
-                        fname="INCAR_%s" % dft)
-            
-            poscar.write_struct(fpath=wdir, fname="POSCAR_opt_init")
-
-            cmd = "# opt calculation\n"
-            cmd += "cp INCAR_%s INCAR\n" % dft
-            cmd += "cp POSCAR_opt_init POSCAR\n"
-            cmd += "cp KPOINTS_opt KPOINTS\n"
-            cmd += execode + "\n"
-            cmd += savevaspsh(["OUTCAR", "XDATCAR", "OSZICAR", "REPORT", \
-                               "PCDAT", "CONTCAR", "vasprun.xml"],
-                               dft)
-            write_runsh(wdir+"/run.sh", cmd)
-    
-    # =================================================================================
-    # convergence test: conv_encut conv_kmesh
-    # =================================================================================
-    def dft_conv_encut(incar=incar):
-        """ generate input files for encut convergence test """
-        incar.update(incar_scf)
-        update_incar(incar, params, incar_tag)
-        incar = ch_functional(incar)
-        if "encut" in params:
-            encut = params["encut"].split("-")
-        else:
-            encut = ["300", "350", "400", "450", "500", "550", "600", "650", "700", "750", "800"]
-        incar["ENCUT"] = "xxx"
-        kspacing, kmesh, kfix = update_kpoints_para(params)
-        vasp_kpoints_gen(poscar.return_dict(), kspacing, kmesh, wdir, 
-                         "KPOINTS_scf", kfix)
-
-
-        write_incar(incar, fpath=wdir, fname="INCAR_%s_%s" %(dft, gga))
-        poscar.write_struct(fpath=wdir, fname="POSCAR_init")
-        dftgga = dft+"_"+gga
-        cmd = "# encut convergence test\n"
-        cmd += "cp POSCAR_init POSCAR\n"
-        cmd += "cp KPOINTS_scf KPOINTS\n"
-        cmd += "for encut in %s; do\n" % " ".join(encut)
-        cmd += "sed -e s/xxx/$encut/g INCAR_%s > INCAR\n" % dftgga
-        cmd += execode + "\n"
-        cmd += "mv OUTCAR OUTCAR_%s_encut$encut\n" % (dftgga)
-        cmd += "mv OSZICAR OSZICAR_%s_encut$encut\n" % (dftgga)
-        cmd += "mv vasprun.xml vasprun_%s_encut$encut.xml\n" % (dftgga)
-        cmd += "rm -f CHGCAR WAVECAR\n"
-        cmd += "done\n"
-        cmd += "rm -f CHG POSCAR KPOINTS CONTCAR DOSCAR EIGENVAL INCAR REPORT vaspout.h5 XDATCAR\n"
-        write_runsh(wdir+"/run.sh", cmd)
-
-
-    def dft_conv_kmesh(incar=incar):
-        """ generate input files for kmesh convergence test """
-        incar.update(incar_scf)
-        update_incar(incar, params, incar_tag)
-        incar = ch_functional(incar)
-
-        if "encut" in params:
-            kspacing = params["kspacing"].split("-")
-        else:
-            kspacing = [0.08, 0.1, 0.12, 0.14, 0.15, 0.2, 0.25, 0.3, 0.35]
-        
-        for _ in kspacing:
-            vasp_kpoints_gen(poscar.return_dict(), _, 
-                             kmesh="odd", fpath=wdir, 
-                             fname="KPOINTS_kconv_k%s" % _,
-                             kfix="-1 -1 -1")
-        
-        write_incar(incar, fpath=wdir, fname="INCAR_%s_%s" %(dft, gga))
-        poscar.write_struct(fpath=wdir, fname="POSCAR_init")
-        dftgga = dft+"_"+gga
-        cmd = "# encut convergence test\n"
-        cmd += "cp POSCAR_init POSCAR\n"
-        cmd += "cp INCAR_%s_%s INCAR\n" %(dft, gga)
-        cmd += "for kspacing in %s; do\n" % " ".join(str(_) for _ in kspacing)
-        cmd += "cp KPOINTS_kconv_k$kspacing KPOINTS\n"
-        cmd += execode + "\n"
-        cmd += "mv vasprun.xml vasprun_%s_kmesh$kspacing.xml\n" % (dftgga)
-        cmd += "done\n"
-        write_runsh(wdir+"/run.sh", cmd)
-    
-    def dft_conv_vacuum(incar=incar): 
-        """ generate input files for vacuum convergence test (2d matertials)"""
-    
-    def dft_conv_layer(incar=incar): 
-        """ generate input files for atomic layers convergence test (2d matertials)"""
-
-    # =================================================================================
-    # dos, band, effective mass
-    # =================================================================================
-    
-    def dft_band(incar=incar):
-        """ """
-        print("Make sure WAVECAR_scf and CHGCAR_scf are in the same directory, otherwise, the calculation will be perfomed with dense k-mesh and comsume more time.")
-        print("Gnerate the k-path by yourself and named as KPOINTS_band")
-        incar.update(incar_band)
-        update_incar(incar, params, ["ENCUT", "PREC", "NBAND"])
-        incar = ch_functional(incar)
-
-        write_incar(incar, fpath=wdir, fname="INCAR_%s" % dft)
-        cmd = "# band calculation\n"
-        cmd += "cp INCAR_%s INCAR\n" % dft
-        cmd += "cp KPOINTS_band KPOINTS\n"
-        cmd += "cp WAVECAR_scf WAVECAR\n"
-        cmd += "cp CHGCAR_scf CHGCAR\n"
-        cmd += execode + "\n"
-        cmd += "mv vasprun.xml vasprun_%s.xml\n" % dft
-        write_runsh(wdir+"/run_band.sh", cmd)
-    
-    def dft_dos(incar=incar):
-        """ """
-        print("Make sure WAVECAR_scf and CHGCAR_scf are in the same directory, otherwise, the calculation will be perfomed with dense k-mesh and comsume more time.")
-        print("Gnerate the k-path by yourself and named as KPOINTS_band")
-        incar.update(incar_band)
-        update_incar(incar, params, ["ENCUT", "PREC", "NBAND"])
-        incar = ch_functional(incar)
-
-        kspacing, kmesh, kfix = update_kpoints_para(params)
-        vasp_kpoints_gen(poscar.return_dict(), kspacing, kmesh, wdir, 
-                         "KPOINTS_dos", kfix)
-
-        dftgga = dft+"_"+gga
-        write_incar(incar, fpath=wdir, fname="INCAR_%s" % dftgga)
-        cmd = "# scf calculation\n"
-        cmd += "cp INCAR_%s INCAR\n" % dftgga
-        cmd += "cp KPOINTS_dos KPOINTS\n"
-        cmd += "cp WAVECAR_%s WAVECAR\n" % ("scf_"+gga)
-        cmd += "cp CHGCAR_%s CHGCAR\n" % ("scf_"+gga)
-        cmd += execode + "\n"
-        cmd += "cp vasprun.xml vasprun_%s.xml\n" % dftgga
-        write_runsh(wdir+"/run_dos.sh", cmd)
-
-    def dft_dp(incar=incar):
-        incar.update(incar_scf)
-        update_incar(incar, params, ["ENCUT", "PREC"])
-        incar = ch_functional(incar)
-        vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.15, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_scf")
-
-        # generate structure
-        struct_dict_new = poscar.return_dict()
-        struct_dict_lattice = poscar.return_dict()["lattice"]
-        dp_step = np.linspace(1-float(params["range"]), 1+float(params["range"]), int(((1+float(params["range"]))-(1-float(params["range"])))/(float(params["step"]))+1))
-        
-        for step in dp_step:
-            if "a" in params["direct"]:
-                struct_dict_new["lattice"] = struct_dict_lattice*np.array([[step],[1],[1]])
-                poscar.update_struct_dict(struct_dict_new)
-                poscar.write_struct(fpath=wdir, fname="POSCAR_%s_%5.3f" % ("a", step))
-            if "b" in params["direct"]:
-                struct_dict_new["lattice"] = struct_dict_lattice*np.array([[1],[step],[1]])
-                poscar.update_struct_dict(struct_dict_new)
-                poscar.write_struct(fpath=wdir, fname="POSCAR_%s_%5.3f" % ("b", step))
-            if "c" in params["direct"]:
-                struct_dict_new["lattice"] = struct_dict_lattice*np.array([[1],[1],[step]])
-                poscar.update_struct_dict(struct_dict_new)
-                poscar.write_struct(fpath=wdir, fname="POSCAR_%s_%5.3f" % ("c", step))
-
-        dftgga = dft+"_"+gga
-        write_incar(incar, fpath=wdir, fname="INCAR_%s" % dftgga)
-        cmd = "# deformation potential calculation\n"
-        cmd += "for pos in POSCAR_*; do \n"
-        cmd += "cp INCAR_%s INCAR\n" % dftgga
-        cmd += "cp $pos POSCAR\n"
-        cmd += "cp KPOINTS_scf KPOINTS\n"
-        cmd += execode + "\n"
-        cmd += "cp OUTCAR OUTCAR_$pos\n" 
-        cmd += "cp vasprun.xml vasprun_$pos.xml\n" 
-        cmd += "done\n"
-        write_runsh(wdir+"/run.sh", cmd)
-    
-    # =================================================================================
-    # machine learning part
-    # =================================================================================
-    def ml_heat(incar=incar):
-        """ """
-
-    # =================================================================================
-    # AIMD NVT-NPT-NVE
-    # =================================================================================
-    def dft_nvt(incar=incar):
-        incar.update(incar_nvt)
-        update_incar(incar, params, incar_tag)
-        incar = ch_functional(incar)
-        
-        poscar.write_struct(fpath=wdir, fname="POSCAR_md_init")
-
-        vasp_kpoints_gen(poscar.return_dict(),
-                         kspacing=float(params["kmesh"]) \
-                            if "kmesh" in params \
-                            else 0.3, 
-                         kmesh=params["oddeven"] \
-                            if "oddeven" in params else "odd", 
-                         fpath=wdir,
-                         fname="KPOINTS_md")
-        
-        if "mulmd" not in params:
-            dftgga = dft+"_"+gga
-            write_incar(incar, 
-                        fpath=wdir, 
-                        fname="INCAR_nvt")
-            
-            cmd = "# md nvt calculation\n"
-            cmd += "cp INCAR_nvt INCAR\n"
-            cmd += "cp POSCAR_md_init POSCAR\n"
-            cmd += "cp KPOINTS_md KPOINTS\n"
-            cmd += "for step in 1; do\n"
-            cmd += execode + "\n"
-            cmd += "mv OUTCAR OUTCAR_$step\n"
-            cmd += "mv vasprun.xml vasprun_$step.xml\n"
-            cmd += "mv XDATCAR XDATCAR_$step\n"
-            cmd += "mv OSZICAR OSZICAR_$step\n"
-            cmd += "mv REPORT REPORT_$step\n"
-            cmd += "mv PCDAT PCDAT_$step\n"
-            cmd += "cp CONTCAR CONTCAR_$step\n"
-            cmd += "mv CONTCAR POSCAR\n" 
-            cmd += "done\n"
-            write_runsh(wdir+"/run.sh", cmd)
-
-        else:
-            for step in range(1, int(params["mulmd"])+1):
-                incar_tmp = deepcopy(incar)
-                params_tmp = parser_inputpara(kwargs["params%d" % step])
-                update_incar(incar_tmp, params_tmp, incar_tag)
-                write_incar(incar_tmp, fpath=wdir, fname="INCAR_%d" % step)
-
-                cmd = "# md nvt calculation step %d\n" % step
-                cmd += "cp INCAR_%d INCAR\n" % step
-                if step == 1:
-                    cmd += "cp POSCAR_md_init POSCAR\n"
+                # ispin = 2
+                if "ISPIN" in incartag.keys():
+                    if "2" in incartag["ISPIN"]:
+                        dos_lines = [
+                            "".join(dos[2][0][-1][_][1].itertext()) 
+                            for _ in range(ion_num)
+                        ]
+                        for i in dos_lines:
+                            dos_lines_partial = np.append(
+                                dos_lines_partial, 
+                                np.array([_.split() 
+                                        for _ in i.split("\n")[1:-1]])
+                            )
+                        dos_lines_partial = dos_lines_partial.astype(np.float64)
+                        dos_lines_partial = dos_lines_partial.reshape((
+                            2, ion_num, -1, len(col_field)
+                ))
+                # ispin = 1 return up = dn
                 else:
-                    cmd += "cp CONTCAR_%d POSCAR\n" % (step - 1)
-                cmd += "cp KPOINTS_md KPOINTS\n"
-                cmd += execode + "\n"
-                cmd += savevaspsh(["OUTCAR", "XDATCAR", "OSZICAR", "REPORT", \
-                                   "PCDAT", "CONTCAR"],
-                                  str(step))
-                write_runsh(wdir+"/run_%d.sh" % step, cmd)
+                    dos_lines_partial = np.array([dos_lines_partial, dos_lines_partial])
+
+        return dos_lines_tot, dos_lines_partial, ion_num, col_field
+
+    elif select_attrib == "none":
+        kvector = np.array([0])
 
 
+def initvaspsh(dftlabel, execode, step=0, iswave=False):
+    """
+    Write a bash scripts to prepare the vasp files.
+    Parameters
+    ----------
+    dftlabel:
+        The label of POSCAR
 
-    if dft == "scf":
-        dft_scf()  
-    elif dft == "opt":
-        dft_opt()
-    elif dft == "conv_encut":
-        dft_conv_encut()
-    elif dft == "conv_kmesh":
-        dft_conv_kmesh()
-    elif dft == "band":
-        dft_band()
-    elif dft == "dos":
-        dft_dos()
-    elif dft == "dp":
-        dft_dp()
-    elif dft == "md-nvt":
-        dft_nvt()
-    elif dft == "elecall":
-        """ opt + scf + band + dos """
-        vasp_gen_input(dft="opt", 
-                       potpath=potpath, 
-                       poscar=poscar, 
-                       dryrun=False, 
-                       wpath="./elecall", 
-                       execode=execode, 
-                       params=params)
-        vasp_gen_input(dft="scf", 
-                       potpath=potpath, 
-                       poscar=poscar, 
-                       dryrun=False, 
-                       wpath="./elecall", 
-                       execode=execode, 
-                       params=params)
-        vasp_gen_input(dft="band", potpath=potpath, poscar=poscar, dryrun=False, wpath="./elecall", execode=execode, params=params)
-        vasp_gen_input(dft="dos", potpath=potpath, poscar=poscar, dryrun=False, wpath="./elecall", execode=execode, params=params)
-
-    # =================================================================================
-    # XANES
-    # =================================================================================
-    if dft == "xanes":
-        """ generate input files for XANES simulation """
-        incar.update(incar_glob)
-        incar.update(incar_prop["xanes"])
-        update_incar(incar, params, ["ENCUT", "PREC", "SIGMA"])
-        incar = ch_functional(incar)
-        dftgga = dft+"_"+gga
-
-        # [Ti S]*[2 1]->[Ti Ti S] -> 
-        poscar_dict = poscar.return_dict()
-        atom_list = listcross(poscar_dict["atoms_type"], poscar_dict["atoms_num"])
-        
-        # the first atom
-        new_atom_type = [atom_list[0]] + list(dict.fromkeys(atom_list[1:]))
-        new_atom_num = [1] + [atom_list[1:].count(elem) for elem in list(dict.fromkeys(atom_list[1:]))]
-        poscar_dict["atoms_type"] = new_atom_type
-        poscar_dict["atoms_num"] = np.array(new_atom_num)
-        poscar.update_struct_dict(poscar_dict)
-        poscar.write_struct(fpath=wdir, fname="POSCAR_%s_atom%d" % (dftgga, 1))
-        potcar_lines = []
-        for atom in poscar_dict["atoms_type"]:
-            with open("%s/POTCAR_%s" %(potpath, atom)) as f:
-                lines = f.readlines()
-            val_electron += float(lines[1][:-1])
-            potcar_lines += lines
-        with open(wdir+"/POTCAR_%s_atom%d" % (dftgga, 1), "w", newline="\n") as f:
-            f.writelines(potcar_lines)
-
-        # the last atom
-        new_atom_type = list(dict.fromkeys(atom_list[:-1])) + [atom_list[-1]]
-        new_atom_num = [atom_list[:-1].count(elem) for elem in list(dict.fromkeys(atom_list[:-1]))] + [1]
-        poscar_dict["atoms_type"] = new_atom_type
-        poscar_dict["atoms_num"] = np.array(new_atom_num)
-        poscar.update_struct_dict(poscar_dict)
-        poscar.write_struct(fpath=wdir, fname="POSCAR_%s_atom%d" % (dftgga, len(atom_list)))
-        potcar_lines = []
-        for atom in poscar_dict["atoms_type"]:
-            with open("%s/POTCAR_%s" %(potpath, atom)) as f:
-                lines = f.readlines()
-            val_electron += float(lines[1][:-1])
-            potcar_lines += lines
-        with open(wdir+"/POTCAR_%s_atom%d" % (dftgga, len(atom_list)), "w", newline="\n") as f:
-            f.writelines(potcar_lines)
-
-        # the others
-        for _ in range(1, len(atom_list)-1):
-            new_atom_type = list(dict.fromkeys(atom_list[:_])) + [atom_list[_]] + list(dict.fromkeys(atom_list[_+1:]))
-            new_atom_num  = [atom_list[:_].count(elem) for elem in list(dict.fromkeys(atom_list[:_]))] + [1] + [atom_list[_+1:].count(elem) for elem in list(dict.fromkeys(atom_list[_+1:]))]
-            poscar_dict["atoms_type"] = new_atom_type
-            poscar_dict["atoms_num"] = np.array(new_atom_num)
-            poscar.update_struct_dict(poscar_dict)
-            poscar.write_struct(fpath=wdir, fname="POSCAR_%s_atom%d" % (dftgga, _+1))
-
-            # gen POTCAR and get electron of valence
-            potcar_lines = []
-            for atom in poscar_dict["atoms_type"]:
-                with open("%s/POTCAR_%s" %(potpath, atom)) as f:
-                    lines = f.readlines()
-                val_electron += float(lines[1][:-1])
-                potcar_lines += lines
-            with open(wdir+"/POTCAR_%s_atom%d" % (dftgga, _+1), "w", newline="\n") as f:
-                f.writelines(potcar_lines)
-
-        vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.15, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_scf")
-
-        with open(wdir+"/extractor.sh", "w", newline="\n") as f:
-            f.write(extract_xanes_vasp)
-        os.chmod(wdir+"/extractor.sh", 0o775)
-        
-        write_incar(incar, fpath=wdir, fname="INCAR_%s" % dftgga)
-        cmd = "# xanes for all atoms\n"
-        cmd += "cp KPOINTS_scf KPOINTS\n"
-        cmd += "for atom in {1..%d}; do\n" % int(np.sum(poscar.return_dict()["atoms_num"]))
-        cmd += "cp POSCAR_%s_atom${atom} POSCAR\n" % dftgga
-        cmd += "cp POTCAR_%s_atom${atom} POTCAR\n" % dftgga
-        cmd += "sed s/xxx/${atom}/g INCAR_%s > INCAR\n" % dftgga
-        cmd += execode + "\n"
-        cmd += "./extractor.sh\n"
-        cmd += "cp OUTCAR OUTCAR_%s_atom${atom}\n" % dftgga
-        cmd += "cp vasprun.xml vasprun_%s_atom${atom}.xml\n" % dftgga
-        cmd += "cp xanes.dat xanes_%s_atom${atom}.dat\n" % dftgga
-        cmd += "done\n"
-        write_runsh(wdir+"/run.sh", cmd)
+    Return
+    ------
+    String 
+    """
+    initstring = ""
     
-    # =================================================================================
-    # BORN effective charge
-    # =================================================================================
-    if dft == "born":
-        """calculate BORN effective charge with DFPT method"""
-        incar.update(incar_glob)
-        incar.update(incar_prop["born"])
-        update_incar(incar, params, incar_tag)
-        incar = ch_functional(incar)
+    if dftlabel == "opt":
+        if step == 0:
+            initstring = "  cp POSCAR_opt_init POSCAR\n"
+            initstring += "  cp INCAR_%s INCAR\n" % dftlabel
+            initstring += "  cp KPOINTS_%s KPOINTS\n" % dftlabel
+        elif step == 1:
+            initstring = "  cp POSCAR_opt_init POSCAR\n"
+            initstring += "  cp INCAR_%s_%d INCAR\n" % (dftlabel, step)
+            initstring += "  cp KPOINTS_%s_%d KPOINTS\n" % (dftlabel, step)
+        else:
+            initstring = "  cp CONTCAR_%s_%d POSCAR\n" % (dftlabel, step-1)
+            initstring += "  cp INCAR_%s_%d INCAR\n" % (dftlabel, step)
+            initstring += "  cp KPOINTS_%s_%d KPOINTS\n" % (dftlabel, step)
 
-        vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.15, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_scf")
-
-        poscar.write_struct(fpath=wdir, fname="POSCAR_init")
-
-        dftgga = dft+"_"+gga
-        write_incar(incar, fpath=wdir, fname="INCAR_%s" % dftgga)
-        cmd = "# born effective charge calculation\n"
-        cmd += "cp INCAR_%s INCAR\n" % dftgga
-        cmd += "cp POSCAR_init POSCAR\n"
-        cmd += "cp KPOINTS_scf KPOINTS\n"
-        cmd += execode + "\n"
-        cmd += "mv OUTCAR OUTCAR_%s\n" % dftgga
-        cmd += "mv vasprun.xml vasprun_%s.xml\n" % dftgga
-        write_runsh(wdir+"/run.sh", cmd)
-        os.chmod(wdir+"/run.sh", 0o775)
-
-    # =================================================================================
-    # third order force constants with phono3py
-    # =================================================================================
-    if dft =="ifc3-phono3py":
-        """  """
-        incar.update(incar_glob)
-        incar.update(incar_prop["dfpt"])
-        update_incar(incar, params, ["ENCUT", "PREC", "EDIFF"])
-        incar["LWAVE"] = ".FALSE."
-        incar["LCHAGE"] = ".FALSE."
-        incar = ch_functional(incar)
-
-        # check phonon3py installation 
-        if "not find" in subprocess.getoutput("which phono3py"):
-            lexit("Cannot find phono3py in the PATH, may activate conda before mkits.")
-        
-        # default setting
-        dim = params["dim"] if "dim" in params else "2 2 2"
-
-        vasp_kpoints_gen(poscar.return_dict(), kspacing=float(params["kmesh"]) if "kmesh" in params else 0.15, kmesh=params["oddeven"] if "oddeven" in params else "odd", fpath=wdir, fname="KPOINTS_scf")
-
-        poscar.write_struct(fpath=wdir, fname="POSCAR_init")
-
-        dftgga = dft+"_"+gga
-        write_incar(incar, fpath=wdir, fname="INCAR_%s" % dftgga)
-
-        # mkdir inp and out directories
-        inpdir = wdir + "/inpdir"
-        if not os.path.exists(inpdir):
-            os.mkdir(inpdir)
-        cmd = "phono3py -c POSCAR_init -d --dim=\"%s\";" % dim
-        cmd += "mv POSCAR-* %s" % inpdir.replace(" ", "\ ")
-        subprocess.run(cmd, shell=True, cwd=wdir)
-        
-            
-    # =================================================================================
-    # finalizing
-    # =================================================================================
+    elif dftlabel in ["scf", "freq", "nvt"]:
+        if step == 0:
+            initstring = "  cp POSCAR_init POSCAR\n"
+            initstring += "  cp INCAR_%s INCAR\n" % dftlabel
+            initstring += "  cp KPOINTS_%s KPOINTS\n" % dftlabel
+        elif step == 1:
+            initstring = "  cp POSCAR_init POSCAR\n"
+            initstring += "  cp INCAR_%s_%d INCAR\n" % (dftlabel, step)
+            initstring += "  cp KPOINTS_%s_%d KPOINTS\n" % (dftlabel, step)
+        else:
+            initstring = "  cp CONTCAR_%s_%d POSCAR\n" % (dftlabel, step-1)
+            initstring += "  cp INCAR_%s_%d INCAR\n" % (dftlabel, step)
+            initstring += "  cp KPOINTS_%s_%d KPOINTS\n" % (dftlabel, step)
+        if iswave:
+            initstring += "  cp WAVECAR_%s_%d WAVECAR\n" % (dftlabel, step-1)
+            initstring += "  cp CHGCAR_%s_%d CHGCAR\n" % (dftlabel, step-1)
+    
+    elif dftlabel == "dos" or dftlabel == "band":
+        initstring = "  cp POSCAR_init POSCAR\n"
+        initstring += "  cp INCAR_%s INCAR\n" % dftlabel
+        initstring += "  cp KPOINTS_%s KPOINTS\n" % dftlabel
+        initstring += "  cp WAVECAR_%s WAVECAR\n" % (dftlabel)
+        initstring += "  cp CHGCAR_%s CHGCAR\n" % (dftlabel)
+    
+    initstring += "\n"
+    initstring += "  " + execode + " >& vasp.out 2>&1\n\n"
+    
+    return initstring
 
 
 def savevaspsh(savelist, savelabel):
     """
     Write a bash scripts to save the vasp files with provided labels.
-    Parameters
-    ----------
-    Return
-    ------
+    Parameters:
+    -----------
+
+    Return:
+    -------
     String 
     """
     
@@ -1892,341 +957,908 @@ def savevaspsh(savelist, savelabel):
     return savestring
 
 
-def initvaspsh(dftlabel, execode, step=0, iswave=False):
+def vasp_single_atom_ground(
+        atom = "C",
+        kinetic = 500,
+):
     """
-    Write a bash scripts to prepare the vasp files.
-    Parameters
-    ----------
-    dftlabel:
-        The label of POSCAR
-
-    Return
-    ------
-    String 
-    """
-    initstring = ""
-    
-    poscarlabel = "init"
-    if dftlabel == "opt":
-        poscarlabel = "opt_init"
-
-    if step == 0:
-        initstring = "  cp POSCAR_%s POSCAR\n" % poscarlabel
-        initstring += "  cp INCAR_%s INCAR\n" % (dftlabel, step)
-        initstring += "  cp KPOINTS_%s KPOINTS\n" % dftlabel
-    elif step == 1:
-        initstring = "  cp POSCAR_%s POSCAR\n" % poscarlabel
-        initstring += "  cp INCAR_%s_%d INCAR\n" % (dftlabel, step)
-        initstring += "  cp KPOINTS_%s_%d KPOINTS\n" % (dftlabel, step)
-    else:
-        initstring = "  cp POSCAR_%s POSCAR\n" % poscarlabel
-        initstring += "  cp INCAR_%s_%d INCAR\n" % (dftlabel, step)
-        initstring += "  cp KPOINTS_%s_%d KPOINTS\n" % (dftlabel, step)
-        if iswave:
-            initstring += "  mv WAVECAR_%s_%d WAVECAR\n" % (dftlabel, step-1)
-            initstring += "  cp CHGCAR_%s_%d CHGCAR\n" % (dftlabel, step-1)
-    
-    initstring += "\n"
-    initstring += "  " + execode + " >& vasp.out 2>&1\n\n"
-    
-    return initstring
-
-
-def struct_diff(structname1, structname2):
-    """ 
-    compare the absolute value of the difference between structure 1 and 2 
-    :param struct1, struct2: string, the name of structures; or dictionary 
-    """
-    if type(structname1) == str:
-        struct1 = struct(structname1).return_dict()
-    elif type(structname1) == dict:
-        struct1 = structname1
-    else:
-        lexit("Input parameter errors, make sure the type of input is string or dictionary exclusively.")
-    if type(structname2) == str:
-        struct2 = struct(structname2).return_dict()
-    elif type(structname2) == dict:
-        struct2 = structname2
-    else:
-        lexit("Input parameter errors, make sure the type of input is string or dictionary exclusively.")
-    
-    return np.sum([np.sqrt(np.dot(vec, vec)) for vec in (frac2cart(struct1["lattice"], struct1["pos_frac"]) - frac2cart(struct2["lattice"], struct2["pos_frac"]))])
-
-
-def vasp_build_low_dimension(poscar="POSCAR", direc="z", vacuum="20", type="add"):
-    """
-    :param poscar: string, input file
-    :param direc: string, optional [z, ]
-    :param vacuum: float, vacuum
-    :param type: string, optinal [add, fit]
-    """
-    struct_dict = struct(poscar).return_dict()
-    lattice_para = struct_dict["lattice"]
-    fraction = struct_dict["pos_frac"]
-    if direc == "z":
-        abs_fraction = fraction*np.array([1,1,lattice_para[2,2]])
-        if type == "add": 
-            vacuum = float(vacuum)
-        elif type == "fit": 
-            vacuum = float(vacuum) - lattice_para[2,2]
-        lattice_para[2,2] = lattice_para[2,2]+vacuum
-        new_fraction = np.vstack((fraction[:,0], fraction[:,1], (abs_fraction[:,2]+vacuum/2)/lattice_para[2,2])).T
-
-    struct_dict["lattice"] = lattice_para
-    struct_dict["pos_frac"] = new_fraction
-    return struct(poscar).update_struct_dict(struct_dict)
-
-
-def xdatcar_parser(xdatcar):
-    """ 
-    parse XDATCAR and return a series of struct dict 
-    :param xdatcar: xdatcar file
-    :return : 3-dimensional array, [struct_index, [2-dimensional array of cartesian coordinates]]
-    """ 
-    with open(xdatcar, "r") as f:
-        xdatcar_lines = f.readlines()
-        
-    coe = float(xdatcar_lines[1].split()[0])
-    tot_atoms = int(np.sum(np.loadtxt(xdatcar, skiprows=6, max_rows=1)))
-    lattice = np.loadtxt(xdatcar, skiprows=2, max_rows=3) * coe
-    tot_struct = 0
-    for _ in range(len(xdatcar_lines)-1, 1, -1):
-        if "Direct" in xdatcar_lines[_]:
-            tot_struct = int(xdatcar_lines[_].split()[-1])
-            break
-
-    skiprow_ = 8
-    frac_pos_ = np.loadtxt(xdatcar, skiprows=skiprow_, max_rows=tot_atoms)
-    xdatcar_cart = frac2cart(lattice, np.where(frac_pos_<0, 1+frac_pos_, frac_pos_)) 
-    skiprow_ += tot_atoms+1
-
-    for _ in range(tot_struct-1):
-        frac_pos_ = np.loadtxt(xdatcar, skiprows=skiprow_, max_rows=tot_atoms)
-        xdatcar_cart = np.dstack((xdatcar_cart, frac2cart(lattice, np.where(frac_pos_<0, 1+frac_pos_, frac_pos_))))
-        skiprow_ += tot_atoms+1
-
-    return xdatcar_cart
-
-
-def extract_xdatcar(xdatcar:str, idx:list, fpath:str="./"):
-    """
-    parse XDATCAR and write the idx_th structure to "XDATCAR_idx.vasp"
-    :param xdatcar: string, xdatcar file name
-    :param idx: integer list, the index of 
-    """
-    with open(xdatcar, "r") as f:
-        xdatcar_lines = f.readlines()
-    
-    coe = float(xdatcar_lines[1].split()[0])
-    tot_atoms = int(np.sum(np.loadtxt(xdatcar, skiprows=6, max_rows=1)))
-    skiprow = 8
-    tot_struct = 0
-    for _ in range(len(xdatcar_lines)-1, 1, -1):
-        if "Direct" in xdatcar_lines[_]:
-            tot_struct = int(xdatcar_lines[_].split()[-1])
-            break
-    
-    frac_pos = np.loadtxt(xdatcar, skiprows=skiprow, max_rows=tot_atoms)
-    frac_pos = np.where(frac_pos<0, 1+frac_pos, frac_pos)
-    skiprow += tot_atoms+1
-
-    for _ in range(tot_struct-1):
-        frac_pos_new = np.loadtxt(xdatcar, skiprows=skiprow, max_rows=tot_atoms)
-        frac_pos_new = np.where(frac_pos_new<0, 1+frac_pos_new, frac_pos_new)
-        frac_pos = np.dstack((frac_pos, frac_pos_new))
-        skiprow += tot_atoms+1
-    
-    print(frac_pos.shape)
-
-    for _ in idx:
-        with open(fpath+"/XDATCAR_"+str(_)+".vasp", "w", newline="\n") as f:
-            f.writelines(xdatcar_lines[:7])
-            f.write("Direct configuration=  %4d\n" % _)
-            np.savetxt(f, frac_pos[:, :, _-1], fmt="%20.16f")
+    Description:
+    ------------
     
 
-def mse_xdatcar(crys_struct:str, xdatcar:str, fpath:str="./"):
-    """
-    :param crys_struct: the original structure file
-    :param xdatcar: XDATCAR file
-    """
-
-    crystal_ = struct(crys_struct).return_dict()
-    crys_cart = frac2cart(crystal_["lattice"], crystal_["pos_frac"])
-    xdatcar = xdatcar_parser(xdatcar)
-
-    mse = np.array([])
-    for _ in range(len(xdatcar[0,0,:])):
-        mse = np.append(mse, np.sum(np.square(xdatcar[:,:,_]-crys_cart), axis=1).mean())
+    Parameters:
+    -----------
     
-    np.savetxt("%s/mse.dat" % fpath, np.vstack((np.linspace(1, len(mse), len(mse)), mse)).T, fmt="%20.10f")
+    """
+    pass
 
 
-def extract_conv_test(wdir="./"):
+def vasp_gen_input(
+        dft="scf", 
+        potpath="./", 
+        poscar="POSCAR", 
+        dryrun=False, 
+        metal=True, 
+        mag=False, 
+        soc=False,
+        wpath="./", 
+        wname:str="none", 
+        execode="srun --mpi=pmi2 vasp_std", 
+        params="gga=pbelda", 
+        **kwargs
+):
     """
-    extract data from convergence test calculation, [input files are generated from func vasp_gen_input, ie encut, kmesh
-    :param wdir: working directory
-    """
-    conv_name_list = []
-    for _ in os.listdir(wdir):
-        if "vasprun_conv_" in _:
-            conv_name_list.append(_)
-    # check the type of convergence: vasprun_conv_[kmesh, encut]_[gga]
-    if "vasprun_conv_encut_" in conv_name_list[0]:
-        ene = [vaspxml_parser("final_ene", wdir+"/"+_) for _ in conv_name_list]
-        encut = [float((_.replace(".xml", "")).split("_encut")[-1]) for _ in conv_name_list]
-        np.savetxt(wdir+"/encut-ene.dat", (np.vstack((np.array(encut), np.array(ene))).T)[np.argsort(encut)[::-1], :], header="encut(eV) ene(eV)")
-        with open(wdir+"/encut-ene.gnu", "w", newline="\n") as f:
-            f.write(gnu2dline % ("encut-ene.png", "Convergence test of kinetic energy cutoff", "Kinetic energy cutoff(eV)", "Total energy(eV)", "encut-ene.dat"))
     
-    if "vasprun_conv_kmesh_" in conv_name_list[0]:
-        ene = [vaspxml_parser("final_ene", wdir+"/"+_) for _ in conv_name_list]
-        kmesh = [float((_.replace(".xml", "")).split("_kmesh")[-1]) for _ in conv_name_list]
-        np.savetxt(wdir+"/kmesh-ene.dat", (np.vstack((np.array(kmesh), np.array(ene))).T)[np.argsort(kmesh)[::-1], :], header="k-mesh ene(eV)")
-        with open(wdir+"/kmesh-ene.gnu", "w", newline="\n") as f:
-            f.write(gnu2dline % ("kmesh-ene.png", "Convergence test of k-mesh", "K-Spacing", "Total energy(eV)", "kmesh-ene.dat"))
-    
-
-def getvbmcbm(xmlfile:str="vasprun.xml"):
     """
-    extract the valence maximum band and conduction minimum band
-    :param xmlfile: string, input file
-    :return 
-    """
-    klist = vaspxml_parser(select_attrib="klist", xmlfile=xmlfile)
-    eigen1, eigen2 = vaspxml_parser(select_attrib="eigen", xmlfile=xmlfile)
-    electron = vaspxml_parser(select_attrib="parameters", xmlfile=xmlfile)["NELECT"]
-    incars = vaspxml_parser(select_attrib="incar", xmlfile=xmlfile)
 
-    # check occupation: SO, 
-    if "LSORBIT" in incars or "lsorbit" in incars:
-        if "T" in incars["LSORBIT"] or "t" in incars["LSORBIT"] or "T" in incars["lsorbit"] or "t" in incars["lsorbit"]:
-            vbm_index = int(electron)
-            cbm_index = int(vbm_index + 1)
-    else:
-        vbm_index = int(electron/2)
-        cbm_index = int(vbm_index + 1)
-    
-    vbm_band = eigen1[:,int(vbm_index-1),0]
-    cbm_band = eigen1[:,int(cbm_index-1),0]
-    vbm_kindex = np.argsort(vbm_band)[-1:-6:-1]
-    cbm_kindex = np.argsort(cbm_band)[:5]
+    func_help = """
 
-    vbm_cbm_kpoints_distance = np.dot(klist[cbm_kindex[0], :3] - klist[vbm_kindex[0], :3], klist[cbm_kindex[0], :3] - klist[vbm_kindex[0], :3])
-    if vbm_cbm_kpoints_distance < 0.001:
-        gaptype = "Direct"
-    else:
-        gaptype = "Indirect"
-
-    return {
-        "vbm_kindex": vbm_kindex,
-        "vbm_kpoint": klist[vbm_kindex, :3],
-        "vbm_ene": eigen1[vbm_kindex, vbm_index-1, 0],
-        "cbm_kindex": cbm_kindex,
-        "cbm_kpoint": klist[cbm_kindex, :3],
-        "cbm_ene": eigen1[cbm_kindex, cbm_index-1, 0],
-        "ene_gap": eigen1[cbm_kindex[0], cbm_index-1, 0] - eigen1[vbm_kindex[0], vbm_index-1, 0],
-        "gap_type": gaptype
-    }
-
-    
-def arbitrary_klist(kend:str, kmesh:str="7-7-7", fpath:str="./", fname:str="KPOINTS"):
-    """
-    Generate arbitrary klist for effective mass calculation
-    :param kend: string,    "0.5,0.5,0.5,0.01,0.01,0.01" --> the center of the kmesh cuboid with the length of the sides
-    :                       "0.0,0.0,0.0,0.0,0.0,0.5  --> two ends of the klist line
-    :param kmesh: int, 
-    :param fpath: str, 
-    :param fname: str, 
-    """
-    kend = [float(_) for _ in kend.split(",")]
-    kmesh = [int(_) for _ in kmesh.split("-")]
-    khead = """Automatic generation
-%d
-Reciprocal lattice
 """
+    if dryrun:
+        print(func_help)
+        functions.lexit("Show vasp_gen help.")
 
-    # cube mesh
-    if len(kmesh) == 3:
-        x_ = np.linspace(kend[0]-kend[3]/2, kend[0]+kend[3]/2, num=kmesh[0])
-        y_ = np.linspace(kend[1]-kend[4]/2, kend[1]+kend[4]/2, num=kmesh[1])
-        z_ = np.linspace(kend[2]-kend[5]/2, kend[2]+kend[5]/2, num=kmesh[2])
-        xx, yy, zz = np.meshgrid(x_, y_, z_, indexing='ij')
-        x, y, z = xx.flatten(), yy.flatten(), zz.flatten()
-        
-        with open(fpath+"/"+fname, "w", newline="\n") as f:
-            f.write(khead % int(kmesh[0]*kmesh[1]*kmesh[2]))
-            for _ in range(int(kmesh[0]*kmesh[1]*kmesh[2])):
-                f.write("%15.9f%15.9f%15.9f%10.6f\n" % (x[_], y[_], z[_], 1))
+    #==========================================================================
+    # global setting
+    # =========================================================================
+    val_electron = 0
+    incar = {}
+    params = functions.parser_inputpara(params)
 
-    # line mesh
-    elif len(kmesh) == 1:
-        if kmesh[0] == 7:
-            kmesh[0] = 51
-        x_ = np.linspace(kend[0], kend[3], num=kmesh[0])
-        y_ = np.linspace(kend[1], kend[4], num=kmesh[0])
-        z_ = np.linspace(kend[2], kend[5], num=kmesh[0])
+    gga = "pbesol"
+    if "gga" in params.keys():
+        gga = params["gga"]
 
-        with open(fpath+"/"+fname, "w", newline="\n") as f:
-            f.write(khead % int(kmesh[0]))
-            for _ in range(int(kmesh[0])):
-                f.write("%15.9f%15.9f%15.9f%10.6f\n" % (x_[_], y_[_], z_[_], 1))
+    # get structure info
+    poscar = structure.struct(poscar)
+    atomic_indexs = poscar.position[1:, 0].tolist()
+    atomic_index = np.array(
+        list(
+            int(_) for _ in set(atomic_indexs)
+        )
+    )
+    atomic_index = atomic_index[np.argsort(atomic_index)].tolist()
+    atomic_num = [
+        atomic_indexs.count(_) for _ in atomic_index
+    ]
+    atomic_type = [
+        database.atom_data[_][1] for _ in atomic_index
+    ]
 
+    # gen directory
+    if wpath == "./": 
+        wpath = os.path.abspath("./")
+    wkdir = wpath+"/"+dft+"/"
+    if wname != "none":
+        wkdir = wpath+"/"+wname+"/"
+    if not os.path.exists(wpath):
+        os.mkdir(wpath)
+    if not os.path.exists(wkdir):
+        os.mkdir(wkdir)
+
+    # gen POTCAR and get electron of valence
+    if os.path.exists(wkdir+"/POTCAR"):
+        os.remove(wkdir+"/POTCAR")
+    potcar_lines = []
+    if potpath == "recommend":
+        potpath_recommend = ""
     else:
-        lexit("Make sure the parameter of kend with correct format: 0.5,0.5,0.5 for cube mesh or 0.0,0.0,0.0,0.0,0.0,0.5 for line mesh")
-    
+        for _ in range(len(atomic_type)):
+            with open("%s/POTCAR_%s" %(potpath, atomic_type[_])) as f:
+                lines = f.readlines()
+            val_electron += float(lines[1][:-1])*atomic_num[_]
+            potcar_lines += lines
+        with open(wkdir+"/POTCAR", "w", newline="\n") as f:
+            f.writelines(potcar_lines)
+    # charged system with charged=-1 in parameters
+    if "charged" in params:
+        val_electron += - int(params["charged"])
+        incar["NELECT"] = str(val_electron)
 
-def gen_gnu_bandcar(xml:str, bandcar:str="BANDCAR", kpoints:str="KPOINTS_band"):
-    """"""
-    nelect = vaspxml_parser("parameters", xml)["NELECT"]
-    efermi = vaspxml_parser("parameters", xml)["efermi"]
-    incar = vaspxml_parser("incar", xml)
-    if "LSORBIT" in incar:
-        valence_index = int(nelect)
-        conduction_index = valence_index + 1
+    # global incar
+    incar.update(database.incar_glob)
+    # update setting: "d" for d-elements, "f" for f-elements; set the LMAXMIX=2/4/6
+    if 71 >= max(atomic_index) >= 57 or \
+       103 >= max(atomic_index) >= 89 :
+        incar["LMAXMIX"] = "6"
+    elif 30 >= max(atomic_index) >= 21 or \
+         48 >= max(atomic_index) >= 39 or \
+         80 >= max(atomic_index) >= 72 or \
+         112 >= max(atomic_index) >= 104 :
+        incar["LMAXMIX"] = "4"
     else:
-        valence_index = int(nelect/2)
-        conduction_index = valence_index + 1
-    print(valence_index)
-    print(conduction_index)
-
-    with open(bandcar, "r") as f:
-        bandcar_lines = f.readlines()
-    with open(kpoints, "r") as f:
-        kpoints_lines = f.readlines() 
+        incar["LMAXMIX"] = "2"
     
-    highpoints_value = [float(i) for i in bandcar_lines[1][1:].split()]
-    print(highpoints_value)
-    highpoints_label = []
-    for i in range(4, len(kpoints_lines)):
-        if len(kpoints_lines[i].split()) != 0:
-            highpoints_label.append(kpoints_lines[i].split()[-1])
-    highpoints_label = del_list_dupli_neighbor(highpoints_label)
-    print(highpoints_label)
-
-    xtics = ""
-    for i in range(len(highpoints_value)):
-        xtics += '"%s" %s, ' % (highpoints_label[i], str(highpoints_value[i]))
+    # chage functionals
+    incar.update(database.incar_functionals[gga])
     
-    midhigh = " ".join([str(i) for i in highpoints_value[1:-1]])
-
-    # get band gap
-    vbm_index = 0
-    cbm_index = 0
-    for i in range(len(bandcar_lines)):
-        if "# "+str(valence_index) in bandcar_lines[i]:
-            vbm_index = i + 1
-        elif "# "+str(conduction_index) in bandcar_lines[i]:
-            cbm_index = i + 1
-    vbm_band = np.loadtxt(bandcar, skiprows=vbm_index, max_rows=cbm_index-vbm_index-3, usecols=[1])
-    cbm_band = np.loadtxt(bandcar, skiprows=cbm_index, max_rows=cbm_index-vbm_index-3, usecols=[1])
-    band_gap = np.min(cbm_band) - np.max(vbm_band)
-    # print(band_gap)
-
-
-    gnuscripts = gnubandcar % (bandcar, highpoints_value[-1]+0.0001, xtics, midhigh, bandcar, str(efermi))
+    # set GGA+U, need inputs from kwargs "ggau" and "ggaj"
+    if "ggau" in params:
+        val_u = {}
+        val_j = {}
+        incar["# gga+u setting "] = " "
+        incar["LDAU"] = ".TRUE."
+        incar["LDAUTYPE"] = "2"
+        incar["LDAUL"] = ""
+        incar["LDAUU"] = ""
+        incar["LDAUJ"] = ""
+        try:
+            val_u = functions.parser_inputpara(kwargs["ggau"])
+        except:
+            pass
+        try:
+            val_j = functions.parser_inputpara(kwargs["ggaj"])
+        except:
+            pass
+        for atom in atomic_type:
+            if atom in val_u:
+                incar["LDAUL"] = incar["LDAUL"] + "  2"
+                incar["LDAUU"] = incar["LDAUU"] + "  " + val_u[atom]
+            else:
+                incar["LDAUL"] = incar["LDAUL"] + " -1"
+                incar["LDAUU"] = incar["LDAUU"] + "  0.00"
+            if atom in val_j:
+                incar["LDAUJ"] = incar["LDAUJ"] + "  " + val_j[atom]
+            else:
+                incar["LDAUJ"] = incar["LDAUJ"] + "  0.00"
+                
+    def add_U(incar, kwargs, atomic_type):
+        val_u = {}
+        val_j = {}
+        incar["# gga+u setting "] = " "
+        incar["LDAU"] = ".TRUE."
+        incar["LDAUTYPE"] = "2"
+        incar["LDAUL"] = ""
+        incar["LDAUU"] = ""
+        incar["LDAUJ"] = ""
+        try:
+            val_u = functions.parser_inputpara(kwargs["ggau"])
+        except:
+            pass
+        try:
+            val_j = functions.parser_inputpara(kwargs["ggaj"])
+        except:
+            pass
+        for atom in atomic_type:
+            if atom in val_u:
+                incar["LDAUL"] = incar["LDAUL"] + "  2"
+                incar["LDAUU"] = incar["LDAUU"] + "  " + val_u[atom]
+            else:
+                incar["LDAUL"] = incar["LDAUL"] + " -1"
+                incar["LDAUU"] = incar["LDAUU"] + "  0.00"
+            if atom in val_j:
+                incar["LDAUJ"] = incar["LDAUJ"] + "  " + val_j[atom]
+            else:
+                incar["LDAUJ"] = incar["LDAUJ"] + "  0.00"
+        return incar
     
-    with open("plot.gnu", "w", newline="\n") as f:
-        f.write(gnuscripts)
-    
+    # copy vdw kernel to working folder
+    if params["gga"] in ["rev-vdW-DF2", "optB88", "optPBE"]:
+        try:
+            with open(kwargs["vdw_kernel_path"], "rb") as f:
+                vdwlines = f.readlines()
+            with open(wkdir + "/vdw_kernel.bindat", "wb") as f:
+                f.writelines(vdwlines)
+        except:
+            print("Cannot find the vdw kernel, remember to copy it to \n" +
+                  "the working folder. Or you can enable the path to the\n" +
+                  "file with vdw_kernel_path=/path/to/vdw_kernel\n")
+
+    # nbands, specify the NBANDS based on the valence electrons
+    try:
+        nbands = float(params["nbands"])
+        if nbands > 4 or nbands <=0:
+            print("""
+The number of bands typically out of reasonable range.
+The reasonable range is 0 ~ 4.
+""")
+        incar["NBANDS"] = str(int(val_electron * nbands *1.5))
+        params["NBANDS"] = incar["NBANDS"]
+        #print(val_electron)
+    except:
+        pass
+
+    # dynrange or not
+    dyn = False
+    if "dynrange" in kwargs.keys():
+        dyn = True
+        selec_dyn = kwargs["dynrange"]
+        selec_dyn = functions.parser_inputpara(selec_dyn)
+        dynrange = {"xmin": -1e8, "ymin": -1e8, "zmin": -1e8,
+                    "xmax": 1e8,  "ymax": 1e8,  "zmax": 1e8}
+        if "fix" in selec_dyn.keys():
+            #print("fix")
+            _fix_atom = selec_dyn["fix"]
+            del(selec_dyn["fix"])
+        else:
+            _fix_atom = "none"
+        if "move" in selec_dyn.keys():
+            #print("move")
+            _move_atom = selec_dyn["move"]
+            del(selec_dyn["move"])
+        else:
+            _move_atom = "none"
+        for key in selec_dyn.keys():
+            dynrange[key] = float(selec_dyn[key])
+        #print(dynrange)
+        poscar.add_dyn(
+            xmin=dynrange["xmin"],
+            xmax=dynrange["xmax"],
+            ymin=dynrange["ymin"],
+            ymax=dynrange["ymax"],
+            zmin=dynrange["zmin"],
+            zmax=dynrange["zmax"],
+            fix=_fix_atom,
+            move=_move_atom
+        )
         
+    
+    # WARNING of very long lattice vectors (>50 A) 
+    # decrease AMIN to a smaller value (e.g. 0.01)
+    if any ([poscar.lattice6[0] > 50,     # lattice a
+             poscar.lattice6[1] > 50,     # lattice b
+             poscar.lattice6[2] > 50,]):  # lattice c
+        incar["AMIN"] = "0.01"
+    
+    # save file list
+    save_output_list = [
+        "OUTCAR", "OSZICAR", "REPORT", "IBZKPT", 
+        "CONTCAR", "EIGENVAL", "vasprun.xml", 
+        "CHGCAR", "WAVECAR", "DOSCAR", "vasp.out"
+    ]
+    def update_save_list(save_output_list, dft, incar):
+        if gga == "opt":
+            save_output_list.remove("WAVECAR")
+            save_output_list.remove("CHGCAR")
+        if "LVHAR" in incar:
+            save_output_list.append("LOCPOT")
+            save_output_list.append("POT")
+        if "LORBIT" in incar:
+            save_output_list.append("PROCAR")
+        return save_output_list
+
+    # kpoints parameters
+    def update_kpoints_para(params):
+        kspacing = float(
+            params["kspacing"]
+        ) if "kspacing" in params else 0.25
+        kmesh=params[
+            "oddeven"
+        ] if "oddeven" in params else "odd"
+        kfix=params[
+            "kfix"
+        ] if "kfix" in params else "-1 -1 -1"
+        return kspacing, kmesh, kfix
+    
+    # update incar
+    def update_incar(incar, params):
+        """ add params to incar, if the key is duplicated then updates it """
+        for key in params.keys():
+            if key in database.incar_tag:
+                incar.update(
+                    {
+                        key: params[key]
+                    }
+                )
+        return incar
+    
+    # write incar
+    def write_incar(incar, fname="INCAR"):
+        """ write INCAR """
+        with open(fname, "w", newline="\n") as f:
+            for item in incar.keys():
+                f.write(item+"="+incar[item]+"\n")
+    
+    # change functional from parameters
+    incar = update_incar(
+        incar,
+        database.incar_functionals[gga]
+    )
+
+    # metal or not
+    if metal:
+        incar.update(database.incar_metal)
+    else:
+        incar.update(database.incar_semi)
+    
+    # set mag， soc need inputs from kwargs "magmom"
+    if mag and not soc:
+        incar["ISPIN"] = "2"
+        magtag = ""
+        if "MAGMOM" in params:
+            magtag = params["MAGMOM"]
+        else:
+            for i in range(len(atomic_index)):
+                magtag += "%d*%.2f " % (int(atomic_num[i]), 
+                                        database.atom_data[int(atomic_index[i])][4])
+        incar["MAGMOM"] = magtag
+    elif not mag and soc:
+        pass
+    elif mag and soc:
+        pass
+    else:
+        pass
+
+    # set SOC, need inputs from kwargs "ggau" and "ggaj"
+    """
+    metal=True, 
+        mag=False, 
+        soc=False,
+    """
+    
+    # =========================================================================
+    # scf
+    # =========================================================================
+    def dft_scf(incar=incar):
+        """ write """
+        poscar.write_struct(
+            fpath=wkdir, 
+            fname="POSCAR_init",
+            calculator="poscar",
+            dyn=dyn
+        )
+        incar.update(database.incar_scf)
+
+        # for multi-scf: need inputs from kwargs: ["params2", "params3"]
+        if "mulscf" in params:
+            mulstep = int(params["mulscf"]) + 1
+            step = 1
+
+            # incar
+            incar1 = update_incar(incar, params)
+            if "ggau" in params:
+                incar1 = add_U(incar1, kwargs, atomic_type)
+            write_incar(
+                incar=incar1,
+                fname="%s/INCAR_%s_%d" % (wkdir, dft, step)
+            )
+
+            # kpoints
+            kspacing, kmesh, kfix = update_kpoints_para(params)
+            vasp_kpoints_gen(
+                poscar.lattice9,
+                kspacing,
+                kmesh,
+                wkdir + "KPOINTS_scf_%d" % step, 
+                kfix
+            )
+
+            # run
+            cmd = "# scf step %d\n" % step
+            cmd += initvaspsh(dft, execode, 1, False)
+            cmd += savevaspsh(
+                update_save_list(
+                    save_output_list,
+                    dft,
+                    incar
+                ),
+                dft+"_%d" % step
+            )
+            functions.write_runsh(
+                wkdir+"/run_scf_%d.sh" % step,
+                cmd
+            )
+
+            # write following steps
+            for step in range(2, mulstep):
+                params2 = functions.parser_inputpara(
+                    kwargs["params%d" % step]
+                )
+                incar2 = update_incar(incar, params2)
+                write_incar(
+                    incar=incar2,
+                    fname="%s/INCAR_%s_%d" % (wkdir, dft, step)
+                )
+
+                kspacing, kmesh, kfix = update_kpoints_para(params2)
+                vasp_kpoints_gen(
+                    poscar.lattice9,
+                    kspacing,
+                    kmesh,
+                    wkdir + "KPOINTS_scf_%d" % step, 
+                    kfix
+                )
+                cmd = "# scf step %d\n" % step
+                cmd += initvaspsh(dft, execode, step, True)
+                cmd += savevaspsh(
+                    update_save_list(
+                        save_output_list,
+                        dft,
+                        incar
+                    ),
+                    dft+"_%d" % step
+                )
+                functions.write_runsh(
+                    wkdir+"/run_scf_%d.sh" % step,
+                    cmd
+                )
+        else:
+            incar = update_incar(incar, params)
+            
+            write_incar(
+                incar=incar,
+                fname="%s/INCAR_%s" % (wkdir, dft)
+            )
+            kspacing, kmesh, kfix = update_kpoints_para(params)
+            vasp_kpoints_gen(
+                poscar.lattice9,
+                kspacing,
+                kmesh,
+                wkdir+"/KPOINTS_scf", 
+                kfix
+            )
+            cmd = "# scf\n"
+            cmd += initvaspsh(dft, execode, 0, False)
+            cmd += savevaspsh(
+                update_save_list(
+                    save_output_list,
+                    dft,
+                    incar
+                ),
+                dft
+            )
+            functions.write_runsh(
+                wkdir+"/run_scf.sh",
+                cmd
+            )
+    
+    # =========================================================================
+    # opt
+    # =========================================================================
+    def dft_opt(incar=incar):
+        # enable WAVECAR by default
+        incar["LWAVE"] = ".TRUE."
+        incar["LCHARG"] = ".TRUE."
+
+        poscar.write_struct(
+            fpath=wkdir, 
+            fname="POSCAR_opt_init",
+            calculator="poscar",
+            dyn=dyn
+        )
+        incar.update(database.incar_opt)
+        incar = update_incar(incar, params)
+
+
+        # for multiisif=243
+        # need inputs from kwargs: ["params2", "params3"]
+        if "mulisif" in params:
+            mulstep = len(params["mulisif"]) + 1
+            step = 1
+
+            incar1 = update_incar(incar, params)
+            write_incar(
+                incar=incar1,
+                fname="%s/INCAR_%s_%d" % (wkdir, dft, step)
+            )
+
+            kspacing, kmesh, kfix = update_kpoints_para(params)
+            vasp_kpoints_gen(
+                poscar.lattice9,
+                kspacing,
+                kmesh,
+                wkdir+"/KPOINTS_opt_%d" % step, 
+                kfix
+            )
+            cmd = "# opt step %d\n" % step
+            cmd += initvaspsh(dft, execode, 1, True)
+            cmd += savevaspsh(
+                update_save_list(
+                    save_output_list,
+                    dft,
+                    incar
+                ),
+                dft+"_%d" % step
+            )
+            functions.write_runsh(
+                wkdir+"/run_opt_%d.sh" % step,
+                cmd
+            )
+
+            # write following steps
+            for step in range(2, mulstep):
+                params2 = functions.parser_inputpara(
+                    kwargs["params%d" % step]
+                )
+
+                incar2 = update_incar(incar, params2)
+                write_incar(
+                    incar=incar2,
+                    fname="%s/INCAR_%s_%d" % (wkdir, dft, step)
+                )
+
+                kspacing, kmesh, kfix = update_kpoints_para(params2)
+                vasp_kpoints_gen(
+                    poscar.lattice9,
+                    kspacing,
+                    kmesh,
+                    wkdir + "KPOINTS_opt_%d" % step, 
+                    kfix
+                )
+                cmd = "# opt step %d\n" % step
+                cmd += initvaspsh(dft, execode, 1, True)
+                cmd += savevaspsh(
+                    update_save_list(
+                        save_output_list,
+                        dft,
+                        incar
+                    ),
+                    dft+"_%d" % step
+                )
+                functions.write_runsh(
+                    wkdir+"/run_opt_%d.sh" % step,
+                    cmd
+                )
+        else:
+            incar = update_incar(incar, params)
+            write_incar(
+                incar=incar,
+                fname="%s/INCAR_%s" % (wkdir, dft)
+            )
+            kspacing, kmesh, kfix = update_kpoints_para(params)
+            vasp_kpoints_gen(
+                poscar.lattice9,
+                kspacing,
+                kmesh,
+                wkdir+"/KPOINTS_opt", 
+                kfix
+            )
+            cmd = "# opt\n"
+            cmd += initvaspsh(dft, execode, 0, True)
+            cmd += savevaspsh(
+                update_save_list(
+                    save_output_list,
+                    dft,
+                    incar
+                ),
+                dft
+            )
+            functions.write_runsh(
+                wkdir+"/run_opt.sh",
+                cmd
+            )
+    
+    # =========================================================================
+    # convergence test: conv_encut conv_kmesh
+    # =========================================================================
+    def dft_conv_encut(incar=incar):
+        """generate input files for encut convergence test"""
+        poscar.write_struct(
+            fpath=wkdir, 
+            fname="POSCAR_init",
+            calculator="poscar",
+            dyn=dyn
+        )
+
+        incar.update(database.incar_scf)
+        incar = update_incar(incar, params)
+
+        if "encut" in params:
+            encut = params["encut"].split("-")
+        else:
+            encut = ["300", "350", "400", "450", "500", "550", "600", "650", 
+                     "700", "750", "800"]
+        incar["ENCUT"] = "xxx"
+
+        write_incar(
+            incar=incar,
+            fname="%s/INCAR_%s" % (wkdir, dft)
+        )
+        kspacing, kmesh, kfix = update_kpoints_para(params)
+        vasp_kpoints_gen(
+            poscar.lattice9,
+            kspacing,
+            kmesh,
+            wkdir+"/KPOINTS_scf", 
+            kfix
+        )
+
+        cmd = "# encut convergence test\n"
+        cmd += "  cp POSCAR_init POSCAR\n"
+        cmd += "  cp KPOINTS_scf KPOINTS\n"
+        cmd += "  for encut in %s; do\n" % " ".join(encut)
+        cmd += "  sed -e s/xxx/$encut/g INCAR_%s > INCAR\n" % dft
+        cmd += "  " + execode + " >& vasp.out 2>&1\n\n"
+        save_output_list.remove("WAVECAR")
+        save_output_list.remove("CHGCAR")
+        cmd += savevaspsh(
+            save_output_list,
+            dft+"_${encut}"
+        )
+        cmd += "done\n"
+        functions.write_runsh(
+            wkdir+"/run_conv_encut.sh",
+            cmd
+        )
+    def dft_conv_kmesh(incar=incar):
+        " generate input files for kmesh convergence test "
+        poscar.write_struct(
+            fpath=wkdir, 
+            fname="POSCAR_init",
+            calculator="poscar",
+            dyn=dyn
+        )
+
+        incar.update(database.incar_scf)
+        incar = update_incar(incar, params)
+        write_incar(
+            incar=incar,
+            fname="%s/INCAR_%s" % (wkdir, dft)
+        )
+
+        kspacing = []
+        if "encut" in params:
+            kspacing = params["kspacing"].split("-")
+        else:
+            kspacing = [0.08, 0.1, 0.12, 0.14, 0.15, 0.2, 0.25, 0.3, 0.35]
+        for _ in kspacing:
+            vasp_kpoints_gen(
+                poscar.lattice9, 
+                _, 
+                "none", 
+                wkdir+"/KPOINTS_kconv_k%.2f" % _,
+                "-1 -1 -1"
+            )
+        
+        cmd = "# encut convergence test\n"
+        cmd += "  cp POSCAR_init POSCAR\n"
+        cmd += "  cp INCAR_%s INCAR\n" %dft
+        cmd += "  for kspacing in %s; do\n" % " ".join([str(_) for _ in kspacing])
+        cmd += "  cp KPOINTS_kconv_k$kspacing KPOINTS\n"
+        cmd += "  " + execode + " >& vasp.out 2>&1\n\n"
+        save_output_list.remove("WAVECAR")
+        save_output_list.remove("CHGCAR")
+        cmd += savevaspsh(
+            save_output_list,
+            dft+"_${kspacing}"
+        )
+        cmd += "done\n"
+        functions.write_runsh(
+            wkdir+"/run_conv_kmesh.sh",
+            cmd
+        )
+    
+    # =========================================================================
+    # dos, band, effective mass
+    # =========================================================================
+    def dft_band(incar=incar):
+        """ """
+        print("Make sure WAVECAR_scf and CHGCAR_scf are in the same directory, otherwise, the calculation will be perfomed with dense k-mesh and comsume more time.")
+        print("Gnerate the k-path by yourself and named as KPOINTS_band")
+        
+        incar.update(database.incar_band)
+        incar = update_incar(incar, params)
+        write_incar(
+            incar=incar,
+            fname="%s/INCAR_%s" % (wkdir, dft)
+        )
+
+        cmd = "# band calculation\n"
+        cmd += "  cp INCAR_%s INCAR\n" % dft
+        cmd += "  cp KPOINTS_band KPOINTS\n"
+        cmd += "  cp WAVECAR_scf WAVECAR\n"
+        cmd += "  cp CHGCAR_scf CHGCAR\n"
+        cmd += "  " + execode + " >& vasp.out 2>&1\n\n"
+        save_output_list.remove("WAVECAR")
+        save_output_list.remove("CHGCAR")
+        cmd += savevaspsh(
+            save_output_list,
+            dft
+        )
+        functions.write_runsh(
+            wkdir+"/run_band.sh",
+            cmd
+        )
+    
+    def dft_dos(incar=incar):
+        """ """
+        incar.update(database.incar_dos)
+        incar = update_incar(incar, params)
+        
+        kspacing, kmesh, kfix = update_kpoints_para(params)
+        vasp_kpoints_gen(
+            poscar.lattice9,
+            kspacing,
+            kmesh,
+            wkdir + "KPOINTS_dos", 
+            kfix
+        )
+        write_incar(
+            incar=incar,
+            fname="%s/INCAR_%s" % (wkdir, dft)
+        )
+
+        cmd = "# dos calculation\n"
+        cmd += "  cp INCAR_%s INCAR\n" % dft
+        cmd += "  cp KPOINTS_dos KPOINTS\n"
+        cmd += "  cp WAVECAR_scf WAVECAR\n"
+        cmd += "  cp CHGCAR_scf CHGCAR\n"
+        cmd += "  " + execode + " >& vasp.out 2>&1\n\n"
+        save_output_list.remove("WAVECAR")
+        save_output_list.remove("CHGCAR")
+        cmd += savevaspsh(
+            save_output_list,
+            dft
+        )
+        functions.write_runsh(
+            wkdir+"/run_dos.sh",
+            cmd
+        )
+    
+    # =========================================================================
+    # frequency: zpe and entropy
+    # =========================================================================
+    def dft_freq(incar=incar):
+        # enable WAVECAR by default
+
+        poscar.write_struct(
+            fpath=wkdir, 
+            fname="POSCAR_init",
+            calculator="poscar",
+            dyn=dyn
+        )
+
+        incar.update(database.incar_freq)
+        incar = update_incar(incar, params)
+        incar.pop("NCORE")
+        write_incar(
+            incar=incar,
+            fname="%s/INCAR_%s" % (wkdir, dft)
+        )
+
+        kspacing, kmesh, kfix = update_kpoints_para(params)
+        vasp_kpoints_gen(
+            poscar.lattice9,
+            kspacing,
+            kmesh,
+            wkdir+"/KPOINTS_freq", 
+            kfix
+        )
+        cmd = "# freq \n"
+        cmd += initvaspsh(dft, execode, 0, False)
+        cmd += savevaspsh(
+            update_save_list(
+                save_output_list,
+                dft,
+                incar
+            ),
+            dft
+        )
+        functions.write_runsh(
+            wkdir+"/run_freq.sh",
+            cmd
+        )
+
+
+    # =========================================================================
+    # aimd: NVT-NPT-NVE
+    # =========================================================================
+    def dft_aimd(incar=incar, aimd="nvt"):
+        """ write """
+        poscar.write_struct(
+            fpath=wkdir, 
+            fname="POSCAR_init",
+            calculator="poscar",
+            dyn=dyn
+        )
+        if aimd == "nvt":
+            incar.update(database.incar_nvt)
+        elif aimd == "nve":
+            incar.update(database.incar_nve)
+
+        # for multi-scf: need inputs from kwargs: ["params2", "params3"]
+        if "mulmd" in params:
+            mulstep = int(params["mulmd"]) + 1
+            step = 1
+
+            incar1 = update_incar(incar, params)
+            write_incar(
+                incar=incar1,
+                fname="%s/INCAR_%s_%d" % (wkdir, dft, step)
+            )
+            kspacing, kmesh, kfix = update_kpoints_para(params)
+            vasp_kpoints_gen(
+                poscar.lattice9,
+                kspacing,
+                kmesh,
+                wkdir + "KPOINTS_%s_%d" % (dft, step), 
+                kfix
+            )
+            cmd = "# md step %d\n" % step
+            cmd += initvaspsh(dft, execode, 1, False)
+            cmd += savevaspsh(
+                update_save_list(
+                    save_output_list,
+                    dft,
+                    incar
+                ),
+                dft+"_%d" % step
+            )
+            functions.write_runsh(
+                wkdir+"/run_%s_%d.sh" % (dft, step),
+                cmd
+            )
+
+            # write following steps
+            for step in range(2, mulstep):
+                params2 = functions.parser_inputpara(
+                    kwargs["params%d" % step]
+                )
+                incar2 = update_incar(incar, params2)
+                write_incar(
+                    incar=incar2,
+                    fname="%s/INCAR_%s_%d" % (wkdir, dft, step)
+                )
+
+                kspacing, kmesh, kfix = update_kpoints_para(params2)
+                vasp_kpoints_gen(
+                    poscar.lattice9,
+                    kspacing,
+                    kmesh,
+                    wkdir + "KPOINTS_md_%d" % step, 
+                    kfix
+                )
+                cmd = "# md step %d\n" % step
+                cmd += initvaspsh(dft, execode, step, True)
+                cmd += savevaspsh(
+                    update_save_list(
+                        save_output_list,
+                        dft,
+                        incar
+                    ),
+                    dft+"_%d" % step
+                )
+                functions.write_runsh(
+                    wkdir+"/run_%s_%d.sh" % (dft, step),
+                    cmd
+                )
+        else:
+            incar = update_incar(incar, params)
+            
+            write_incar(
+                incar=incar,
+                fname="%s/INCAR_%s" % (wkdir, dft)
+            )
+            kspacing, kmesh, kfix = update_kpoints_para(params)
+            vasp_kpoints_gen(
+                poscar.lattice9,
+                kspacing,
+                kmesh,
+                wkdir+"/KPOINTS_md", 
+                kfix
+            )
+            cmd = "# md\n"
+            cmd += initvaspsh(dft, execode, 0, False)
+            cmd += savevaspsh(
+                update_save_list(
+                    save_output_list,
+                    dft,
+                    incar
+                ),
+                dft
+            )
+            functions.write_runsh(
+                wkdir+"/run_%s.sh" % dft,
+                cmd
+            )
+
+
+    #print(incar)
+    if dft == "scf":
+        dft_scf()
+    elif dft == "opt":
+        dft_opt()
+    elif dft == "band":
+        dft_band()
+    elif dft == "dos":
+        dft_dos()
+    elif dft == "conv_encut":
+        dft_conv_encut()
+    elif dft == "conv_kmesh":
+        dft_conv_kmesh()
+    elif dft == "freq":
+        dft_freq()
+    elif dft == "nvt":
+        dft_aimd(aimd="nvt")
+        
+
