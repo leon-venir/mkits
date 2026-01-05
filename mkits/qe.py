@@ -1,686 +1,279 @@
-from mkits.globle import *
-from mkits.database import *
-import ase.io
+# -*- coding: utf-8 -*
+
 import numpy as np
+import matplotlib.pyplot as plt
+import spglib as spg
 import os
-import subprocess
+import sys
+import logging
+from mkits.functions import *
+from mkits.database import *
+from mkits.structure import *
+from mkits import structure
+from mkits import functions
+from mkits import database
 
 
 """
+Class
+-----
+
+
 Functions
 ---------
-qe_vasp2qe_struct    : convert vasp structures to qe
-qe_add_ifpos         : add
-qe_input_parser      : 
-qe_conv_extractor    : extract data from convergence test calculation, [input 
-                       files are generated from func qe_gen_input, ie 
-                       conv_encut, conv_kmesh
-qe_input_lines_parser: get 
-qe_get_struct        : return a standard output for QE input file
+
+parse_qein_block:
+    Paser 
+
 """
 
 
-def qe_vasp2qe_struct(poscar:str="POSCAR", qe_out:str="qe_struct.in"):
+def parse_qechg(lines):
     """
-    convert vasp structures to qe
+    DESCRIPTION:
+    ------------
+    Parse charge density from the qe hdf5 file.
+
+    PARAMETERS:
+    -----------
+    lines
+        Lines containing all info.
+
+    RETURNS:
+    --------
+    Return a dictionary.
     """
-    with open(poscar, "r") as f:
+
+
+def qe_extractband(inp, 
+                   out="./band.dat", 
+                   thresholdfactor=5):
+    """
+    DESCRIPTION:
+    ------------
+    Extract bandstructure from qeout file.
+
+    RETURNS:
+    --------
+    A gnuplot data.
+    """
+    with open(inp, "r") as f:
         lines = f.readlines()
-    
-    poscar_dict = struct(poscar).return_dict()
-    atoms_type = poscar_dict["atoms_type"]
-    atoms_num = poscar_dict["atoms_num"]
-    position = poscar_dict["pos_frac"]
-    
-    with open(qe_out, "w", newline="\n") as f:
-        f.write("CELL_PARAMETERS angstrom\n")
-        f.writelines(lines[2:5])
-    
+    qeout = parse_qeout(lines)
 
+    recp_lattice = qeout["reciprocal_parameter"]
+    klist = qeout["klist"][-1]
+    eigenvalue = qeout["eigenvalue"][-1]
 
-def qe_add_ifpos():
-    """
-    :param wkdir: str
-    :param fname: str
-    :param qe_inp: str
-    :param coords: str : x_1=0,x_2=1,y_1=0,y_2=1,z_1=0,z_2=1
-    :param ifpos: str : "000"
-    :write 
-    write if_pos p
-    """
-
-
-
-def qe_conv_extractor(wkdir:str="./"):
-    """
-    extract data from convergence test calculation, [input files are generated from func vasp_gen_input, ie encut, kmesh
-    :param wkdir: working directory
-    """
-    caltype = parser_inputlines(wkdir+"/caldetails")["caltype"]
-
-    conv_name_list = []
+    lines = functions.extractband(
+        recp_lattice,
+        klist,
+        eigenvalue,
+        thresholdfactor
+    )
         
-    if caltype == "qe_conv_kmesh":
-        for _ in os.listdir(wkdir):
-            if "kmesh_" in _:
-                conv_name_list.append(_)
-        kpoints = np.array([])
-        final_ene = np.array([])
-        for conv_f in conv_name_list:
-            try:
-                qe_out = qe_output_extractor(wkdir+"/"+conv_f)
-                kpoints = np.append(kpoints, qe_out["kpoints"])
-                final_ene = np.append(final_ene, qe_out["final_ene"])
-            except:
-                continue
-        datatowrite = np.vstack((kpoints, final_ene)).T
-        datatowrite = datatowrite[np.argsort(datatowrite[:,0])]
-        np.savetxt(fname=wkdir+"/kmesh_ene.dat", X=datatowrite, header="kpoints final_ene(eV)")
-        with open(wkdir+"/kmesh_ene.gnu", "w", newline="\n") as f:
-            f.write(gnu2dline % ("kmesh_ene.png", "Convergence test of kpoints", "Kpoints", "Total energy(eV)", "kmesh_ene.dat"))
-    elif caltype == "qe_conv_ecutwfc":
-        for _ in os.listdir(wkdir):
-            if "ecutwfc_" in _:
-                conv_name_list.append(_)
-
-        ecutwfc = np.array([])
-        final_ene = np.array([])
-        for conv_f in conv_name_list:
-            try:
-                qe_out = qe_output_extractor(wkdir+"/"+conv_f)
-                ecutwfc = np.append(ecutwfc, qe_out["ecutwfc"])
-                final_ene = np.append(final_ene, qe_out["final_ene"])
-            except:
-                continue
-        datatowrite = np.vstack((ecutwfc, final_ene)).T
-        datatowrite = datatowrite[np.argsort(datatowrite[:,0])]
-        np.savetxt(fname=wkdir+"/ecutwfc_ene.dat", X=datatowrite, header="Ecutwfc(Ry) final_ene(eV)")
-        with open(wkdir+"/ecutwfc_ene.gnu", "w", newline="\n") as f:
-            f.write(gnu2dline % ("ecutwfc_ene.png", "Convergence test of Kinetic energy cutoff", "Kinetic energy cutoff(Ry)", "Total energy(eV)", "ecutwfc_ene.dat"))
-    elif caltype == "qe_conv_degauss":
-        for _ in os.listdir(wkdir):
-            if "degauss_" in _:
-                conv_name_list.append(_)
-        degauss = np.array([])
-        final_ene = np.array([])
-        for conv_f in conv_name_list:
-            try:
-                if "degauss_" in conv_f:
-                    degauss = np.append(degauss, float(conv_f[8:-4]))
-                qe_out = qe_output_extractor(wkdir+"/"+conv_f)
-                final_ene = np.append(final_ene, qe_out["final_ene"])
-            except:
-                continue
-        datatowrite = np.vstack((degauss, final_ene)).T
-        datatowrite = datatowrite[np.argsort(datatowrite[:,0])]
-        np.savetxt(fname=wkdir+"/degauss_ene.dat", X=datatowrite, header="Degauss")
-        with open(wkdir+"/degauss_ene.gnu", "w", newline="\n") as f:
-            f.write(gnu2dline % ("degauss_ene.png", "Convergence test of Kinetic energy cutoff", "Kinetic energy cutoff(Ry)", "Total energy(eV)", "degauss_ene.dat"))
-
-
-def qe_output_extractor(output_file:str="tmp.out"):
-    """
-    extract data from QE output file
-    :return dictionary: final_ene: final total energy in eV
-                      : fermi_ene: fermi energy in eV
-                      : ecutwfc: kinetic-energy cutoff in Ry
-    """
-    with open(output_file, "r") as f:
-        output_lines = f.readlines()
-    
-    # input parameters
-    kpoints = int(subprocess.getoutput('grep "number of k points" %s' % output_file).split()[4])
-    ecutwfc = float(subprocess.getoutput('grep "kinetic-energy cutoff" %s' % output_file).split()[-2])
-    
-    # total energy, fermi energy
-    final_ene = float(subprocess.getoutput('grep "!    total energy " %s' % output_file).split()[-2]) * uc_ry2ev
-    try:
-        fermi_ene = float(subprocess.getoutput('grep "the Fermi energy is " %s' % output_file).split()[-2])
-    except:
-        fermi_ene = 'nan'
-
-    # return
-    return {
-        "kpoints": kpoints,
-        "ecutwfc": ecutwfc,
-        "final_ene": final_ene,
-        "fermi_ene": fermi_ene
-    }
-
-
-def qe_input_parser(qe_inp_file:str, block:str="control"):
-    """
-    :param block: optional [control, system, electrons, ions, cell]
-    """
-    with open(qe_inp_file, "r") as f:
-        lines = f.readlines()
-    
-    qe_inp_control_indx = qe_input_lines_parser(lines=lines)
-
-    if "control" in block or "CONTROL" in block:
-        return parser_inputlines(lines[qe_inp_control_indx["CONTROL_beg"]:qe_inp_control_indx["CONTROL_end"]], comment_letter="!")
-    elif "system" in block or "SYSTEM" in block:
-        return parser_inputlines(lines[qe_inp_control_indx["SYSTEM_beg"]:qe_inp_control_indx["SYSTEM_end"]], comment_letter="!")
-    elif "electrons" in block or "ELECTRONS" in block:
-        return parser_inputlines(lines[qe_inp_control_indx["ELECTRONS_beg"]:qe_inp_control_indx["ELECTRONS_end"]], comment_letter="!")
-    elif "ions" in block or "IONS" in block:
-        return parser_inputlines(lines[qe_inp_control_indx["IONS_beg"]:qe_inp_control_indx["IONS_end"]], comment_letter="!")
-    elif "cell" in block or "CELL" in block:
-        return parser_inputlines(lines[qe_inp_control_indx["CELL_beg"]:qe_inp_control_indx["CELL_end"]], comment_letter="!")
-    elif "k_points" in block or "K_POINTS" in block:
-        return parser_inputlines(lines[qe_inp_control_indx["K_POINTS_beg"]:qe_inp_control_indx["K_POINTS_end"]], comment_letter="!")
-    elif "cell_parameters" in block or "CELL_PARAMETERS" in block:
-        return parser_inputlines(lines[qe_inp_control_indx["CELL_PARAMETERS_beg"]:qe_inp_control_indx["CELL_PARAMETERS_end"]], comment_letter="!")
-    elif "atomic_positions" in block or "ATOMIC_POSITIONS" in block:
-        return parser_inputlines(lines[qe_inp_control_indx["ATOMIC_POSITIONS_beg"]:qe_inp_control_indx["ATOMIC_POSITIONS_end"]], comment_letter="!")
-    elif "temp" in block or "temp" in block:
-        return parser_inputlines(lines[qe_inp_control_indx["_beg"]:qe_inp_control_indx["_end"]], comment_letter="!")
+    if out == "none":
+        return lines
     else:
-        lexit("Wrong block name.")
+        with open(out, "w") as f:
+            f.writelines(lines)
 
 
-def qe_input_lines_parser(lines:list):
+def parse_qeout(lines):
     """
-    &CONTROL
-    &SYSTEM
-    &ELECTRONS
-    &IONS
-    &CELL
-    ATOMIC_SPECIES
-    K_POINTS
-    CELL_PARAMETERS
-    ATOMIC_POSITIONS
-    """
+    DESCRIPTION:
+    ------------
+    Parse info of the qe output file.
 
-    lines_control = {
-        "CONTROL_beg": -1,
-        "CONTROL_end": -1,
-        "SYSTEM_beg": -1,
-        "SYSTEM_end": -1,
-        "ELECTRONS_beg": -1,
-        "ELECTRONS_end": -1,
-        "IONS_beg": -1,
-        "IONS_end": -1,
-        "CELL_beg": -1,
-        "CELL_end": -1,
-        "ATOMIC_SPECIES_beg": -1,
-        "ATOMIC_SPECIES_end": -1,
-        "K_POINTS_beg": -1,
-        "K_POINTS_end": -1,
-        "CELL_PARAMETERS_beg": -1,
-        "CELL_PARAMETERS_end": -1,
-        "ATOMIC_POSITIONS_beg": -1,
-        "ATOMIC_POSITIONS_end": -1
-    }
+    atomic_position: 
+        [ relax step
+            [ 
+                [cartesian x, y, z of atom1]
+                [cartesian x, y, z of atom2] 
+            ]
+
+            [
+                [fractional x, y, z]
+                []
+            ]
+        ]
+
+    PARAMETERS:
+    -----------
+    lines
+        Lines containing all info.
+
+    RETURNS:
+    --------
+    Return a dictionary.
+    """
+    results = [
+        # value with in keys
+        "ntyp", "nat", "ecutwfc", "ecutrho"
+        # useful value
+        "volume", "total_energy", "vbm", "cbm", "electrons",
+        "latticeunit", "klist_num", "eigen_num"
+        # value block
+        "klist", "eigenvalue", "occupation", "atomic_index"
+        # multi 
+        "cell_paramater", "atomic_position", "reciprocal_parameter"
+    ]
+    results = dict.fromkeys(results)
+
+    # start index
+    crystal_axes = 0
+    reciprocal_axes = 0
+    cartesian_axes = 0
+    kpoints_index = []
+    atomic_position_index = []
+    cell_paramater_index = []
+    scf_num = 0
+
 
     for i in range(len(lines)):
-        if "&CONTROL" in lines[i]:
-            lines_control["CONTROL_beg"] = i
-            for j in range(i, len(lines)):
-                if "/" in lines[j]:
-                    lines_control["CONTROL_end"] = j
-                    break
-        elif "&SYSTEM" in lines[i]:
-            lines_control["SYSTEM_beg"] = i
-            for j in range(i, len(lines)):
-                if "/" in lines[j]:
-                    lines_control["SYSTEM_end"] = j
-                    break
-        elif "&ELECTRONS" in lines[i]:
-            lines_control["ELECTRONS_beg"] = i
-            for j in range(i, len(lines)):
-                if "/" in lines[j]:
-                    lines_control["ELECTRONS_end"] = j
-                    break
-        elif "&IONS" in lines[i]:
-            lines_control["IONS_beg"] = i
-            for j in range(i, len(lines)):
-                if "/" in lines[j]:
-                    lines_control["IONS_end"] = j
-                    break
-        elif "&CELL" in lines[i]:
-            lines_control["CELL_beg"] = i
-            for j in range(i, len(lines)):
-                if "/" in lines[j]:
-                    lines_control["CELL_end"] = j
-                    break
-        elif "ATOMIC_SPECIES" in lines[i]:
-            lines_control["ATOMIC_SPECIES_beg"] = i
-            for j in range(i, len(lines)):
-                if lines[j].split():
-                    pass
-                else:
-                    lines_control["ATOMIC_SPECIES_end"] = j
-                    break
-        elif "K_POINTS" in lines[i]:
-            lines_control["K_POINTS_beg"] = i
-            for j in range(i, len(lines)):
-                if lines[j].split():
-                    pass
-                else:
-                    lines_control["K_POINTS_end"] = j
-                    break
-        elif "CELL_PARAMETERS" in lines[i]:
-            lines_control["CELL_PARAMETERS_beg"] = i
-            for j in range(i, len(lines)):
-                if lines[j].split():
-                    pass
-                else:
-                    lines_control["CELL_PARAMETERS_end"] = j
-                    break
+        # value 
+        if "lattice parameter" in lines[i]:
+            results["latticeunit"] = float(lines[i][:-1].split()[-2])
+        elif "unit-cell volume          =" in lines[i]:
+            results["volume"] = float(lines[i][:-1].split()[-2])
+        elif "number of atoms/cell" in lines[i]:
+            results["nat"] = int(lines[i][:-1].split()[-1])
+        elif "number of atomic types" in lines[i]:
+            results["ntyp"] = int(lines[i][:-1].split()[-1])
+        elif "number of electrons" in lines[i]:
+            results["electrons"] = float(lines[i][:-1].split()[-1])
+        elif "kinetic-energy cutoff" in lines[i]:
+            results["ecutwfc"] = float(lines[i][:-1].split()[-2])
+        elif "charge density cutoff" in lines[i]:
+            results["ecutrho"] = float(lines[i][:-1].split()[-2])
+        elif "!    total energy" in lines[i]:
+            results["total_energy"] = float(lines[i][:-1].split()[-2])
+        elif "number of k points" in lines[i]:
+            results["klist_num"] = int(lines[i][:-1].split()[4])
+        elif "End of self-consistent calculation" in lines[i]:
+            scf_num += 1
+        # get block start index
+        elif "crystal axes" in lines[i]:
+            crystal_axes = i
+        elif "reciprocal axes" in lines[i]:
+            reciprocal_axes = i
+        elif "Cartesian axes" in lines[i]:
+            cartesian_axes = i        
+        elif "         k =" in lines[i]:
+            kpoints_index.append(i)
         elif "ATOMIC_POSITIONS" in lines[i]:
-            lines_control["ATOMIC_POSITIONS_beg"] = i
-            for j in range(i, len(lines)):
-                if lines[j].split():
-                    pass
-                else:
-                    lines_control["ATOMIC_POSITIONS_end"] = j
-                    break
-    return lines_control
-
-
-def qe_get_struct(file_inp:str, fractional_position:bool=True):
-    crystals = ase.io.read(filename=file_inp)
-    ase.io.write(filename="./tmp", images=crystals, format="espresso-in")
-    with open("./tmp", "r") as f:
-        crystals_lines = f.readlines()
-    lines_control = qe_input_lines_parser(crystals_lines)
-
-    qe_struct = {
-        "&SYSTEM": crystals_lines[lines_control["SYSTEM_beg"]:lines_control["SYSTEM_end"]+1],
-        "ATOMIC_SPECIES": crystals_lines[lines_control["ATOMIC_SPECIES_beg"]:lines_control["ATOMIC_SPECIES_end"]+1],
-        "K_POINTS": crystals_lines[lines_control["K_POINTS_beg"]:lines_control["K_POINTS_end"]+1],
-        "CELL_PARAMETERS": crystals_lines[lines_control["CELL_PARAMETERS_beg"]:lines_control["CELL_PARAMETERS_end"]+1],
-        "ATOMIC_POSITIONS": crystals_lines[lines_control["ATOMIC_POSITIONS_beg"]:lines_control["ATOMIC_POSITIONS_end"]+1],
-        "CELL_UNITS": crystals_lines[lines_control["CELL_PARAMETERS_beg"]].split()[1],
-        "atoms_num": crystals.get_atomic_numbers()
-    }
-
-    # cartesian to fractional
-    if fractional_position:
-        #cell = crystals.get_cell().round(16)
-        cell = crystals.cell.cellpar().round(16)
-        cart_pos = crystals.get_positions()
-        atom_num = crystals.get_atomic_numbers()
-        frac_pos = cart2frac(cart_lattice=cell, cart_pos=cart_pos)
-
-        atomic_position_block = ["ATOMIC_POSITIONS crystal\n"]
-        for i in range(len(atom_num)):
-            atomic_position_block.append("%6s%20.16f%20.16f%20.16f\n" % (atom_data[atom_num[i]][1], frac_pos[i, 0], frac_pos[i, 1], frac_pos[i, 2]))
-    qe_struct["ATOMIC_POSITIONS"] = atomic_position_block
-
-    return qe_struct
-
-
-def qe_upf_valence_e(upf_file:str):
-    """
-    :param upf_file: upf file name
-    :return int, number of valence electron
-    """
-    z_val = 0
-    with open(upf_file, "r") as f:
-        lines = f.readlines()
-    for line in lines:
-        if "Z valence" in line:
-            line = line.replace("=", " ")
-            line = line.replace(",", " ")
-            line = line.replace('"', " ")
-            z_val = float(line.split()[0])
-        elif "z_valence" in line:
-            line = line.replace("=", " ")
-            line = line.replace(",", " ")
-            line = line.replace('"', " ")
-            z_val = float(line.split()[-1])
-    return z_val
-
-
-def qe_get_upf(atom_num, atomic_species_block:list, upfpath:str="", wkdir:str="./"):
-    """
-    Parameter
-    ---------
-    atom_num                   : array with atomic number, make sure all upf 
-                                 named starting with elemental name: 
-                                 elementName_*, Ba_*, ba_* or
-                                 elementName.*, Ba.*, ba.*
-    atomic_species_block: str
-    upfpath: path to
-
-    Return
-    ------
-    atomic_species_block
-    valence_num
-    is_uspp
+            atomic_position_index.append(i)
+        elif "CELL_PARAMETERS" in lines[i]:
+            cell_paramater_index.append(i)  
+        #elif "End final coordinates" in lines[i]:
+        #    break   
+        
+    # read crystal_axes
+    cell_paramater = functions.loadlines(
+        lines[crystal_axes+1: crystal_axes+4], [3,4,5]
+    ) * results["latticeunit"] * database.uc_bohr2ang
     
-    Write
-    -----
-    write UPF files to working directory
-    """
-    z_valence = {}
-    valence_num = 0
-    is_uspp = False
+    # read reciprocal_axes
+    reciprocal_parameter = functions.loadlines(
+        lines[reciprocal_axes+1: reciprocal_axes+4], [3,4,5]
+    ) * 2 * database.cons_pi / results["latticeunit"] / database.uc_bohr2ang
+    results["reciprocal_parameter"] = reciprocal_parameter
 
-    upflist = os.listdir(upfpath)
-    # check if the name contains .upf or .UPF
-    for i in upflist:
-        if ".upf" not in i or ".UPF" not in i:
-            upflist.remove(i)
-    # check if the element name start with capital letter
-    # if not, change it to capital letter
-    for i in range(len(upflist)):
-        upflist[i] = upflist[i][0].upper() + upflist[i][1:]
+    # read first atomic position cartesian_axes
+    atomic_position = functions.loadlines(
+        lines[cartesian_axes+3: cartesian_axes+results["nat"]+3], 
+        [6,7,8]
+    )
+    _ = functions.loadlines(
+        lines[cartesian_axes+3: cartesian_axes+results["nat"]+3], 
+        [1],
+        str
+    )
+    _ = [database.symbol_map[_[0]] for _ in _]
+    results["atomic_index"] = _
 
-    for i in range(len(atomic_species_block)):
-        if "None" in atomic_species_block[i]:
-            atom = atomic_species_block[i].split()[0]
-            for upf in upflist:
-                if atom+"_" in upf[:3]: # or str.lower(atom) in upf[:3] or str.upper(atom) in upf[:3]:
-                    # read UPF from upf_path
-                    with open(upfpath+"/"+upf, "r") as f:
-                        upflines = f.readlines()
-                    # check if the UPF is USPP
-                    for j in range(len(upflines)):
-                        if "USPP" in upflines[j] or "ltrasoft" in upflines[j]:
-                            is_uspp = True
-                            break
-                    # wirte UPF file to the working directory
-                    with open(wkdir+"/"+upf, "w", newline="\n") as f:
-                        f.writelines(upflines) 
-                    z_valence[symbol_map[atom]] = qe_upf_valence_e(upfpath+"/"+upf)
-                    atomic_species_block[i] = atomic_species_block[i].replace("None", upf)
-    for num in atom_num:
-        valence_num += z_valence[int(num)]
-    return atomic_species_block, valence_num, is_uspp
+    # read kpoints_index
+    klist = np.array(
+        [float(lines[kpoints_index[0]][13:20]),
+         float(lines[kpoints_index[0]][20:27]),
+         float(lines[kpoints_index[0]][27:34])]
+    )
+    for i in kpoints_index[1:]:
+        klist = np.vstack(
+            (
+                klist,
+                np.array(
+                    [float(lines[i][13:20]),
+                     float(lines[i][20:27]),
+                     float(lines[i][27:34])]
+                )
+            )
+        )
+    results["klist"] = klist.reshape(-1, results["klist_num"], 3)
+    
+    # read atomic_position_index
+    # [atomic_index, x, y, z]
+    atomic_position = np.ones([1, 3])
+    if atomic_position_index:
+        for i in atomic_position_index:
+            _ = functions.loadlines(
+                lines[i+1: i+results["nat"]+1], [1,2,3]
+            )
+            atomic_position = np.vstack((
+                atomic_position, _
+            ))
+    results["atomic_position"] = atomic_position[1:, :].reshape(
+        -1, results["nat"], 3
+    )
+    
+    
+    # read cell_paramater_index
+    if cell_paramater_index:
+        for i in cell_paramater_index:
+            _ = functions.loadlines(
+                lines[i+1: i+4], [0,1,2]
+            )
+            cell_paramater = np.vstack((
+                cell_paramater, _
+            ))
+    results["cell_paramater"] = cell_paramater.reshape(-1, 3, 3)
 
-
-def qe_in_write(fpath:str="./", fname:str="tmp.in", control_block:dict={}, system_block:dict={}, electrons_block:dict={}, ions_block:dict={}, cell_block:dict={}, atomic_species_block:list=[], kpoints_block:list=[], cell_parameters_block:list=[], atomic_positions_block:list=[], dos_block={}, fcp_block={}, rism_block={}):
-    """"""
-    if control_block:
-        with open(fpath+"/"+fname, "w", newline="\n") as f:
-            f.write("&CONTROL\n")
-            for item in control_block.keys():
-                f.write(item+"="+control_block[item]+"\n")
-            f.write("/\n\n")
+    # eigenvalue
+    eigennum = " ".join(lines[kpoints_index[0]+1: kpoints_index[1]])
+    eigennum = len(eigennum.split())
+    results["eigen_num"] = eigennum
+    if eigennum%8 == 0:
+        eigennum = eigennum//8
     else:
-        lexit("&CONTROL block should not be blank.")
-    if system_block:
-        with open(fpath+"/"+fname, "a") as f:
-            f.write("&SYSTEM\n")
-            for item in system_block.keys():
-                f.write(item+"="+system_block[item]+"\n")
-            f.write("/\n\n")
-    if electrons_block:
-        with open(fpath+"/"+fname, "a") as f:
-            f.write("&ELECTRONS\n")
-            for item in electrons_block.keys():
-                f.write(item+"="+electrons_block[item]+"\n")
-            f.write("/\n\n")
-    if ions_block:
-        with open(fpath+"/"+fname, "a") as f:
-            f.write("&IONS\n")
-            for item in ions_block.keys():
-                f.write(item+"="+ions_block[item]+"\n")
-            f.write("/\n\n")
-    if cell_block:
-        with open(fpath+"/"+fname, "a") as f:
-            f.write("&CELL\n")
-            for item in cell_block.keys():
-                f.write(item+"="+cell_block[item]+"\n")
-            f.write("/\n\n")
-    if atomic_species_block:
-        with open(fpath+"/"+fname, "a") as f:
-            f.writelines(atomic_species_block)
-            f.write("\n")
-    if kpoints_block:
-        with open(fpath+"/"+fname, "a") as f:
-            f.writelines(kpoints_block)
-            f.write("\n")
-    if cell_parameters_block:
-        with open(fpath+"/"+fname, "a") as f:
-            f.writelines(cell_parameters_block)
-            f.write("\n")
-    if atomic_positions_block:
-        with open(fpath+"/"+fname, "a") as f:
-            f.writelines(atomic_positions_block)
-            f.write("\n")
-    if dos_block:
-        with open(fpath+"/"+fname, "a") as f:
-            f.writelines(dos_block)
-            f.write("\n")
-    if fcp_block:
-        with open(fpath+"/"+fname, "a") as f:
-            f.writelines(dos_block)
-            f.write("\n")
-    if rism_block:
-        with open(fpath+"/"+fname, "a") as f:
-            f.writelines(rism_block)
-            f.write("\n")
+        eigennum = eigennum//8 +1 
+    
+    eigen = np.array([
+        float(_) for _ in " ".join(
+            lines[kpoints_index[0]+2: kpoints_index[0]+2+eigennum]
+        ).split()
+    ])
+    for i in kpoints_index[1:]:
+        eigen = np.vstack((
+            eigen,
+            np.array([
+                float(_) for _ in " ".join(
+                    lines[i+2: i+2+eigennum]
+                ).split()
+            ])
+        ))
+    results["eigenvalue"] = eigen.reshape(
+        -1, results["klist_num"], results["eigen_num"]
+    )
+
+    return results
 
 
-def qe_kgen(struct_inp:str="cu.cif", kspacing=0.15, oddeven="odd"):
-    """
-    :return ["K_POINTS automatic\n", "7 7 7 1 1 1\n", "\n"]
+def qe_conv_kspacing():
     """
 
-    kspacing = float(kspacing)
-    crystals = ase.io.read(filename=struct_inp)
-    lattice = crystals.cell.cellpar()[:3]
-    reciprocal = 2*np.pi/lattice
-
-    if oddeven=="none":
-        oddeven = -1
-    elif oddeven=="odd" or oddeven=="ODD":
-        oddeven = 1
-    elif oddeven=="even" or oddeven=="EVEN":
-        oddeven = 0
-    n1 = int(np.max(np.array([1, round_even_odd(reciprocal[0]/(kspacing), oddeven)])))
-    n2 = int(np.max(np.array([1, round_even_odd(reciprocal[1]/(kspacing), oddeven)])))
-    n3 = int(np.max(np.array([1, round_even_odd(reciprocal[2]/(kspacing), oddeven)])))
-    return ["K_POINTS automatic\n", "%d %d %d  1 1 1\n" % (n1, n2, n3), "\n"]
-
-
-def write_runsh(runsh, cmd):
-        with open(runsh, "a") as f:
-            f.write(cmd)
-            f.write("\n")
-
-
-def qe_geninput(calculation="scf", 
-                wpath="./", 
-                struct_inp="cu.cif", 
-                dryrun=False, 
-                upf_path="./", 
-                metal=True, 
-                functional:str="pbe", 
-                execcode:str='srun --mpi=pmi2 pw.x -nimage 1 -npool 1 -ntg 1 -inp %s > %s', 
-                params_file:str="caldetail"):
     """
-    Generate input file for QE calculations
-
-    Parameter
-    ---------
-    calculation: [scf, nscf, dos, relax, vc-relax, conv_kmesh, conv_ecutwfc]
-    :                       : scf
-    :                       : nscf
-    :                       : dos
-    :                       : 
-    :                       : relax
-    :                       : vc-relax
-    :                       : 
-    :                       : 
-    wpath: 
-    :param        struct_inp: 
-    :param            dryrun: 
-    :param          upf_path: 
-    :param             metal: 
-    :param        functional: 
-    :param          execcode: 
-    :param       params_file: 
-    :                       : 
     """
-    func_help = """
-    Generate input file for QE calculations
-    --caltype       : optional      opt  ->  
-                    :               scf  ->  
-                    :              band  ->   
-                    :               dos  ->   
-    """
-    if dryrun:
-        print(func_help)
-        lexit("Show help with dryrun.")
-    
-    # 
-    control_block = qe_control_block
-    system_block = qe_system_block
-    electrons_block = qe_electrons_block
-    ions_block = qe_ions_block
-    cell_block = qe_cell_block
-    dos_block = qe_dos_block
 
-    #
-    if wpath == "./": wpath = os.path.abspath("./")
-    wkdir = wpath+"/"+calculation+"/" 
-    if not os.path.exists(wpath):
-        os.mkdir(wpath)
-    if not os.path.exists(wkdir):
-        os.mkdir(wkdir)
-    
-    # default parameters
-    params_default = {
-        "kspacing": "0.2",
-        "oddeven": "odd"
-    }
-    try:
-        params = parser_inputlines(params_file)
-        params_default.update(params)
-        for key in params_default.keys():
-            if key in qe_control_key:
-                control_block[key] = params_default[key]
-            elif key in qe_system_key:
-                system_block[key] = params_default[key]
-            elif key in qe_electrons_key:
-                electrons_block[key] = params_default[key]
-            elif key in qe_ions_key:
-                ions_block[key] = params_default[key]
-            elif key in qe_cell_key:
-                cell_block[key] = params_default[key]
-    except:
-        pass
-
-    # structure parameters
-    qe_struct = qe_get_struct(file_inp=struct_inp)
-    atomic_species_block, valence_num, is_uspp = qe_get_upf(atom_num=qe_struct["atoms_num"], atomic_species_block=qe_struct["ATOMIC_SPECIES"], upfpath=upf_path, wkdir=wkdir)
-    qe_struct["ATOMIC_SPECIES"] = atomic_species_block
-    system_block.update(parser_inputlines(qe_struct["&SYSTEM"]))
-    kpoints_block = qe_kgen(struct_inp=struct_inp, kspacing=params_default["kspacing"])
-
-    # USPP or not, ecutrho = 4*ecutwfc for paw , 10*ecutwfc for uspp
-    if is_uspp:
-        try:
-            system_block["ecutrho"] = str(float(system_block["ecutwfc"])*10)
-        except:
-            system_block.pop("ecutrho", None)
-    else:
-        try:
-            system_block["ecutrho"] = str(float(system_block["ecutwfc"])*4)
-        except:
-            system_block.pop("ecutrho", None)
-
-    # metal or not
-    if metal:
-        system_block["nbnd"] = str(int(valence_num/2*1.3))
-        system_block["occupations"] = '"smearing"'
-        system_block["smearing"] = '"gaussian"'
-        system_block["degauss"] = "0.01"
-    else:
-        system_block["nbnd"] = str(int(valence_num/2))
-        system_block["occupations"] = '"fixed"'
-
-    # ========================================== #
-    # scf
-    # ========================================== #
-    def qe_scf(fpath:str=wkdir, fname:str="scf.in", control_block:dict=control_block, system_block:dict=system_block, electrons_block:dict=electrons_block, atomic_species_block:list=qe_struct["ATOMIC_SPECIES"], kpoints_block:list=kpoints_block, cell_parameters_block:list=qe_struct["CELL_PARAMETERS"], atomic_positions_block:list=qe_struct["ATOMIC_POSITIONS"]):
-        """  """
-        control_block["calculation"] = '"scf"'
-        qe_in_write(fpath=wkdir, fname=fname, control_block=control_block, system_block=system_block, electrons_block=electrons_block, atomic_species_block=atomic_species_block, kpoints_block=kpoints_block, cell_parameters_block=cell_parameters_block, atomic_positions_block=atomic_positions_block)
-    
-    def qe_nscf(fpath:str=wkdir, fname:str="nscf.in", control_block:dict=control_block, system_block:dict=system_block, electrons_block:dict=electrons_block, atomic_species_block:list=qe_struct["ATOMIC_SPECIES"], kpoints_block:list=kpoints_block, atomic_positions_block:list=qe_struct["ATOMIC_POSITIONS"]):
-        """  """
-        control_block["calculation"] = '"nscf"'
-        control_block["verbosity"] = '"high"'
-        #control_block.pop("restart_mode", None)
-        system_block["nosym"] = '.TRUE.'
-        electrons_block["conv_thr"] = '1.D-8'
-
-        # you need denser k-mesh
-        kpoints_block = qe_kgen(struct_inp=struct_inp, kspacing=float(params_default["kspacing"])*0.4)
-        # 
-        print("Move all the generated file to the folder of scf calculation.")
-
-        qe_in_write(fpath=wkdir, fname=fname, control_block=control_block, system_block=system_block, electrons_block=electrons_block, atomic_species_block=atomic_species_block, kpoints_block=kpoints_block, atomic_positions_block=atomic_positions_block)
-    
-    def qe_dos(fpath:str=wkdir, fname:str="dos.in", dos_block:dict=dos_block):
-        """  """
-        qe_in_write(fpath=wkdir, fname=fname, dos_block=dos_block)
-
-
-    def qe_vcrelax(control_block:dict=control_block, system_block:dict=system_block, electrons_block:dict=electrons_block, ions_block:dict=ions_block, cell_block:dict=cell_block, atomic_species_block:list=qe_struct["ATOMIC_SPECIES"], kpoints_block:list=kpoints_block, cell_parameters_block:list=qe_struct["CELL_PARAMETERS"], atomic_positions_block:list=qe_struct["ATOMIC_POSITIONS"]):
-        """ """
-        #
-        control_block["calculation"] = '"vc-relax"'
-        control_block["forc_conv_thr"] = "1.0d-3"
-
-        qe_in_write(fpath=wkdir, fname="vcrelax.in", control_block=control_block, system_block=system_block, electrons_block=electrons_block, ions_block=ions_block, cell_block=cell_block, atomic_species_block=atomic_species_block, kpoints_block=kpoints_block, cell_parameters_block=cell_parameters_block, atomic_positions_block=atomic_positions_block)
-    
-
-    def qe_relax(control_block:dict=control_block, system_block:dict=system_block, electrons_block:dict=electrons_block, ions_block:dict=ions_block, atomic_species_block:list=qe_struct["ATOMIC_SPECIES"], kpoints_block:list=kpoints_block, cell_parameters_block:list=qe_struct["CELL_PARAMETERS"], atomic_positions_block:list=qe_struct["ATOMIC_POSITIONS"]):
-        """ """
-        #
-        control_block["calculation"] = '"relax"'
-        control_block["forc_conv_thr"] = "1.0d-3"
-
-        qe_in_write(fpath=wkdir, fname="relax.in", control_block=control_block, system_block=system_block, electrons_block=electrons_block, ions_block=ions_block, atomic_species_block=atomic_species_block, kpoints_block=kpoints_block, cell_parameters_block=cell_parameters_block, atomic_positions_block=atomic_positions_block)
-
-
-    if calculation == "scf":
-        qe_scf()
-        cmd = "# scf calculation \n"
-        cmd += execcode % ("scf.in", "scf.out") + "\n"
-        write_runsh(wkdir+"/run.sh", cmd)
-        os.chmod(wkdir+"/run.sh", 0o775)
-
-        cal_detail = "caltype=qe_scf"
-        write_runsh(wkdir+"/caldetails", cal_detail)
-    
-    elif calculation == "nscf":
-        qe_nscf()
-        cmd = "# nscf calculation \n"
-        cmd += execcode % ("nscf.in", "nscf.out") + "\n"
-        write_runsh(wkdir+"/run.sh", cmd)
-        os.chmod(wkdir+"/run.sh", 0o775)
-
-        cal_detail = "caltype=qe_nscf"
-        write_runsh(wkdir+"/caldetails", cal_detail)
-
-    elif calculation == "vc-relax":
-        cal_detail = "caltype=qe_vc-relax"
-        write_runsh(wkdir+"/caldetails", cal_detail)
-
-        qe_vcrelax()
-        cmd = "# opt vc-relax calculation \n"
-        cmd += execcode % ("vcrelax.in", "vcrelax.out") + "\n"
-        write_runsh(wkdir+"/run.sh", cmd)
-        os.chmod(wkdir+"/run.sh", 0o775)
-
-    
-    elif calculation == "relax":
-        qe_relax()
-        cmd = "# opt relax calculation \n"
-        cmd += execcode % ("relax.in", "relax.out") + "\n"
-        write_runsh(wkdir+"/run.sh", cmd)
-        os.chmod(wkdir+"/run.sh", 0o775)
-
-        cal_detail = "caltype=qe_relax"
-        write_runsh(wkdir+"/caldetails", cal_detail)
     
     elif calculation == "conv_ecutwfc":
         cal_detail = "caltype=qe_conv_ecutwfc"
@@ -731,5 +324,559 @@ def qe_geninput(calculation="scf",
         os.chmod(wkdir+"/run.sh", 0o775)
     
     elif calculation == "conv_vacuum":
-        """"""
+ 
+    
+    
+    """
 
+
+def qe_autokgen(
+        lattice, 
+        kspacing=0.15, 
+        oddeven="odd"
+):
+    """
+    DESCRIPTION:
+    ------------
+    Generate auto k-mesh based on the given k-spacing.
+    ---> need add more info
+
+    PARAMETERS:
+    -----------
+    struct_class: class
+        Structural object in structure.py.
+    kspacing: float
+        Distance between each k-point.
+    oddeven: str
+        Odd- or even mesh of kpoints.
+        none, both odd and even mesh is allowed.
+        odd, only odd mesh is allowed.
+        even, only even mesh is allowed.
+
+    RETURN:
+    -------
+    "K_POINTS automatic\n", "7 7 7 1 1 1\n", "\n"]
+    """
+
+    reciprocal = 2*np.pi/lattice
+
+    if oddeven=="none":
+        oddeven = -1
+    elif oddeven=="odd" or oddeven=="ODD":
+        oddeven = 1
+    elif oddeven=="even" or oddeven=="EVEN":
+        oddeven = 0
+    n1 = int(
+        np.max(
+            np.array([1, 
+                      round_even_odd(reciprocal[0]/(kspacing), 
+                                     oddeven)])
+        )
+    )
+    n2 = int(
+        np.max(
+            np.array([1, 
+                      round_even_odd(reciprocal[1]/(kspacing), 
+                                     oddeven)])
+        )
+    )
+    n3 = int(
+        np.max(
+            np.array(
+                [1,
+                 round_even_odd(reciprocal[2]/(kspacing), 
+                                oddeven)]
+            )
+        )
+    )
+    return ["K_POINTS automatic\n", "%d %d %d  1 1 1\n" % (n1, n2, n3), "\n"]
+
+
+def qe_upf_valence_e(lines):
+    """
+    DESCRIPTION:
+    Get the number of valence electrons in UPF.
+
+    PARAMETERS:
+    -----------
+    lines: list
+        A string list from readlines.
+    
+    RETURN:
+    -------
+    int, number of valence electron
+    """
+    z_val = 0
+
+    for line in lines:
+        if "Z valence" in line:
+            line = line.replace("=", " ")
+            line = line.replace(",", " ")
+            line = line.replace('"', " ")
+            z_val = float(line.split()[0])
+        elif "z_valence" in line:
+            line = line.replace("=", " ")
+            line = line.replace(",", " ")
+            line = line.replace('"', " ")
+            z_val = float(line.split()[-1])
+    return z_val
+
+
+def qeblock2lines(lines, block):
+    """
+    DESCRIPTION:
+    ------------
+    Append QE input block to lines.
+
+    PARAMETERS:
+    -----------
+
+    RETURNS:
+    --------
+    Return a writeable lines containing all blocks.
+    """
+    if block["qeblock"] == "system":
+        del(block["qeblock"])
+        lines.append("&SYSTEM\n")
+        for _ in block.keys():
+            if _ in qe_system_key:
+                lines.append(_+"="+str(block[_])+"\n")
+        lines.append("/\n\n")
+    
+    return lines
+
+
+def addkey2qeinblock(indict, block):
+    """
+    DESCRIPTION:
+    ------------
+    Add keys to lines or update keys.
+
+    PARAMETERS:
+    -----------
+    indict:
+        Dictionary contains 
+    block:
+
+    RETURNS:
+    --------
+    Return a writeable blocks containing all keys.
+    """
+
+
+def parse_qein_block(lines):
+    """
+    DESCRIPTION:
+    ------------
+    Parse all blocks of the qe input file.
+
+    PARAMETERS:
+    -----------
+    lines
+        Lines containing all 
+
+    RETURNS:
+    --------
+    Return a dictionary containing all blocks.
+    """
+    qeinblock = {}
+    blockname = []
+    start_idx = []
+    end_idx = []
+    for i in range(len(lines)):
+        if rmspace(lines[i])[0] == "&":
+            blockname.append(rmspace(lines[i])[1:])
+            start_idx.append(i)
+    for i in start_idx:
+        for j in range(i, len(lines)):
+            if rmspace(lines[j])[0] == "/":
+                end_idx.append(j)
+                break
+    for i in range(len(blockname)):
+        qeinblock[blockname[i][:-1]] = lines[start_idx[i]+1: end_idx[i]]
+    
+    # search ATOMIC_POSITIONS, KPOINTS, CELL
+    system_block = parse_inputfile(lines=qeinblock["SYSTEM"],
+                                   comment_sym="!",
+                                   assign_sym="=",
+                                   seprate_sym=",")
+    try:
+        tot_atom = int(system_block["nat"])
+    except:
+        lexit("The QE input file doesn't contain 'nat'!")
+    for i in range(len(lines)):
+        if "ATOMIC_POSITIONS" in lines[i].upper():
+            qeinblock["ATOMIC_POSITIONS"] = lines[i:i+tot_atom+1]
+        elif "K_POINTS" in lines[i].upper():
+            qeinblock["K_POINTS"] = lines[i: i+2]
+        elif "CELL_PARAMETERS" in lines[i].upper():
+            qeinblock["CELL_PARAMETERS"] = lines[i: i+4]
+            
+    return qeinblock
+
+
+def qe_geninput(
+        calculation="scf", 
+        wpath="./",
+        wname="pwscf",
+        struct_inp="pwscf.in", 
+        dryrun=False, 
+        upfpath="./", 
+        metal=True, 
+        mag=False, 
+        soc=False,
+        execcode='mpirun --bind-to core -np $NTASKS', 
+        params="gga=pbe",
+        **kwargs
+):
+    """
+    DESCRIPTION:
+    ------------
+    Generate QE inputs.
+
+    PARAMETERS:
+    -----------
+    inp, string
+        The name of the input structure 
+
+    Attributs:
+    params: dict
+        Dictionary of 
+    is_uspp:
+        If USPP upf is used.
+    ----------
+    """
+
+    func_help = """
+    KWARGS:
+    -------
+    ggau: 
+        "Ti=4.2,Cu=6.2"
+    dynrange:
+        XXX
+
+    PARAMETERS:
+        gga=[pbe,lda,pbesol]
+        kspacing=0.3  #
+        oddeven: [odd, even, none] 
+        nonlinear: [F, T]
+    
+    """
+    if dryrun:
+        print(func_help)
+        lexit("Show help with dryrun.")
+
+    # =================================================================================
+    # global setting
+    # =================================================================================
+
+    params_default = {
+        "kspacing": "0.3",
+        "oddeven": "none",
+        "nonlinear": "F",
+        "nbndfactor": "1.5"
+    }
+
+    # import default blocks
+    params_default.update(qe_control_block)
+    params_default.update(qe_system_block)
+    params_default.update(qe_electrons_block)
+    params_default.update(qe_ions_block)
+    params_default.update(qe_cell_block)
+
+    # set default parameters
+    if calculation == "scf":
+        params_default["kspacing"] = "0.2"
+    elif calculation in ["vcrelax", "relax"]:
+        params_default["kspacing"] = "0.35"
+    elif calculation in ["dos", "bands"]:
+        params_default["kspacing"] = "0.1"
+    else:
+        lexit("Error: need gga.")
+    # update parameters
+    params_default.update(
+        functions.parser_inputpara(inputstring=params)
+    )
+    
+    # 
+    electron_in_band = 2
+    if params_default["nonlinear"] == "T":
+        electron_in_band = 1
+
+    # generate the working directory
+    if wpath == "./": 
+        wpath = os.path.abspath("./")
+    wkdir = wpath
+    if wname != "none":
+        wkdir = wpath+"/"+wname+"/"
+    if not os.path.exists(wpath):
+        os.mkdir(wpath)
+    if not os.path.exists(wkdir):
+        os.mkdir(wkdir)
+    if not os.path.exists(wkdir+"/pseudo"):
+        os.mkdir(wkdir+"/pseudo")
+    
+    # =================================================================================
+    # internal functions
+    # =================================================================================
+    def keysindicts(dicts, key, value):
+        # check if a key is in dicts, if not, set to a default value
+        if key not in dicts.keys():
+            dicts[key] = value
+        return dicts
+    
+    def params2lines(params, block):
+        # block: control, system, electrons, ions
+        dicts = {}
+        if block == "control":
+            dicts = {"&CONTROL": ""}
+            for _ in params.keys():
+                if _ in database.qe_control_key:
+                    dicts[_] = params[_]
+        elif block == "system":
+            dicts = {"&SYSTEM": ""}
+            for _ in params.keys():
+                if _ in database.qe_system_key:
+                    dicts[_] = params[_]
+        elif block == "electrons":
+            dicts = {"&ELECTRONS": ""}
+            for _ in params.keys():
+                if _ in database.qe_electrons_key:
+                    dicts[_] = params[_]
+        elif block == "ions":
+            dicts = {"&IONS": ""}
+            for _ in params.keys():
+                if _ in database.qe_ions_key:
+                    dicts[_] = params[_]
+        elif block == "cell":
+            dicts = {"&CELL": ""}
+            for _ in params.keys():
+                if _ in database.qe_cell_key:
+                    dicts[_] = params[_]
+        elif block == "rism":
+            dicts = {"&RISM": ""}
+            for _ in params.keys():
+                if _ in database.qe_system_key:
+                    dicts[_] = params[_]
+        dicts["/"] = ""
+        return functions.dict2lines(dicts)
+
+    # =================================================================================
+    # Lattice parameters
+    # =================================================================================
+    
+    # read structure
+    qestruct = structure.struct(struct_inp)
+    params_default.update(
+        qestruct.write_struct(
+            calculator="qein",
+            dyn=True,
+            write2file=False
+        )[0]
+    )
+
+    dyn = False
+    # dynrange or not
+    if "dynrange" in kwargs.keys():
+        dyn = True
+        selec_dyn = kwargs["dynrange"]
+        selec_dyn = parser_inputpara(selec_dyn)
+        dynrange = {"xmin": -1e8, "ymin": -1e8, "zmin": -1e8,
+                    "xmax": 1e8,  "ymax": 1e8,  "zmax": 1e8}
+        for key in selec_dyn.keys():
+            dynrange[key] = float(selec_dyn[key])
+
+    lattice_lines = qestruct.write_struct(
+        calculator="qein",
+        dyn=dyn,
+        write2file=False
+    )[1] 
+
+    # =========================================================================
+    # ATOMIC_SPECIES lines 
+    # =========================================================================
+    # write upf and get electron of valence
+    atomic_species_lines = ["ATOMIC_SPECIES\n"]
+    val_electron = 0
+    is_uspp = False
+    atomic_indexs = [
+        int(_) for _ in qestruct.position[1:,0]
+    ]
+    # atomic_index [16, 83]
+    atomic_index = list(set(atomic_indexs))
+    atomic_num = [
+        atomic_indexs.count(_) for _ in atomic_index
+    ]
+    # UPF
+    upflist = os.listdir(upfpath)
+    upflist_format = [_.capitalize()[:2] for _ in upflist]
+    upflist_format = [_.replace("_", "") for _ in upflist_format]
+    upflist_format = [_.replace(".", "") for _ in upflist_format]
+    #
+    for i in atomic_index:
+        atom = atom_data[i][1]
+        atomic_mass = atom_data[i][3]
+        upf = upflist[upflist_format.index(atom)]
+        with open(upfpath+"/"+upf, "r") as f:
+            upflines = f.readlines()
+        for j in range(len(upflines)):
+            if "USPP" in upflines[j] or "ltrasoft" in upflines[j]:
+                is_uspp = True
+                break
+        # write upf
+        write_lines(wkdir+"/pseudo/"+upf, upflines, "w")
+        # write block
+        atomic_species_lines.append(
+            "%s%15.5f   %s\n" % (atom, atomic_mass, upf)
+        )
+        # valence number
+        val_electron += int(
+            qe_upf_valence_e(upflines) * atomic_num[atomic_index.index(i)]
+        )
+    
+    # uspp or not
+    if "ecutrho" not in params_default.keys():
+        if is_uspp:
+            params_default["ecutrho"] = "%.2f" % (float(params_default["ecutwfc"])*10)
+        else:
+            params_default["ecutrho"] = "%.2f" % (float(params_default["ecutwfc"])*4)
+   
+    # metal or not
+    if metal:
+        params_default["nbnd"] = str(
+            int(val_electron/electron_in_band*float(params_default["nbndfactor"]))
+        )
+        params_default["occupations"] = "'smearing'"
+        params_default["smearing"] = "'gaussian'"
+        params_default["degauss"] = "0.01"
+        params_default["nbndfactor"] = "1.2"
+    else:
+        if calculation in ["relax", "vcrelax", "scf"]:
+            params_default["nbndfactor"] = "1.0"
+        else:
+            params_default["nbndfactor"] = "1.5"
+        params_default["nbnd"] = str(
+            int(val_electron/electron_in_band*float(params_default["nbndfactor"]))
+        )
+        params_default["occupations"] = "'fixed'"
+    
+    # =========================================================================
+    # KPOINTS lines 
+    # =========================================================================
+    oddeven = "none"
+    if "oddeven" in params_default:
+        oddeven = params_default["oddeven"]
+    kpoints_lines = qe_autokgen(
+        lattice=qestruct.lattice6[:3],
+        kspacing=float(params_default["kspacing"]),
+        oddeven=oddeven
+    )
+    
+    if calculation == "bands":
+        kpoints_lines = ["K_POINTS\n"]
+        if "klist" in kwargs.keys():
+            klist = kwargs["klist"].split(";")
+            for i in klist:
+                ends = [float(j) for j in i.split(" ")]
+                k = functions.gen_lineklist(
+                    ends[:3], ends[3:6], int(ends[6])
+                )
+                k = functions.convert_array2strlist(k)
+                k = functions.convert_high2writeablelist(k)               
+                kpoints_lines += k
+            kpoints_lines.insert(1, str(len(kpoints_lines)-1)+"\n")
+        else:
+            # need to add 
+            functions.lexit("Error, need specify klist\n" + 
+                            "klist=0 0 0 0 0 0.5 10;0 0 0.5 0.0 0.5 0.5 10\n")
+
+    # =================================================================================
+    # write blocks: 
+    # =================================================================================
+    
+    filein = "/pwscf.in"
+    blocklines = []
+
+    # update final setting
+    if calculation == "scf":
+        params_default["calculation"] = "'scf'"
+        for _ in ["control", "system", "electrons"]:
+            blocklines += params2lines(params_default, _)
+        # write sh
+        cmd = "# scf calculation \n"
+        cmd += execcode + " %s -nimage 1 -npool 1 -ntg 1 -inp %s > %s" % ("pw.x", "scf.in", "scf.out") + "\n"
+        functions.write_runsh(wkdir+"/run_scf.sh", cmd)
+
+    elif calculation == "relax":
+        filein = "/relax.in"
+        params_default["calculation"] = "'relax'"
+        params_default = keysindicts(params_default, "forc_conv_thr", "1.0D-4")
+        for _ in ["control", "system", "electrons", 
+                  "ions"]:
+            blocklines += params2lines(params_default, _)
+        # write sh
+        cmd = "# scf calculation \n"
+        cmd += execcode + " %s -nimage 1 -npool 1 -ntg 1 -inp %s > %s"  % ("pw.x", "relax.in", "relax.out") + "\n"
+        functions.write_runsh(wkdir+"/run_relax.sh", cmd)
+
+    elif calculation == "vcrelax":
+        filein = "/vcrelax.in"
+        params_default["calculation"] = "'vc-relax'"
+        params_default = keysindicts(params_default, "forc_conv_thr", "1.0D-4")
+        for _ in ["control", "system", "electrons",
+                  "ions", "cell"]:
+            blocklines += params2lines(params_default, _)
+        # write sh
+        cmd = "# scf calculation \n"
+        cmd += execcode + " %s -nimage 1 -npool 1 -ntg 1 -inp %s > %s"  % ("pw.x", "vcrelax.in", "vcrelax.out") + "\n"
+        functions.write_runsh(wkdir+"/run_vcrelax.sh", cmd)
+        
+    elif calculation == "nscf":
+        filein = "/nscf.in"
+        params_default["calculation"] = "'nscf'"
+        for _ in ["control", "system", "electrons"]:
+            blocklines += params2lines(params_default, _)
+        # write sh
+        cmd = "# nscf calculation \n"
+        cmd += execcode + " %s -nimage 1 -npool 1 -ntg 1 -inp %s > %s"  % ("pw.x", "nscf.in", "nscf.out") + "\n"
+        functions.write_runsh(wkdir+"/run_nscf.sh", cmd)
+    elif calculation == "bands" \
+        or calculation == "band":
+        filein = "/bands.in"
+        del(params_default["restart_mode"])
+        params_default["calculation"] = "'bands'"
+        for _ in ["control", "system", "electrons"]:
+            blocklines += params2lines(params_default, _)
+        # write sh
+        cmd = "# band calculation \n"
+        cmd += execcode + " %s -nimage 1 -npool 1 -ntg 1 -inp %s > %s"  % ("pw.x", "bands.in", "bands.out") + "\n"
+        functions.write_runsh(wkdir+"/run_bands.sh", cmd)
+    
+    # =================================================================================
+    # write lines: 
+    # =================================================================================
+    functions.write_lines(
+        fpath=wkdir+filein,
+        lines=blocklines,
+        mode="w"
+    )    
+    functions.write_lines(
+        fpath=wkdir+filein,
+        lines=atomic_species_lines+lattice_lines+kpoints_lines,
+        mode="a"
+    )
+
+    # gga+u or not
+    if "ggau" in kwargs.keys():
+        ujlines = ["HUBBARD {ortho-atomic}\n"]
+        
+        functions.write_lines(
+            fpath=wkdir+filein,
+            lines=ujlines,
+            mode="a"
+        )
+    
+    
+
+
+    
