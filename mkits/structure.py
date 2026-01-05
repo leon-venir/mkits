@@ -27,6 +27,8 @@ Functions
 
 
 class struct(object):
+
+
     """
     DESCRIPTION:
     ------------
@@ -34,8 +36,7 @@ class struct(object):
 
     PARAMETERS:
     -----------
-    inp, string
-        The name of the input structure 
+    :var inp str The name of the input structure 
 
     Attributs:
     ----------
@@ -68,6 +69,12 @@ class struct(object):
     """
 
     def __init__(self, inp): 
+        """
+        Docstring for __init__
+        
+        :param self: Initialize the class
+        :param inp: The input of structures
+        """
         self.inp = inp
         self.calculator = "none"
         self.title = "none"
