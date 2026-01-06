@@ -6,6 +6,7 @@ import spglib as spg
 import os
 import sys
 import logging
+import re
 from mkits.functions import *
 from mkits.database import *
 from mkits.qe import * 
@@ -137,12 +138,14 @@ class struct(object):
         elif ("&SYSTEM" in "".join(lines[:]) or
               "&system" in "".join(lines[:])):
             self.calculator = "qein"
+        # cif 
+        elif "_cell_length_a" in "".join(lines):
+            self.calculator = "cif"
         # poscar
         elif len(lines[2].split()) == 3:
             self.calculator = "poscar"
-        # cif 
-        elif "_cell_length_a" in "".join(lines) and "_cell_length_b" in "".join(lines):
-            self.calculator = "cif"
+        else:
+            print("Only poscar cif supported.")
 
 
     def __parse_structure(self, lines):
@@ -159,8 +162,150 @@ class struct(object):
         -------
         """
 
+        # ================== CIF PARSING START ==================
         if self.calculator == "cif":
-            pass
+            # 1. 解析晶胞参数 (Lattice Parameters)
+            _params = {}
+            # 预处理：移除注释，合并行等操作通常比较复杂，这里采用逐行扫描
+            for line in lines:
+                line = line.strip()
+                if line.startswith("_cell_"):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        # 移除可能存在的误差括号，例如 10.45(2) -> 10.45
+                        val_str = re.sub(r"\(.+\)", "", parts[1])
+                        _params[parts[0]] = float(val_str)
+            
+            try:
+                a = _params.get("_cell_length_a")
+                b = _params.get("_cell_length_b")
+                c = _params.get("_cell_length_c")
+                alpha = _params.get("_cell_angle_alpha", 90.0)
+                beta  = _params.get("_cell_angle_beta", 90.0)
+                gamma = _params.get("_cell_angle_gamma", 90.0)
+                
+                if None in [a, b, c]:
+                    raise ValueError("Missing cell lengths a, b, or c")
+                    
+                self.lattice6 = np.array([a, b, c, alpha, beta, gamma])
+            except Exception as e:
+                lexit("CIF Error: Failed to read cell parameters. ", e)
+
+            # 2. 晶胞参数 6 -> 9 (Direct Lattice Matrix)
+            # 约定：a 沿 x 轴，b 在 xy 平面
+            alpha_r = np.radians(alpha)
+            beta_r  = np.radians(beta)
+            gamma_r = np.radians(gamma)
+            
+            # 计算体积相关的中间变量
+            val = (np.cos(alpha_r) - np.cos(gamma_r) * np.cos(beta_r)) / np.sin(gamma_r)
+            
+            v1 = [a, 0, 0]
+            v2 = [b * np.cos(gamma_r), b * np.sin(gamma_r), 0]
+            v3 = [c * np.cos(beta_r), 
+                  c * val,
+                  c * np.sqrt(1 - np.cos(beta_r)**2 - val**2)]
+            
+            self.lattice9 = np.array([v1, v2, v3])
+
+            # 3. 解析原子坐标 (Atomic Positions)
+            # 寻找包含 _atom_site_fract_x 的 loop_
+            loop_headers = []
+            loop_start_idx = -1
+            
+            for i, line in enumerate(lines):
+                if "loop_" in line:
+                    # 检查紧接 loop_ 之后的以 _ 开头的行作为 header
+                    temp_headers = []
+                    j = i + 1
+                    while j < len(lines):
+                        l = lines[j].strip()
+                        if l.startswith("_"):
+                            temp_headers.append(l)
+                            j += 1
+                        elif l.startswith("#") or l == "":
+                            j += 1 # 跳过空行或注释
+                        else:
+                            break # header 结束，数据开始
+                    
+                    # 确认这是我们要找的原子坐标块
+                    if "_atom_site_fract_x" in temp_headers:
+                        loop_headers = temp_headers
+                        loop_start_idx = j
+                        break
+            
+            if loop_start_idx == -1:
+                lexit("CIF Error: No atomic coordinates loop found.")
+
+            # 确定各列的索引
+            try:
+                idx_x = loop_headers.index("_atom_site_fract_x")
+                idx_y = loop_headers.index("_atom_site_fract_y")
+                idx_z = loop_headers.index("_atom_site_fract_z")
+                
+                # 寻找原子符号或标签
+                if "_atom_site_type_symbol" in loop_headers:
+                    idx_sym = loop_headers.index("_atom_site_type_symbol")
+                elif "_atom_site_label" in loop_headers:
+                    idx_sym = loop_headers.index("_atom_site_label")
+                else:
+                    lexit("CIF Error: Cannot find atom symbol or label header.")
+            except ValueError:
+                lexit("CIF Error: Missing fractional coordinate headers.")
+
+            # 读取数据行
+            _atom_types = []
+            _frac_coords = []
+            
+            for k in range(loop_start_idx, len(lines)):
+                line = lines[k].strip()
+                # 遇到空行、注释、新的 loop 或新的 tag 则停止
+                if not line or line.startswith("#") or line.startswith("loop_") or line.startswith("_"):
+                    if not line: continue 
+                    break 
+                
+                parts = line.split()
+                # 简单检查列数是否足够
+                if len(parts) < len(loop_headers): continue
+                
+                # 解析原子符号 (去除可能的价态或数字，如 Fe2+ -> Fe, C1 -> C)
+                raw_sym = parts[idx_sym]
+                sym = re.sub(r"[^a-zA-Z]", "", raw_sym)
+                _atom_types.append(sym)
+                
+                # 解析坐标 (去除误差括号)
+                try:
+                    x = float(re.sub(r"\(.+\)", "", parts[idx_x]))
+                    y = float(re.sub(r"\(.+\)", "", parts[idx_y]))
+                    z = float(re.sub(r"\(.+\)", "", parts[idx_z]))
+                    _frac_coords.append([x, y, z])
+                except ValueError:
+                    continue # 跳过无法解析的行
+
+            self.total_atom = len(_atom_types)
+            _frac_coords = np.array(_frac_coords)
+
+            # 4. 构建 self.position 矩阵
+            # 映射原子符号到索引
+            try:
+                # 假设 database.symbol_map 存在且可以映射 'Fe', 'O' 等字符串到整数
+                _atom_index = np.array([database.symbol_map[s] for s in _atom_types]).reshape(-1, 1)
+            except KeyError as e:
+                lexit(f"CIF Error: Unknown element symbol {e}")
+
+            # 转换分数坐标 -> 笛卡尔坐标
+            # 假设 frac2cart(lattice, position) 函数可用
+            _cart_pos = frac2cart(self.lattice9, _frac_coords)
+            
+            # 设置动力学矩阵 (默认固定为 1/True)
+            _dyn = np.ones((self.total_atom, 3)) 
+            
+            # 堆叠数据: [index, fx, fy, fz, cx, cy, cz, dx, dy, dz]
+            _block = np.hstack((_atom_index, _frac_coords, _cart_pos, _dyn))
+            
+            # 添加到 self.position (避开第0行的初始 zeros)
+            self.position = np.vstack((self.position, _block))
+        # ================== CIF PARSING END ==================
 
         elif self.calculator == "poscar":
             self.title = lines[0][:-1]
