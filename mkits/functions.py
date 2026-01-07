@@ -444,90 +444,79 @@ def frac2cart(cart_lattice, fraction_pos):
     """
     DESCRIPTION
     -----------
-    Convert fractional coordinates to cartisian coordinates
+    Convert fractional coordinates to cartisian coordinates.
+    Performs the linear transformation: r_cart = frac_pos * lattice_matrix
+    r = u*a + v*b + w*c
 
     PARAMETERS
     ----------
-    cartesian lattice
-        [[4.45, 0, 0], [-2.22, 3.86, 0], [0, 0, 17.50]]
-    fractional coordinates: [[], []]
+    cart_lattice : 3x3 numpy array
+        The lattice vectors stored as rows:
+        [[ax, ay, az], 
+         [bx, by, bz], 
+         [cx, cy, cz]]
+    fraction_pos : (3,) or (n, 3) numpy array/list
+        Fractional coordinates.
     
     RETURNS
     -------
+    numpy array
+        Cartesian coordinates with the same shape as input fraction_pos.
     """
+    lattice = np.array(cart_lattice, dtype=float)
+    pos = np.array(fraction_pos, dtype=float)
 
-    cart_ = np.zeros(3)
-
-    if fraction_pos.shape == (3,):
-        fraction_pos = np.vstack((fraction_pos,
-                                  np.array([[0,0,0]])))
-        for _ in range(len(fraction_pos)):
-            cart_ = np.vstack((cart_, 
-                               np.sum((cart_lattice.T*fraction_pos[_]).T,
-                                      axis=0)))
-        return cart_[1:-1][0]
-    else:
-        for _ in range(len(fraction_pos)):
-            cart_ = np.vstack((cart_, 
-                               np.sum((cart_lattice.T*fraction_pos[_]).T, 
-                                      axis=0)))
-        return cart_[1:]
+    return pos @ lattice
 
 
-def cart2frac_single(lattice, cart_pos):
+def cart2frac(lattice, cart_pos):
     """
     DESCRIPTION
     -----------
-    Fractional coordinates to cartesian coordinates
-    """
-    lattice_a = 0
-    lattice_b = 0
-    lattice_c = 0
-    alpha = 0
-    beta = 0
-    gamma = 0
-
-    if len(lattice) == 3:
-        cart_lattice = lattice
-        cart_lattice_angle = lattice_conversion(give_lattice=lattice)
-        lattice_a = cart_lattice_angle[0]
-        lattice_b = cart_lattice_angle[1]
-        lattice_c = cart_lattice_angle[2]
-        alpha = cart_lattice_angle[3]
-        beta = cart_lattice_angle[4]
-        gamma = cart_lattice_angle[5]
-    elif len(lattice) == 6:
-        cart_lattice = lattice_conversion(give_lattice=lattice)
-        cart_lattice_angle = lattice
-        lattice_a = cart_lattice_angle[0]
-        lattice_b = cart_lattice_angle[1]
-        lattice_c = cart_lattice_angle[2]
-        alpha = cart_lattice_angle[3]
-        beta = cart_lattice_angle[4]
-        gamma = cart_lattice_angle[5]
+    Convert Cartesian coordinates to fractional coordinates.
+    Works for both single atom and multiple atoms.
     
-    # for o
-    frac_a, frac_b, frac_c = 0, 0, 0
-    if abs(cart_lattice_angle[3]-90) < 0.1 and abs(cart_lattice_angle[4]-90) < 0.1:
-        frac_a = (cart_pos[0] + cart_pos[1]*np.tan((gamma-90)*uc_d2a))/lattice_a
-        frac_b = (cart_pos[1]/np.cos((gamma-90)*uc_d2a))/lattice_b
-        frac_c = cart_pos[2]/lattice_c
+    Mathematical formula: r_frac = r_cart * inverse(Lattice_Matrix)
 
-    return frac_a, frac_b, frac_c
-
-
-def cart2frac(cart_lattice, cart_pos):
+    PARAMETERS
+    ----------
+    lattice : 3x3 numpy array or list of 6 params
+        The lattice matrix (row vectors) or [a, b, c, alpha, beta, gamma].
+    cart_pos : (3,) or (N, 3) numpy array
+        Cartesian coordinates.
+    
+    RETURNS
+    -------
+    numpy array
+        Fractional coordinates with the same shape as input cart_pos.
     """
-    fractional coordinates to cartisian coordinates
+    # 1. 处理晶格矩阵
+    lattice = np.array(lattice, dtype=float)
+    
+    # 如果传入的是 6 个参数，先转换为 3x3 矩阵
+    if lattice.shape == (6,) or lattice.size == 6:
+        lattice = lattice_conversion(lattice)
+    
+    # 2. 计算逆矩阵
+    # 这是转换的核心：分数坐标 = 笛卡尔坐标 @ 晶格矩阵的逆
+    # 这一步只需要做一次，不需要在循环中重复做
+    try:
+        inv_lattice = np.linalg.inv(lattice)
+    except np.linalg.LinAlgError:
+        raise ValueError("Lattice matrix is singular (Volume is zero). Check your lattice parameters.")
+
+    # 3. 坐标转换 (矩阵乘法)
+    # np.asarray 确保输入是 array，@ 运算符自动处理 (3,) 和 (N, 3) 的情况
+    return np.asarray(cart_pos) @ inv_lattice
+
+def cart2frac_single(lattice, cart_pos):
     """
-    #return np.matmul(cart_pos, np.matrix(cart_lattice.T).I)
-    frac_pos = np.zeros((len(cart_pos), 3))
-    for i in range(len(cart_pos)):
-        frac_a, frac_b, frac_c = cart2frac_single(cart_lattice, cart_pos[i])
-        frac_pos[i, 0] = frac_a
-        frac_pos[i, 1] = frac_b
-        frac_pos[i, 2] = frac_c  
-    return frac_pos
+    Just for legacy
+    
+    :param lattice: Description
+    :param cart_pos: Description
+    """
+    return cart2frac(lattice, cart_pos)
 
 
 def rmspace(string):
@@ -608,52 +597,96 @@ def vector_angle_cclockwise(vector1, vector2, unit="deg"):
 
 def lattice_conversion(give_lattice):
     """
-    Convert lattice parameters 3x3 <-> 6.
-    1. give cartesian lattice array; return vectors with angle:
-    array([a_x, a_y, a_z], [b_x, b_y, b_z], [c_x, c_y, c_z]) 
-    -> array([a, b, c, alpha, beta, gamma])
-    2. give vectors with angle; return cartisian lattice array:
-    array[a, b, c, alpha, beta, gamma] 
-    -> array([a_x, a_y, a_z], [b_x, b_y, b_z], [c_x, c_y, c_z])
+    Convert lattice parameters between 3x3 matrix and 6 parameters.
+    
+    Mode 1: 3x3 Matrix -> [a, b, c, alpha, beta, gamma]
+    Mode 2: [a, b, c, alpha, beta, gamma] -> 3x3 Matrix
+            (Standard convention: a // x, b in xy plane)
+    
+    Parameters
+    ----------
+    give_lattice : np.ndarray
+        Either (3, 3) matrix or (6,) vector.
+    
+    Returns
+    -------
+    np.ndarray
     """
+    give_lattice = np.array(give_lattice, dtype=float)
 
-    # cartesian -> vector
-    if len(give_lattice) == 3:
-        lattice_a = np.sqrt(np.dot(give_lattice[0, :], 
-                                   give_lattice[0, :]))
-        lattice_b = np.sqrt(np.dot(give_lattice[1, :], 
-                                   give_lattice[1, :]))
-        lattice_c = np.sqrt(np.dot(give_lattice[2, :], 
-                                   give_lattice[2, :]))
-        angle_alpha = vector_angle(give_lattice[0, :], 
-                                   give_lattice[2, :])
-        angle_beta  = vector_angle(give_lattice[2, :], 
-                                   give_lattice[1, :])
-        angle_gamma = vector_angle(give_lattice[1, :], 
-                                   give_lattice[0, :])
-        return(np.array([lattice_a, lattice_b, lattice_c, 
-                         angle_alpha, angle_beta, angle_gamma]))
-
-    # vector -> cartesian
-    elif len(give_lattice) == 6:
-        # convert arc to degree
-        new_lattice = np.hstack((give_lattice[:3], 
-                                 give_lattice[3:]/180*np.pi))
-        # a in x-axis; b in xy-plane
-        vector_x = np.array([new_lattice[0], 0, 0])
-        vector_y = np.array([np.cos(new_lattice[5]), 
-                             np.sin(new_lattice[5]), 0])*new_lattice[1]
-        x = np.cos(new_lattice[3])
-        y = (np.linalg.norm(vector_y)*np.cos(new_lattice[4])-
-             vector_y[0]*np.cos(new_lattice[3]))/vector_y[1]
-        z = np.sqrt(1-x**2-y**2)
-        vector_z_direction = np.array([x,y,z])
-        vector_z = vector_z_direction / np.linalg.norm(vector_z_direction) * new_lattice[2]
-        return np.array([vector_x, vector_y, vector_z])
+    # Mode 1: Cartesian Matrix (3x3) -> Parameters (6)
+    if give_lattice.shape == (3, 3):
+        # 1. Calculate lengths (norms)
+        # axis=1 means norm along the row vector
+        lengths = np.linalg.norm(give_lattice, axis=1)
+        a, b, c = lengths[0], lengths[1], lengths[2]
         
-    else:
-        lexit("Error, give the lattice with following format: array([a_x, a_y, a_z], [b_x, b_y, b_z], [c_x, c_y, c_z]) or array([a, b, c, alpha, beta, gamma])")
+        # 2. Calculate angles
+        # alpha: angle between b (row 1) and c (row 2)
+        # beta:  angle between a (row 0) and c (row 2)
+        # gamma: angle between a (row 0) and b (row 1)
+        
+        # Use dot product: u . v = |u||v|cos(theta)
+        # Clip values to [-1, 1] to avoid numerical errors (e.g. 1.000000002) causing NaN in arccos
+        
+        cos_alpha = np.dot(give_lattice[1], give_lattice[2]) / (b * c)
+        cos_beta  = np.dot(give_lattice[0], give_lattice[2]) / (a * c)
+        cos_gamma = np.dot(give_lattice[0], give_lattice[1]) / (a * b)
+        
+        # Clip to ensure valid arccos range
+        cos_alpha = np.clip(cos_alpha, -1.0, 1.0)
+        cos_beta  = np.clip(cos_beta,  -1.0, 1.0)
+        cos_gamma = np.clip(cos_gamma, -1.0, 1.0)
 
+        alpha = np.degrees(np.arccos(cos_alpha))
+        beta  = np.degrees(np.arccos(cos_beta))
+        gamma = np.degrees(np.arccos(cos_gamma))
+        
+        return np.array([a, b, c, alpha, beta, gamma])
+
+    # Mode 2: Parameters (6) -> Cartesian Matrix (3x3)
+    elif give_lattice.size == 6:
+        # Flatten input in case shape is (6, 1) or similar
+        params = give_lattice.flatten()
+        a, b, c = params[0], params[1], params[2]
+        alpha, beta, gamma = np.radians(params[3:6])
+        
+        # Standard Convention:
+        # a is along x-axis
+        # b is in xy-plane
+        
+        # 1. Vector a
+        # a = (a, 0, 0)
+        
+        # 2. Vector b
+        # b_x = b * cos(gamma)
+        # b_y = b * sin(gamma)
+        
+        # 3. Vector c
+        # c_x = c * cos(beta)
+        # c_y derived from: b.c = b*c*cos(alpha)
+        # c_z derived from: c^2 = cx^2 + cy^2 + cz^2
+        
+        val = (np.cos(alpha) - np.cos(beta) * np.cos(gamma)) / np.sin(gamma)
+        
+        # Construct matrix rows
+        # Row 1: a vector
+        v_a = [a, 0.0, 0.0]
+        
+        # Row 2: b vector
+        v_b = [b * np.cos(gamma), b * np.sin(gamma), 0.0]
+        
+        # Row 3: c vector
+        cz = np.sqrt(1 - np.cos(beta)**2 - val**2)
+        v_c = [c * np.cos(beta), 
+               c * val, 
+               c * cz]
+        
+        return np.array([v_a, v_b, v_c])
+
+    else:
+        # 简单的错误处理，为了兼容你原来的代码风格，可以保留 lexit 或 raise
+        raise ValueError("Lattice must be 3x3 matrix or 6 parameters array.")
 
 def listcross(list1, list2):
     """

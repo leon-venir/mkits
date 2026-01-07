@@ -144,6 +144,9 @@ class struct(object):
         # poscar
         elif len(lines[2].split()) == 3:
             self.calculator = "poscar"
+        # xyz (Feature: Line 1 is int, Line 3 has 4 columns like 'C 0.0 0.0 0.0')
+        elif len(lines) >= 3 and lines[0].strip().isdigit() and len(lines[2].split()) >= 4:
+            self.calculator = "xyz"
         else:
             print("Only poscar cif supported.")
 
@@ -164,15 +167,16 @@ class struct(object):
 
         # ================== CIF PARSING START ==================
         if self.calculator == "cif":
-            # 1. 解析晶胞参数 (Lattice Parameters)
+            # 1. Parse Lattice Parameters
             _params = {}
-            # 预处理：移除注释，合并行等操作通常比较复杂，这里采用逐行扫描
+            # Preprocessing: Complex operations like comment removal and line merging are avoided;
+            # using line-by-line scanning instead.
             for line in lines:
                 line = line.strip()
                 if line.startswith("_cell_"):
                     parts = line.split()
                     if len(parts) >= 2:
-                        # 移除可能存在的误差括号，例如 10.45(2) -> 10.45
+                        # Remove potential standard deviation parentheses, e.g., 10.45(2) -> 10.45
                         val_str = re.sub(r"\(.+\)", "", parts[1])
                         _params[parts[0]] = float(val_str)
             
@@ -191,13 +195,13 @@ class struct(object):
             except Exception as e:
                 lexit("CIF Error: Failed to read cell parameters. ", e)
 
-            # 2. 晶胞参数 6 -> 9 (Direct Lattice Matrix)
-            # 约定：a 沿 x 轴，b 在 xy 平面
+            # 2. Lattice Parameters 6 -> 9 (Direct Lattice Matrix)
+            # Convention: 'a' along x-axis, 'b' in xy-plane
             alpha_r = np.radians(alpha)
             beta_r  = np.radians(beta)
             gamma_r = np.radians(gamma)
             
-            # 计算体积相关的中间变量
+            # Calculate volume-related intermediate variables
             val = (np.cos(alpha_r) - np.cos(gamma_r) * np.cos(beta_r)) / np.sin(gamma_r)
             
             v1 = [a, 0, 0]
@@ -208,14 +212,14 @@ class struct(object):
             
             self.lattice9 = np.array([v1, v2, v3])
 
-            # 3. 解析原子坐标 (Atomic Positions)
-            # 寻找包含 _atom_site_fract_x 的 loop_
+            # 3. Parse Atomic Positions
+            # Find the 'loop_' block containing '_atom_site_fract_x'
             loop_headers = []
             loop_start_idx = -1
             
             for i, line in enumerate(lines):
                 if "loop_" in line:
-                    # 检查紧接 loop_ 之后的以 _ 开头的行作为 header
+                    # Check lines starting with '_' immediately following 'loop_' as headers
                     temp_headers = []
                     j = i + 1
                     while j < len(lines):
@@ -224,11 +228,11 @@ class struct(object):
                             temp_headers.append(l)
                             j += 1
                         elif l.startswith("#") or l == "":
-                            j += 1 # 跳过空行或注释
+                            j += 1 # Skip empty lines or comments
                         else:
-                            break # header 结束，数据开始
+                            break # End of header, data starts
                     
-                    # 确认这是我们要找的原子坐标块
+                    # Confirm this is the atomic coordinate block we are looking for
                     if "_atom_site_fract_x" in temp_headers:
                         loop_headers = temp_headers
                         loop_start_idx = j
@@ -237,13 +241,13 @@ class struct(object):
             if loop_start_idx == -1:
                 lexit("CIF Error: No atomic coordinates loop found.")
 
-            # 确定各列的索引
+            # Determine the index of each column
             try:
                 idx_x = loop_headers.index("_atom_site_fract_x")
                 idx_y = loop_headers.index("_atom_site_fract_y")
                 idx_z = loop_headers.index("_atom_site_fract_z")
                 
-                # 寻找原子符号或标签
+                # Find atomic symbol or label
                 if "_atom_site_type_symbol" in loop_headers:
                     idx_sym = loop_headers.index("_atom_site_type_symbol")
                 elif "_atom_site_label" in loop_headers:
@@ -253,57 +257,57 @@ class struct(object):
             except ValueError:
                 lexit("CIF Error: Missing fractional coordinate headers.")
 
-            # 读取数据行
+            # Read data lines
             _atom_types = []
             _frac_coords = []
             
             for k in range(loop_start_idx, len(lines)):
                 line = lines[k].strip()
-                # 遇到空行、注释、新的 loop 或新的 tag 则停止
+                # Stop if empty line, comment, new loop, or new tag is encountered
                 if not line or line.startswith("#") or line.startswith("loop_") or line.startswith("_"):
                     if not line: continue 
                     break 
                 
                 parts = line.split()
-                # 简单检查列数是否足够
+                # Simple check if column count is sufficient
                 if len(parts) < len(loop_headers): continue
                 
-                # 解析原子符号 (去除可能的价态或数字，如 Fe2+ -> Fe, C1 -> C)
+                # Parse atomic symbol (remove potential valence or numbers, e.g., Fe2+ -> Fe, C1 -> C)
                 raw_sym = parts[idx_sym]
                 sym = re.sub(r"[^a-zA-Z]", "", raw_sym)
                 _atom_types.append(sym)
                 
-                # 解析坐标 (去除误差括号)
+                # Parse coordinates (remove standard deviation parentheses)
                 try:
                     x = float(re.sub(r"\(.+\)", "", parts[idx_x]))
                     y = float(re.sub(r"\(.+\)", "", parts[idx_y]))
                     z = float(re.sub(r"\(.+\)", "", parts[idx_z]))
                     _frac_coords.append([x, y, z])
                 except ValueError:
-                    continue # 跳过无法解析的行
+                    continue # Skip unparseable lines
 
             self.total_atom = len(_atom_types)
             _frac_coords = np.array(_frac_coords)
 
-            # 4. 构建 self.position 矩阵
-            # 映射原子符号到索引
+            # 4. Construct self.position matrix
+            # Map atomic symbols to indices
             try:
-                # 假设 database.symbol_map 存在且可以映射 'Fe', 'O' 等字符串到整数
+                # Assume database.symbol_map exists and maps strings like 'Fe', 'O' to integers
                 _atom_index = np.array([database.symbol_map[s] for s in _atom_types]).reshape(-1, 1)
             except KeyError as e:
                 lexit(f"CIF Error: Unknown element symbol {e}")
 
-            # 转换分数坐标 -> 笛卡尔坐标
-            # 假设 frac2cart(lattice, position) 函数可用
+            # Convert fractional coordinates -> Cartesian coordinates
+            # Assume frac2cart(lattice, position) function is available
             _cart_pos = frac2cart(self.lattice9, _frac_coords)
             
-            # 设置动力学矩阵 (默认固定为 1/True)
+            # Set dynamics matrix (default fixed to 1/True)
             _dyn = np.ones((self.total_atom, 3)) 
             
-            # 堆叠数据: [index, fx, fy, fz, cx, cy, cz, dx, dy, dz]
+            # Stack data: [index, fx, fy, fz, cx, cy, cz, dx, dy, dz]
             _block = np.hstack((_atom_index, _frac_coords, _cart_pos, _dyn))
             
-            # 添加到 self.position (避开第0行的初始 zeros)
+            # Append to self.position (avoiding the initial zeros in row 0)
             self.position = np.vstack((self.position, _block))
         # ================== CIF PARSING END ==================
 
@@ -421,6 +425,65 @@ class struct(object):
             self.lattice9 = _qeout["cell_paramater"][-1]
             self.lattice6 = functions.lattice_conversion(self.lattice9)
             #print(_qeout["atomic_index"])
+        
+        # ================== XYZ PARSING START ==================
+        elif self.calculator == "xyz":
+            try:
+                # Line 1: Atom count
+                self.total_atom = int(lines[0].strip())
+                # Line 2: Title / Comment
+                self.title = lines[1].strip()
+                
+                # XYZ format lacks lattice information. Set default values to prevent errors (e.g., 100x100x100 box).
+                # Simple initialization to override defaults from __init__.
+                self.lattice9 = np.eye(3) * 100.0
+                self.lattice6 = np.array([100.0, 100.0, 100.0, 90.0, 90.0, 90.0])
+
+                _atom_indices = []
+                _cart_coords = []
+
+                # Start reading from the 3rd line (index 2)
+                for line in lines[2:]:
+                    parts = line.split()
+                    if len(parts) < 4: continue # Skip empty lines
+                    
+                    # Parse symbol (supports formats like C, C1, 6, etc.)
+                    sym_raw = parts[0]
+                    if sym_raw.isdigit():
+                        idx = int(sym_raw)
+                    else:
+                        # Remove digits, e.g., C1 -> C
+                        sym = re.sub(r"[^a-zA-Z]", "", sym_raw)
+                        # Look up atomic number
+                        if sym in database.symbol_map:
+                            idx = database.symbol_map[sym]
+                        else:
+                            idx = 0 # Mark unknown elements as 0
+
+                    x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
+                    
+                    _atom_indices.append(idx)
+                    _cart_coords.append([x, y, z])
+
+                # Convert to numpy array
+                n = len(_atom_indices)
+                _atom_indices = np.array(_atom_indices).reshape(n, 1)
+                _cart_coords = np.array(_cart_coords)
+                
+                # As requested: Set fractional coordinates to fixed value (0.0)
+                _frac_coords = np.zeros((n, 3))
+                
+                # As requested: Default dyn is 1 (movable)
+                _dyn = np.ones((n, 3))
+
+                # Concatenate data: [Index, Frac(3), Cart(3), Dyn(3)]
+                # Note: self.position has an initial buffer row, use vstack
+                _block = np.hstack((_atom_indices, _frac_coords, _cart_coords, _dyn))
+                self.position = np.vstack((self.position, _block))
+
+            except Exception as e:
+                lexit(f"XYZ Parsing Error: {e}")
+        # ================== XYZ PARSING END ==================
             
 
     def sort_atoms(self):
@@ -706,7 +769,7 @@ class struct(object):
             _frac_pos = position
             _cart_pos = functions.frac2cart(self.lattice9, position)
         else:
-            _frac_pos = functions.cart2frac_single(self.lattice9, position)
+            _frac_pos = functions.cart2frac(self.lattice9, position)
             _cart_pos = position
 
         self.total_atom += 1
@@ -746,29 +809,30 @@ class struct(object):
             "xmax": 1e8,  "ymax": 1e8,  "zmax": 1e8,
         }
             
-        
-        if idx != 0:
-            if is_frac:
-                pass
-            else:
-                pass
+        if is_frac:
+            # For vasp, qe, crystal strucutre
+            if idx != 0:
+                if is_frac:
+                    pass
+                else:
+                    pass
 
-        else:
-            _= functions.parser_inputpara(ranges)
-            for key in _.keys():
-                replace_range[key] = float(_[key])
-        
-            if is_frac:
-                for _ in range(self.total_atom):
-                    if self.position[_+1, 1] > replace_range["xmin"] and \
-                       self.position[_+1, 1] < replace_range["xmax"] and \
-                       self.position[_+1, 2] > replace_range["ymin"] and \
-                       self.position[_+1, 2] < replace_range["ymax"] and \
-                       self.position[_+1, 3] > replace_range["zmin"] and \
-                       self.position[_+1, 3] < replace_range["zmax"]:
-                        self.position[_+1, 0] = functions.symbol_map[atomic_symbo]
             else:
-                pass
+                _= functions.parser_inputpara(ranges)
+                for key in _.keys():
+                    replace_range[key] = float(_[key])
+            
+                if is_frac:
+                    for _ in range(self.total_atom):
+                        if self.position[_+1, 1] > replace_range["xmin"] and \
+                        self.position[_+1, 1] < replace_range["xmax"] and \
+                        self.position[_+1, 2] > replace_range["ymin"] and \
+                        self.position[_+1, 2] < replace_range["ymax"] and \
+                        self.position[_+1, 3] > replace_range["zmin"] and \
+                        self.position[_+1, 3] < replace_range["zmax"]:
+                            self.position[_+1, 0] = functions.symbol_map[atomic_symbo]
+                else:
+                    pass
         
         self.sort_atoms()
                     
