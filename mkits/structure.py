@@ -155,28 +155,24 @@ class struct(object):
         """
         DESCRIPTION:
         -----------
-        Parse 
+        Parse structure from file lines (CIF, POSCAR, XYZ, etc.)
 
         PARAMETERS:
         -----------
-        lines:string list
-        
-        UPDATE:
-        -------
+        lines: string list
         """
 
         # ================== CIF PARSING START ==================
         if self.calculator == "cif":
-            # 1. Parse Lattice Parameters
+            # --- 1. Parse Lattice Parameters (Existing Logic) ---
             _params = {}
-            # Preprocessing: Complex operations like comment removal and line merging are avoided;
-            # using line-by-line scanning instead.
             for line in lines:
                 line = line.strip()
+                # Simple parsing for single-line tags
                 if line.startswith("_cell_"):
                     parts = line.split()
                     if len(parts) >= 2:
-                        # Remove potential standard deviation parentheses, e.g., 10.45(2) -> 10.45
+                        # Remove error bounds like 10.45(2)
                         val_str = re.sub(r"\(.+\)", "", parts[1])
                         _params[parts[0]] = float(val_str)
             
@@ -189,37 +185,30 @@ class struct(object):
                 gamma = _params.get("_cell_angle_gamma", 90.0)
                 
                 if None in [a, b, c]:
-                    raise ValueError("Missing cell lengths a, b, or c")
+                    raise ValueError("Missing cell lengths")
                     
                 self.lattice6 = np.array([a, b, c, alpha, beta, gamma])
             except Exception as e:
                 lexit("CIF Error: Failed to read cell parameters. ", e)
 
-            # 2. Lattice Parameters 6 -> 9 (Direct Lattice Matrix)
-            # Convention: 'a' along x-axis, 'b' in xy-plane
+            # Convert Lattice 6 -> 9
             alpha_r = np.radians(alpha)
             beta_r  = np.radians(beta)
             gamma_r = np.radians(gamma)
-            
-            # Calculate volume-related intermediate variables
             val = (np.cos(alpha_r) - np.cos(gamma_r) * np.cos(beta_r)) / np.sin(gamma_r)
-            
             v1 = [a, 0, 0]
             v2 = [b * np.cos(gamma_r), b * np.sin(gamma_r), 0]
-            v3 = [c * np.cos(beta_r), 
-                  c * val,
-                  c * np.sqrt(1 - np.cos(beta_r)**2 - val**2)]
-            
+            v3 = [c * np.cos(beta_r), c * val, c * np.sqrt(1 - np.cos(beta_r)**2 - val**2)]
             self.lattice9 = np.array([v1, v2, v3])
 
-            # 3. Parse Atomic Positions
-            # Find the 'loop_' block containing '_atom_site_fract_x'
-            loop_headers = []
-            loop_start_idx = -1
+            # --- 2. Parse Symmetry Operations ---
+            sym_ops = []
+            sym_headers = []
+            sym_start_idx = -1
             
+            # Find symmetry loop
             for i, line in enumerate(lines):
                 if "loop_" in line:
-                    # Check lines starting with '_' immediately following 'loop_' as headers
                     temp_headers = []
                     j = i + 1
                     while j < len(lines):
@@ -228,11 +217,82 @@ class struct(object):
                             temp_headers.append(l)
                             j += 1
                         elif l.startswith("#") or l == "":
-                            j += 1 # Skip empty lines or comments
+                            j += 1
                         else:
-                            break # End of header, data starts
+                            break
+                    # Check for symmetry tags
+                    if any(x in temp_headers for x in ["_space_group_symop_operation_xyz", "_symmetry_equiv_pos_as_xyz"]):
+                        sym_headers = temp_headers
+                        sym_start_idx = j
+                        break
+            
+            if sym_start_idx != -1:
+                # Find column index for xyz string
+                try:
+                    if "_space_group_symop_operation_xyz" in sym_headers:
+                        idx_op = sym_headers.index("_space_group_symop_operation_xyz")
+                    else:
+                        idx_op = sym_headers.index("_symmetry_equiv_pos_as_xyz")
                     
-                    # Confirm this is the atomic coordinate block we are looking for
+                    # Read operations
+                    for k in range(sym_start_idx, len(lines)):
+                        line = lines[k].strip()
+                        if not line or line.startswith("#") or line.startswith("loop_") or line.startswith("_"):
+                            if not line: continue
+                            break
+                        
+                        # Handle quoted strings like 'x, y, z' or single strings
+                        # CIF parsing can be tricky with spaces, here we assume standard formatting
+                        # Splitting by single quotes might be safer if spaces exist
+                        if "'" in line:
+                            op_str = line.split("'")[1]
+                        else:
+                            parts = line.split()
+                            if len(parts) > idx_op:
+                                op_str = parts[idx_op]
+                            else: 
+                                continue # Fallback
+                        sym_ops.append(op_str)
+                except:
+                    print("Warning: Failed to parse symmetry operations, assuming P1.")
+                    sym_ops = ["x, y, z"]
+            else:
+                sym_ops = ["x, y, z"]
+
+            # Helper function to apply symmetry string to a point
+            def apply_sym_op(op_str, x, y, z):
+                # Replace x,y,z with values. Safe eval restricted to math chars.
+                # Example op_str: "-x, y+1/2, z"
+                op_str = op_str.lower().strip()
+                # Remove quotes if present
+                op_str = op_str.replace("'", "").replace('"', "")
+                
+                # Create a safe evaluation context
+                # Note: This simple eval is efficient but input must be trusted (CIF usually is)
+                # Alternatively, one could write a parser to rotate/translate matrices.
+                try:
+                    res = eval(f"[{op_str}]", {"__builtins__": None}, {'x': x, 'y': y, 'z': z})
+                    return np.array(res)
+                except:
+                    return np.array([x, y, z])
+
+            # --- 3. Parse Atomic Positions (Asymmetric Unit) ---
+            loop_headers = []
+            loop_start_idx = -1
+            
+            for i, line in enumerate(lines):
+                if "loop_" in line:
+                    temp_headers = []
+                    j = i + 1
+                    while j < len(lines):
+                        l = lines[j].strip()
+                        if l.startswith("_"):
+                            temp_headers.append(l)
+                            j += 1
+                        elif l.startswith("#") or l == "":
+                            j += 1
+                        else:
+                            break
                     if "_atom_site_fract_x" in temp_headers:
                         loop_headers = temp_headers
                         loop_start_idx = j
@@ -241,74 +301,89 @@ class struct(object):
             if loop_start_idx == -1:
                 lexit("CIF Error: No atomic coordinates loop found.")
 
-            # Determine the index of each column
             try:
                 idx_x = loop_headers.index("_atom_site_fract_x")
                 idx_y = loop_headers.index("_atom_site_fract_y")
                 idx_z = loop_headers.index("_atom_site_fract_z")
                 
-                # Find atomic symbol or label
                 if "_atom_site_type_symbol" in loop_headers:
                     idx_sym = loop_headers.index("_atom_site_type_symbol")
                 elif "_atom_site_label" in loop_headers:
                     idx_sym = loop_headers.index("_atom_site_label")
                 else:
-                    lexit("CIF Error: Cannot find atom symbol or label header.")
+                    lexit("CIF Error: Missing atom symbol header.")
             except ValueError:
                 lexit("CIF Error: Missing fractional coordinate headers.")
 
-            # Read data lines
-            _atom_types = []
-            _frac_coords = []
+            # Store unique atoms after symmetry expansion
+            # Format: list of [symbol_str, frac_x, frac_y, frac_z]
+            _expanded_atoms = [] 
             
             for k in range(loop_start_idx, len(lines)):
                 line = lines[k].strip()
-                # Stop if empty line, comment, new loop, or new tag is encountered
                 if not line or line.startswith("#") or line.startswith("loop_") or line.startswith("_"):
                     if not line: continue 
                     break 
                 
                 parts = line.split()
-                # Simple check if column count is sufficient
                 if len(parts) < len(loop_headers): continue
                 
-                # Parse atomic symbol (remove potential valence or numbers, e.g., Fe2+ -> Fe, C1 -> C)
+                # Parse symbol
                 raw_sym = parts[idx_sym]
                 sym = re.sub(r"[^a-zA-Z]", "", raw_sym)
-                _atom_types.append(sym)
                 
-                # Parse coordinates (remove standard deviation parentheses)
+                # Parse coords
                 try:
-                    x = float(re.sub(r"\(.+\)", "", parts[idx_x]))
-                    y = float(re.sub(r"\(.+\)", "", parts[idx_y]))
-                    z = float(re.sub(r"\(.+\)", "", parts[idx_z]))
-                    _frac_coords.append([x, y, z])
+                    fx = float(re.sub(r"\(.+\)", "", parts[idx_x]))
+                    fy = float(re.sub(r"\(.+\)", "", parts[idx_y]))
+                    fz = float(re.sub(r"\(.+\)", "", parts[idx_z]))
                 except ValueError:
-                    continue # Skip unparseable lines
+                    continue
 
-            self.total_atom = len(_atom_types)
-            _frac_coords = np.array(_frac_coords)
+                # --- 4. Apply Symmetry and Expand ---
+                for op in sym_ops:
+                    new_pos = apply_sym_op(op, fx, fy, fz)
+                    # Wrap to [0, 1)
+                    new_pos = new_pos % 1.0
+                    
+                    # Check for duplicates (Collision detection)
+                    # Simple distance check in fractional coordinates (approximation)
+                    # Ideally should check Cartesian distance, but for deduplication this is usually sufficient
+                    is_duplicate = False
+                    for existing in _expanded_atoms:
+                        if existing[0] == sym: # Only check same element
+                            d = np.abs(new_pos - existing[1])
+                            # Handle periodic boundary for distance (e.g. 0.01 and 0.99 are close)
+                            d = np.minimum(d, 1.0 - d)
+                            if np.sum(d**2) < 1e-4: # Tolerance squared
+                                is_duplicate = True
+                                break
+                    
+                    if not is_duplicate:
+                        _expanded_atoms.append([sym, new_pos[0], new_pos[1], new_pos[2]])
 
-            # 4. Construct self.position matrix
-            # Map atomic symbols to indices
+            # --- 5. Construct Final Position Matrix ---
+            self.total_atom = len(_expanded_atoms)
+            
+            # Convert to numpy arrays
+            _atom_types_list = [x[0] for x in _expanded_atoms]
+            _frac_coords = np.array([x[1:] for x in _expanded_atoms])
+
+            # Map symbols to indices
             try:
-                # Assume database.symbol_map exists and maps strings like 'Fe', 'O' to integers
-                _atom_index = np.array([database.symbol_map[s] for s in _atom_types]).reshape(-1, 1)
+                _atom_index = np.array([database.symbol_map[s] for s in _atom_types_list]).reshape(-1, 1)
             except KeyError as e:
-                lexit(f"CIF Error: Unknown element symbol {e}")
+                # Fallback or specific error
+                print(f"Warning: Unknown symbol {e}, skipping atom.")
+                # Logic to handle error or skip
+                lexit(f"CIF Error: Unknown symbol {e}")
 
-            # Convert fractional coordinates -> Cartesian coordinates
-            # Assume frac2cart(lattice, position) function is available
             _cart_pos = frac2cart(self.lattice9, _frac_coords)
+            _dyn = np.ones((self.total_atom, 3))
             
-            # Set dynamics matrix (default fixed to 1/True)
-            _dyn = np.ones((self.total_atom, 3)) 
-            
-            # Stack data: [index, fx, fy, fz, cx, cy, cz, dx, dy, dz]
             _block = np.hstack((_atom_index, _frac_coords, _cart_pos, _dyn))
-            
-            # Append to self.position (avoiding the initial zeros in row 0)
             self.position = np.vstack((self.position, _block))
+        
         # ================== CIF PARSING END ==================
 
         elif self.calculator == "poscar":
@@ -725,6 +800,43 @@ class struct(object):
 
         # ================== END CIF SUPPORT ==================
         
+        # ================== XYZ WRITE SUPPORT ==================
+        if calculator == "xyz":
+            # 1. Number of atoms
+            _lines.append(f"{self.total_atom}\n")
+            
+            # 2. Comment line (Title)
+            # Ensure title is a string and strip whitespace
+            safe_title = str(self.title).strip()
+            _lines.append(f"{safe_title}\n")
+            
+            # 3. Coordinates
+            # XYZ format enforces Cartesian coordinates, ignoring the 'frac' parameter
+            # self.position structure: [0:Index, 1-3:Frac, 4-6:Cart, 7-9:Dyn]
+            # Note: self.position[0] is a buffer row; data starts from index 1
+            indices = self.position[1:, 0]
+            cart_coords = self.position[1:, 4:7]
+            
+            for i in range(self.total_atom):
+                idx = int(indices[i])
+                
+                # Retrieve symbol directly from database.atom_data
+                # e.g., atom_data[6] = [6, "C", "Carbon", ...] -> atom_data[6][1] is "C"
+                try:
+                    sym = database.atom_data[idx][1]
+                except (IndexError, AttributeError):
+                    # Use "X" as placeholder if atomic number is out of bounds or database error occurs
+                    sym = "X"
+
+                x, y, z = cart_coords[i]
+                
+                # Format: Symbol   X   Y   Z
+                # <4s: Left-aligned, width 4; 12.6f: Float with 6 decimal places
+                _lines.append(f"{sym:<4s} {x:12.6f} {y:12.6f} {z:12.6f}\n")
+        # ================== XYZ WRITE END ==================
+
+
+
         if write2file:
             with open(fpath+"/"+fname, "w", newline="\n") as f:
                 f.writelines(_lines)
