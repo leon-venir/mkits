@@ -704,7 +704,7 @@ def vaspxml_parser(xmlfile,
         )
     for _ in range(len(structure[0][2])):
         rec_basis.append(
-            [float(i) *2*3.14 
+            [float(i) * 2 * np.pi 
              for i in structure[0][2][_].text.split()]
         )
     

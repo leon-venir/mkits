@@ -343,19 +343,26 @@ class struct(object):
                 # --- 4. Apply Symmetry and Expand ---
                 for op in sym_ops:
                     new_pos = apply_sym_op(op, fx, fy, fz)
-                    # Wrap to [0, 1)
+                    # Normalize to [0, 1) interval, handling cases like -0.1 -> 0.9
                     new_pos = new_pos % 1.0
                     
                     # Check for duplicates (Collision detection)
-                    # Simple distance check in fractional coordinates (approximation)
-                    # Ideally should check Cartesian distance, but for deduplication this is usually sufficient
                     is_duplicate = False
                     for existing in _expanded_atoms:
-                        if existing[0] == sym: # Only check same element
-                            d = np.abs(new_pos - existing[1])
-                            # Handle periodic boundary for distance (e.g. 0.01 and 0.99 are close)
-                            d = np.minimum(d, 1.0 - d)
-                            if np.sum(d**2) < 1e-4: # Tolerance squared
+                        if existing[0] == sym: # Only compare atoms of the same element type
+                            # [BUG FIX] Must extract [x, y, z] slice and convert to array; original code 'existing[1]' only retrieved x
+                            existing_pos = np.array(existing[1:], dtype=float)
+                            
+                            # Calculate absolute difference
+                            diff = np.abs(new_pos - existing_pos)
+                            
+                            # Handle Periodic Boundary Conditions (PBC): 
+                            # If diff > 0.5 (e.g., 0.01 vs 0.99), the actual distance should be 1.0 - diff
+                            diff = np.minimum(diff, 1.0 - diff)
+                            
+                            # Calculate the squared Euclidean distance
+                            # Squared threshold of 1e-4 corresponds to ~0.01 fractional distance (approx. 0.05 A for a 5 A cell)
+                            if np.sum(diff**2) < 1e-4: 
                                 is_duplicate = True
                                 break
                     
