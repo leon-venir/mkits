@@ -685,10 +685,20 @@ def vaspxml_parser(xmlfile,
         incar = xmlroot.find("incar")
         atominfo = xmlroot.find("atominfo")
         structure = xmlroot.find("structure")
-        calculation = xmlroot.find("calculation")
+        
+        # [修改] 使用 findall 找到所有 calculation，并取最后一个 [-1]
+        # 注意：如果文件不完整（正在计算中），这也可能报错，但这通常是我们想要的行为（读取最新一步）
+        calculations = xmlroot.findall("calculation")
+        if calculations:
+            calculation = calculations[-1]
+        else:
+            print("Error: No calculation blocks found.")
+            return None
+            
         parameters = xmlroot.find("parameters")      
-    except:
-        print("Error, cannot parse the xmlfile.")
+    except Exception as e:
+        print("Error, cannot parse the xmlfile:", e)
+        return None
     
     # incar
     incartag = {}
@@ -755,7 +765,16 @@ def vaspxml_parser(xmlfile,
         return parameters_dict
   
     elif select_attrib == "final_ene":
-        return float(calculation.find("energy")[-1].text)
+        # 获取 calculation 块中直接子节点的 energy (即该离子步的收敛能量)
+        energy_block = calculation.find("energy")
+        
+        # 在 energy 块中查找名为 "e_0_energy" 的项 (Sigma -> 0)
+        # 如果找不到，再尝试找 e_fr_energy (Free energy) 或回退到 [-1]
+        e_0 = energy_block.find("./i[@name='e_0_energy']")
+        if e_0 is not None:
+            return float(e_0.text)
+        else:
+            return float(energy_block[-1].text)
     
     elif select_attrib == "eigenvalues":
         eigenvalues = calculation.find("eigenvalues")
