@@ -7,6 +7,7 @@ import os
 import sys
 import logging
 import re
+import xml.etree.ElementTree as ET
 from mkits.functions import *
 from mkits.database import *
 from mkits.qe import * 
@@ -147,6 +148,10 @@ class struct(object):
         # xyz (Feature: Line 1 is int, Line 3 has 4 columns like 'C 0.0 0.0 0.0')
         elif len(lines) >= 3 and lines[0].strip().isdigit() and len(lines[2].split()) >= 4:
             self.calculator = "xyz"
+        elif "<?xml" in "".join(lines[:20]) or \
+            "AtomisticTreeRoot" in "".join(lines[:20]) \
+                or "IdentityMapping" in "".join(lines):
+            self.calculator = "xsd"
         else:
             print("Only poscar cif supported.")
 
@@ -392,6 +397,116 @@ class struct(object):
             self.position = np.vstack((self.position, _block))
         
         # ================== CIF PARSING END ==================
+
+        # ================== XSD PARSING START ==================
+        elif self.calculator == "xsd":
+            try:
+                # 1. Parse XML Content
+                # Join lines to form a valid XML string
+                xml_content = "".join(lines)
+                root = ET.fromstring(xml_content)
+                
+                # 2. Determine Structure Type (Crystal vs Molecule)
+                # Crystals in MS usually contain a 'SpaceGroup' tag defining the lattice.
+                # We use root.iter() to search recursively because SpaceGroup can be nested.
+                space_group = None
+                for elem in root.iter():
+                    if "SpaceGroup" in elem.tag:
+                        space_group = elem
+                        break
+                
+                _atom_indices = []
+                _cart_coords = []
+                
+                # --- CASE A: CRYSTAL ---
+                if space_group is not None:
+                    # Parse Lattice Vectors (AVector, BVector, CVector)
+                    # Format in XSD is usually "x,y,z" string
+                    try:
+                        vec_a = list(map(float, space_group.attrib["AVector"].split(",")))
+                        vec_b = list(map(float, space_group.attrib["BVector"].split(",")))
+                        vec_c = list(map(float, space_group.attrib["CVector"].split(",")))
+                        self.lattice9 = np.array([vec_a, vec_b, vec_c])
+                        # Update lattice parameters (a, b, c, alpha, beta, gamma)
+                        self.lattice6 = functions.lattice_conversion(self.lattice9)
+                    except KeyError:
+                        lexit("XSD Error: SpaceGroup found but missing lattice vectors.")
+
+                # --- CASE B: MOLECULE ---
+                else:
+                    # No lattice definition found. Treat as isolated molecule.
+                    # Set a large dummy box (100 A) to avoid singular matrix errors during operations
+                    self.lattice9 = np.eye(3) * 100.0
+                    self.lattice6 = np.array([100.0, 100.0, 100.0, 90.0, 90.0, 90.0])
+
+                # 3. Parse Atoms
+                # Use root.iter() to find ALL Atom3d tags, even those nested in sub-Molecules
+                found_atoms = False
+                for elem in root.iter():
+                    if "Atom3d" in elem.tag:
+                        found_atoms = True
+                        attrib = elem.attrib
+                        
+                        # Get Element Symbol
+                        # Priority: Components -> UserSymbol -> Name
+                        # In the provided file, 'Components' holds the symbol (e.g., "C").
+                        sym = attrib.get("Components")
+                        if not sym:
+                            sym = attrib.get("UserSymbol")
+                        if not sym:
+                            # Fallback: parse Name like "O1" -> "O"
+                            name = attrib.get("Name", "")
+                            sym = re.sub(r"[^a-zA-Z]", "", name)
+                        
+                        # Clean symbol (sometimes Components="C,1" or similar)
+                        if sym and "," in sym:
+                            sym = sym.split(",")[0]
+
+                        # Map to atomic number
+                        if sym in database.symbol_map:
+                            idx = database.symbol_map[sym]
+                        else:
+                            idx = 0 # Mark as unknown
+                        
+                        _atom_indices.append(idx)
+
+                        # Get Coordinates (Cartesian)
+                        # Format is "x,y,z"
+                        if "XYZ" in attrib:
+                            coords = list(map(float, attrib["XYZ"].split(",")))
+                            _cart_coords.append(coords)
+                        else:
+                            # Default to origin if missing
+                            _cart_coords.append([0.0, 0.0, 0.0])
+
+                if not found_atoms:
+                    lexit("XSD Error: No Atom3d tags found.")
+
+                self.total_atom = len(_atom_indices)
+                
+                # 4. Process Coordinates
+                _atom_indices = np.array(_atom_indices).reshape(self.total_atom, 1)
+                _cart_coords = np.array(_cart_coords)
+                
+                # Calculate Fractional Coordinates
+                # For crystals, use lattice conversion.
+                # For molecules, set to 0.0 (or relative to dummy box, but 0 is cleaner for non-periodic)
+                if space_group is not None:
+                    _frac_coords = functions.cart2frac(self.lattice9, _cart_coords)
+                else:
+                    _frac_coords = np.zeros((self.total_atom, 3))
+                
+                # Dynamics (Default: Moveable / 1.0)
+                _dyn = np.ones((self.total_atom, 3))
+
+                # 5. Store in self.position
+                # Stack: [Index, Frac(3), Cart(3), Dyn(3)]
+                _block = np.hstack((_atom_indices, _frac_coords, _cart_coords, _dyn))
+                self.position = np.vstack((self.position, _block))
+
+            except Exception as e:
+                lexit(f"XSD Parsing Error: {e}")
+        
 
         elif self.calculator == "poscar":
             self.title = lines[0][:-1]
