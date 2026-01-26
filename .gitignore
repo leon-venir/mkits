@@ -4,3 +4,4 @@ dist/
 *.egg-info/
 test.ipynb
 output.log
+test/

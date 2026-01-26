@@ -434,7 +434,7 @@ atom_data = [
     [ 13, "Al",  "Aluminium", 26.9815386], # 13
     [ 14, "Si",  "Silicon",   28.0855], # 14
     [ 15, "P",   "Phosphorus", 30.973762], # 15
-    [ 16, "S",   "Sulfur",    32.065], # 16
+    [ 16, "S",   "Sulfur",    32.065, 0], # 16
     [ 17, "Cl",  "Chlorine", 35.453, 0], # 17
     [ 18, "Ar",  "Argon", 39.948], # 18
     [ 19, "K",   "Potassium", 39.0983], # 19
@@ -452,7 +452,7 @@ atom_data = [
     [ 31, "Ga",  "Gallium", 69.723], # 31
     [ 32, "Ge",  "Germanium", 72.64], # 32
     [ 33, "As",  "Arsenic", 74.92160], # 33
-    [ 34, "Se",  "Selenium", 78.96], # 34
+    [ 34, "Se",  "Selenium", 78.96, 0], # 34
     [ 35, "Br",  "Bromine", 79.904], # 35
     [ 36, "Kr",  "Krypton", 83.798], # 36
     [ 37, "Rb",  "Rubidium", 85.4678], # 37
@@ -460,7 +460,7 @@ atom_data = [
     [ 39, "Y",   "Yttrium", 88.90585], # 39
     [ 40, "Zr",  "Zirconium", 91.224], # 40
     [ 41, "Nb",  "Niobium", 92.90638], # 41
-    [ 42, "Mo",  "Molybdenum", 95.96], # 42
+    [ 42, "Mo",  "Molybdenum", 95.96, 2], # 42
     [ 43, "Tc",  "Technetium", None], # 43
     [ 44, "Ru",  "Ruthenium", 101.07, 2], # 44
     [ 45, "Rh",  "Rhodium", 102.90550], # 45
@@ -492,7 +492,7 @@ atom_data = [
     [ 71, "Lu",  "Lutetium", 174.9668], # 71
     [ 72, "Hf",  "Hafnium", 178.49], # 72
     [ 73, "Ta",  "Tantalum", 180.94788], # 73
-    [ 74, "W",   "Tungsten", 183.84], # 74
+    [ 74, "W",   "Tungsten", 183.84, 2], # 74
     [ 75, "Re",  "Rhenium", 186.207], # 75
     [ 76, "Os",  "Osmium", 190.23], # 76
     [ 77, "Ir",  "Iridium", 192.217], # 77
