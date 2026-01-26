@@ -572,8 +572,14 @@ def read_vaspxml(
         rec_basis
         nelectron
         efermi
-        eigenvalues
-        eigenvalues2
+        eigenvalues   -> numpy array (2, NKPOINTS, NBANDS, 2)
+                         [Spin_Index, Kpoint_Index, Band_Index, (Energy, Occ)]
+                         If ISPIN=1, Spin 2 is a copy of Spin 1.
+        totaldos      -> numpy array [Energy, DOS_Spin1, DOS_Spin2]
+                         (If ISPIN=1, DOS_Spin2 is a copy of DOS_Spin1)
+        partialdos    -> numpy array [Energy, Ion1_Spin1, Ion1_Spin2, Ion2_Spin1...]
+                         (If ISPIN=1, Spin2 columns are copies of Spin1)
+        atominfo      -> list of strings ['Fe', 'Fe', 'O', ...] (Length = N_ions)
 
     """
     tree = ET.parse(xml_file)
@@ -598,6 +604,25 @@ def read_vaspxml(
             for i in key.findall('i'):
                 incar[i.attrib.get("name")] = i.text
         return incar
+    
+    # ==========================================
+    # Added: symbol (Extract atom types list)
+    # ==========================================
+    elif select_entry == "symbol":
+        symbols = []
+        # Find the 'atoms' array in 'atominfo'
+        # Structure: <atominfo><array name="atoms"><set><rc><c>Element</c><c>Type</c>...
+        atoms_ref = root.find(".//atominfo/array[@name='atoms']/set")
+        
+        if atoms_ref is not None:
+            for rc in atoms_ref.findall("rc"):
+                # Each row (rc) has columns (c). The first column is the element symbol.
+                # Remove whitespace just in case (e.g., "Fe " -> "Fe")
+                c_tags = rc.findall("c")
+                if c_tags:
+                    element_str = c_tags[0].text.strip()
+                    symbols.append(element_str)
+        return symbols
 
     elif select_entry == "nelectron":
         return float(
@@ -607,7 +632,14 @@ def read_vaspxml(
         )
 
     elif select_entry == "efermi":
-        pass
+        # Usually found in <dos><i name="efermi">
+        efermi_tag = root.find(".//dos/i[@name='efermi']")
+        if efermi_tag is not None:
+            return float(efermi_tag.text.strip())
+        else:
+            # Fallback
+            tag = root.find(".//calculation/dos/i[@name='efermi']")
+            return float(tag.text.strip()) if tag is not None else 0.0
 
     elif select_entry == "lattice_basis":
         lattice_basis = []
@@ -636,31 +668,131 @@ def read_vaspxml(
                 atom_position.append([float(x) for x in v.text.split()])
         return np.array(atom_position)
     
-    elif select_entry =="eigenvalues":
-        kpoint_num = len(read_vaspxml(xml_file, "kpointlist"))
+    # ==========================================
+    # Modified: eigenvalues (Merged & Auto-Copy)
+    # ==========================================
+    elif select_entry == "eigenvalues":
+        # Get number of kpoints to reshape correctly
+        kpointlist = read_vaspxml(xml_file, "kpointlist")
+        kpoint_num = len(kpointlist) if kpointlist is not None else 0
+        
+        # 1. Parse Spin 1
         eigenvalues_1 = []
-        for setspin in root.findall(
-            ".//calculation//eigenvalues//array//set//set[@comment='spin 1']"
-        ):
-            for setkpoint in setspin.findall(".//set"):
+        spin1_node = root.find(".//calculation/eigenvalues/array/set/set[@comment='spin 1']")
+        
+        if spin1_node is not None:
+            for setkpoint in spin1_node.findall(".//set"):
                 for r in setkpoint.findall('r'):
+                    # Each r.text is like "energy occupation"
                     eigenvalues_1.append([float(x) for x in r.text.split()])
-        return np.array(eigenvalues_1).reshape(kpoint_num, -1, 2)
-    
-    elif select_entry =="eigenvalues2":
-        kpoint_num = len(read_vaspxml(xml_file, "kpointlist"))
-        eigenvalues_1 = []
-        for setspin in root.findall(
-            ".//calculation//eigenvalues//array//set//set[@comment='spin 2']"
-        ):
-            for setkpoint in setspin.findall(".//set"):
-                for r in setkpoint.findall('r'):
-                    eigenvalues_1.append([float(x) for x in r.text.split()])
-        return np.array(eigenvalues_1).reshape(kpoint_num, -1, 2)
+            # Reshape: (NKPOINTS, NBANDS, 2)
+            data_spin1 = np.array(eigenvalues_1).reshape(kpoint_num, -1, 2)
+        else:
+            return np.array([]) # Return empty if no eigenvalues found
 
+        # 2. Parse Spin 2
+        eigenvalues_2 = []
+        spin2_node = root.find(".//calculation/eigenvalues/array/set/set[@comment='spin 2']")
+        
+        if spin2_node is not None:
+            for setkpoint in spin2_node.findall(".//set"):
+                for r in setkpoint.findall('r'):
+                    eigenvalues_2.append([float(x) for x in r.text.split()])
+            # Reshape: (NKPOINTS, NBANDS, 2)
+            data_spin2 = np.array(eigenvalues_2).reshape(kpoint_num, -1, 2)
+        else:
+            # COPY Spin 1 if Spin 2 is missing
+            data_spin2 = data_spin1.copy()
+
+        # 3. Stack into a single array
+        # Shape: (2, NKPOINTS, NBANDS, 2)
+        # Index 0 -> Spin 1, Index 1 -> Spin 2
+        return np.stack((data_spin1, data_spin2), axis=0)
+
+    # ==========================================
+    # Modified: totaldos (Force 3 columns)
+    # ==========================================
+    elif select_entry == "totaldos":
+        # Find the total DOS block
+        dos_total = root.find(".//calculation/dos/total/array/set")
+        if dos_total is None: return np.array([])
+
+        # Spin 1
+        spin1_node = dos_total.find("./set[@comment='spin 1']")
+        data_spin1 = []
+        if spin1_node is not None:
+            for r in spin1_node.findall("r"):
+                data_spin1.append([float(x) for x in r.text.split()])
+        data_spin1 = np.array(data_spin1) # [Energy, DOS, IntDOS]
+        
+        # Spin 2
+        spin2_node = dos_total.find("./set[@comment='spin 2']")
+        if spin2_node is not None:
+            data_spin2 = []
+            for r in spin2_node.findall("r"):
+                data_spin2.append([float(x) for x in r.text.split()])
+            data_spin2 = np.array(data_spin2)
+            dos_down = data_spin2[:, 1]
+        else:
+            # COPY Spin 1 as Spin 2 if not enabled
+            dos_down = data_spin1[:, 1]
+            
+        # Return: [Energy, Up, Down]
+        return np.column_stack((data_spin1[:, 0], data_spin1[:, 1], dos_down))
+
+    # ==========================================
+    # Modified: partialdos (Force shape consistency)
+    # ==========================================
+    elif select_entry == "partialdos":
+        # Find the partial DOS block
+        dos_partial = root.find(".//calculation/dos/partial/array/set")
+        if dos_partial is None: return np.array([])
+        
+        all_data = []
+        energy_col = None
+        
+        # Iterate over ions
+        for ion_set in dos_partial.findall("set"):
+            # ion_comment = ion_set.get("comment") # e.g. "ion 1"
+            
+            # Spin 1
+            spin1_node = ion_set.find("./set[@comment='spin 1']")
+            s1_data = []
+            if spin1_node is not None:
+                for r in spin1_node.findall("r"):
+                    s1_data.append([float(x) for x in r.text.split()])
+            s1_data = np.array(s1_data)
+            
+            # Capture energy from the first ion
+            if energy_col is None:
+                energy_col = s1_data[:, 0]
+            
+            # Append Spin 1 orbitals (s, p, d...)
+            all_data.append(s1_data[:, 1:])
+            
+            # Spin 2
+            spin2_node = ion_set.find("./set[@comment='spin 2']")
+            if spin2_node is not None:
+                s2_data = []
+                for r in spin2_node.findall("r"):
+                    s2_data.append([float(x) for x in r.text.split()])
+                s2_data = np.array(s2_data)
+                # Append Spin 2 orbitals
+                all_data.append(s2_data[:, 1:])
+            else:
+                # COPY Spin 1 orbitals as Spin 2
+                all_data.append(s1_data[:, 1:])
+
+        # Flatten: [Energy, Ion1_S1, Ion1_S2, Ion2_S1, Ion2_S2 ...]
+        if all_data:
+            flat_orbitals = np.hstack(all_data)
+            return np.column_stack((energy_col, flat_orbitals))
+        else:
+            return np.array([])
     
     else:
-        print("Available Entry: ")
+        print("Available Entry: lattice_basis, atom_position, rec_basis, nelectron, efermi, eigenvalues, eigenvalues2, totaldos, partialdos")
+        return None
 
 
 def vaspxml_parser(xmlfile,
