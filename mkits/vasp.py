@@ -828,10 +828,124 @@ def read_vaspxml(
         return None
 
 
-def dos_extractor(
+def band_extractor(
         xmlfile="vasprun.xml", 
         shift_fermi=True, 
         write_data=True
+):
+    """
+    Extract band structure data (K-path and Eigenvalues).
+
+    Returns:
+    --------
+    np.array
+        Columns: [Kpath, Spin1_Band1, Spin1_Band2..., Spin2_Band1, Spin2_Band2...]
+        Units: 1/Angstrom for Kpath, eV for Energy.
+    """
+    
+    # 1. Read Data
+    lattice_basis = read_vaspxml(xmlfile, "lattice_basis") # Real space basis (Angstrom)
+    kpointlist = read_vaspxml(xmlfile, "kpointlist")       # Fractional coordinates
+    eigenvalues = read_vaspxml(xmlfile, "eigenvalues")     # Shape: (2, NK, NB, 2)
+    efermi = read_vaspxml(xmlfile, "efermi")
+    
+    if kpointlist is None or len(kpointlist) == 0:
+        print("Error: No kpoints found.")
+        return None
+
+    # 2. Calculate Reciprocal Lattice (Physics convention with 2*pi)
+    # B = 2*pi * (A^-1).T
+    # This ensures units are 1/Angstrom
+    rec_metric = 2 * np.pi * np.linalg.inv(lattice_basis).T
+    
+    # 3. Calculate K-path (Cumulative Distance)
+    kpath = [0.0]
+    high_sym_points = [0.0] # Always include start point
+    
+    # Convert all kpoints to Cartesian coordinates first
+    # k_cart = k_frac @ rec_metric
+    k_cart = kpointlist @ rec_metric
+    
+    for i in range(1, len(k_cart)):
+        # Distance between current and previous k-point
+        dist = np.linalg.norm(k_cart[i] - k_cart[i-1])
+        kpath.append(kpath[-1] + dist)
+        
+        # Detect High Symmetry Points (Kinks)
+        # Check if the direction of the path changes
+        if i < len(k_cart) - 1:
+            vec_prev = k_cart[i] - k_cart[i-1]
+            vec_next = k_cart[i+1] - k_cart[i]
+            
+            # Normalize vectors to check angle
+            norm_prev = np.linalg.norm(vec_prev)
+            norm_next = np.linalg.norm(vec_next)
+            
+            if norm_prev > 1e-5 and norm_next > 1e-5:
+                # Cosine similarity
+                cos_angle = np.dot(vec_prev, vec_next) / (norm_prev * norm_next)
+                # If angle deviates significantly from 0 degrees (cos < 0.999), it's a kink
+                if cos_angle < 0.999:
+                    high_sym_points.append(kpath[-1])
+    
+    # Add the final point as a high symmetry point
+    high_sym_points.append(kpath[-1])
+    
+    kpath = np.array(kpath)
+
+    # 4. Process Eigenvalues
+    # eigenvalues shape: (Spin, Kpoints, Bands, 2) -> Last dim is [Energy, Occ]
+    # We only need Energy (index 0)
+    
+    # Extract Spin 1 Energies
+    # Shape: (NK, NB)
+    bands_spin1 = eigenvalues[0, :, :, 0]
+    
+    # Extract Spin 2 Energies
+    # read_vaspxml guarantees shape consistency (duplicates spin1 if ispin=1)
+    bands_spin2 = eigenvalues[1, :, :, 0]
+    
+    # Shift Fermi Level
+    if shift_fermi:
+        bands_spin1 -= efermi
+        bands_spin2 -= efermi
+
+    # 5. Construct Final Array
+    # Columns: Kpath, S1_B1, S1_B2..., S2_B1, S2_B2...
+    final_data = np.column_stack((kpath, bands_spin1, bands_spin2))
+    
+    # 6. Write Data
+    if write_data:
+        nbands = bands_spin1.shape[1]
+        
+        # Format Comment Lines
+        # Line 1: High Symmetry Points locations
+        high_sym_str = " ".join([f"{x:.5f}" for x in high_sym_points])
+        comment_line1 = f"# High Symmetry Points (Kpath): {high_sym_str}"
+        
+        # Line 2: Column Headers
+        headers = ["Kpath"] + \
+                  [f"Spin1_Band{i+1}" for i in range(nbands)] + \
+                  [f"Spin2_Band{i+1}" for i in range(nbands)]
+        comment_line2 = "# " + " ".join([f"{h:>12s}" for h in headers])
+        
+        filename = "band.dat"
+        with open(filename, "w") as f:
+            f.write(comment_line1 + "\n")
+            f.write(comment_line2 + "\n")
+            np.savetxt(f, final_data, fmt="%15.8f")
+            
+        print(f"Band structure saved to {filename}")
+        print(f"High symmetry points found at: {high_sym_str}")
+
+    return final_data
+
+
+def dos_extractor(
+        xmlfile="vasprun.xml", 
+        shift_fermi=True, 
+        write_data=True,
+        write_to="dos.dat"
 ):
     """
     Extract DOS data from vasprun.xml.
@@ -1004,7 +1118,7 @@ def dos_extractor(
         # Line 2: Headers
         headers_line = "# " + " ".join([f"{h:>15s}" for h in final_headers])
         
-        with open("dos.dat", "w") as f:
+        with open(write_to, "w") as f:
             f.write(indices_line + "\n")
             f.write(headers_line + "\n")
             np.savetxt(f, final_array, fmt="%16.8e")

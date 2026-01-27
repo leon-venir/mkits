@@ -176,7 +176,7 @@ qe_rism_key = [
 incar_tag = [
     "ENCUT", "PREC", "ALGO", "ISMEAR", "SIGMA", "ISTART", "NELM", "LWAVE", 
     "LREAL", "AMIX", "NFREE", "BMIX", "NCORE", "NELECT", "IOPTCELL", "LAECHG",
-    "LELF", "TIME", "LCHARG",
+    "LELF", "TIME", "LCHARG", "AMIN",
     # dos band
     "ICHARG", "EMIN", "EMAX", "NEDOS", "LORBIT",
     # DFT+U
@@ -470,7 +470,7 @@ atom_data = [
     [ 49, "In",  "Indium", 114.818], # 49
     [ 50, "Sn",  "Tin", 118.710], # 50
     [ 51, "Sb",  "Antimony", 121.760], # 51
-    [ 52, "Te",  "Tellurium", 127.60], # 52
+    [ 52, "Te",  "Tellurium", 127.60, 0], # 52
     [ 53, "I",   "Iodine", 126.90447], # 53
     [ 54, "Xe",  "Xenon", 131.293], # 54
     [ 55, "Cs",  "Caesium", 132.9054519], # 55
