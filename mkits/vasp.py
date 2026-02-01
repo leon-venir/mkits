@@ -945,33 +945,35 @@ def dos_extractor(
         xmlfile="vasprun.xml", 
         shift_fermi=True, 
         write_data=True,
-        write_to="dos.dat"
+        write_to="dos.dat",
+        ldos=True
 ):
     """
     Extract DOS data from vasprun.xml.
     
-    Output columns structure:
+    Parameters:
+    -----------
+    ldos : bool
+        If True: Output DOS for every single ion (e.g., Fe1_s, Fe2_s...).
+        If False: Sum DOS by element type (e.g., Fe_s, O_s...).
+    
+    Output columns structure (if ldos=False):
     Energy, 
-    Spin1_Total, Spin1_Ion1_Total..., Spin1_Ion1_s, Spin1_Ion1_p, Spin1_Ion1_px..., 
-    Spin2_Total, Spin2_Ion1_Total..., Spin2_Ion1_s...
+    Spin1_Total, Spin1_Elem1_Total, Spin1_Elem1_s..., Spin1_Elem2_Total...
     """
     
-    # 1. Read Data using existing read_vaspxml
-    # We assume read_vaspxml is already defined in the environment
+    # 1. Read Data
     efermi = read_vaspxml(xmlfile, "efermi")
-    total_dos = read_vaspxml(xmlfile, "totaldos")     # [Energy, Up, Down]
-    partial_dos = read_vaspxml(xmlfile, "partialdos") # [Energy, Ion1_S1..., Ion1_S2...]
-    symbols = read_vaspxml(xmlfile, "symbol")         # ['Fe', 'O'...]
-    raw_labels = read_vaspxml(xmlfile, "orbital")     # ['Fe1-s-spin1', 'Fe1-py-spin1'...]
+    total_dos = read_vaspxml(xmlfile, "totaldos")     
+    partial_dos = read_vaspxml(xmlfile, "partialdos") 
+    symbols = read_vaspxml(xmlfile, "symbol")         
+    raw_labels = read_vaspxml(xmlfile, "orbital")     
     
     if total_dos is None or len(total_dos) == 0:
         print("Error: No DOS data found.")
         return None
 
     # 2. Parse Orbital Structure
-    # Determine the raw orbitals from the first ion's Spin 1 labels
-    # raw_labels format example: "Fe1-s-spin1", "Fe1-py-spin1"
-    # We define standard groups to sum up
     orb_groups = {
         's': ['s'],
         'p': ['p', 'px', 'py', 'pz'],
@@ -980,53 +982,34 @@ def dos_extractor(
     }
     
     # Identify which orbitals are present in the raw data
-    # We take the first len(raw_labels)/(2*n_ions) labels to represent one block
     n_ions = len(symbols)
     if n_ions > 0:
         n_cols_per_spin_ion = len(raw_labels) // (2 * n_ions)
-        # Extract the orbital names (e.g., 's', 'py') from the first block
         sample_labels = raw_labels[:n_cols_per_spin_ion]
-        # Format: "SymIdx-OrbName-spin1" -> extract OrbName
         raw_orb_names = [l.split('-')[1] for l in sample_labels]
     else:
         raw_orb_names = []
         n_cols_per_spin_ion = 0
 
-    # 3. Define Output Columns Logic
-    # We want to insert 'Total' (sum of p) before 'px, py, pz' if decomposed
+    # 3. Define Output Columns Order (e.g., s, p, px, py...)
     output_orb_order = []
     
-    # Check s
-    if 's' in raw_orb_names:
-        output_orb_order.append('s')
+    if 's' in raw_orb_names: output_orb_order.append('s')
         
-    # Check p
     p_sub = [o for o in raw_orb_names if o in orb_groups['p']]
     if p_sub:
-        # If we have components but not the sum 'p', we add 'p' to output list
-        if 'p' not in p_sub and len(p_sub) > 1:
-            output_orb_order.append('p') # This will be a calculated sum
-        # Add existing raw components (sorted for consistency: p, px, py, pz)
-        # Usually VASP gives py, pz, px. We stick to VASP order or sort? 
-        # User asked for "p, px, py...", let's sort p-components if possible, or keep VASP order
-        # To match user request "px, py...", we sort them.
+        if 'p' not in p_sub and len(p_sub) > 1: output_orb_order.append('p') 
         p_sorted = sorted(p_sub, key=lambda x: ['p', 'px', 'py', 'pz'].index(x) if x in ['p', 'px', 'py', 'pz'] else 99)
         output_orb_order.extend(p_sorted)
 
-    # Check d
     d_sub = [o for o in raw_orb_names if o in orb_groups['d']]
     if d_sub:
-        if 'd' not in d_sub and len(d_sub) > 1:
-            output_orb_order.append('d')
-        # Keep VASP order for d usually, or sort if specific order needed. 
-        # We append them as they appear in raw to avoid confusion, or specific standard order
+        if 'd' not in d_sub and len(d_sub) > 1: output_orb_order.append('d')
         output_orb_order.extend([o for o in raw_orb_names if o in d_sub])
 
-    # Check f
     f_sub = [o for o in raw_orb_names if o in orb_groups['f']]
     if f_sub:
-        if 'f' not in f_sub and len(f_sub) > 1:
-            output_orb_order.append('f')
+        if 'f' not in f_sub and len(f_sub) > 1: output_orb_order.append('f')
         output_orb_order.extend([o for o in raw_orb_names if o in f_sub])
 
     # 4. Construct Data Array
@@ -1037,28 +1020,20 @@ def dos_extractor(
     final_data_columns = [energy]
     final_headers = ["Energy"]
     
-    # Helper to get data for a specific ion, spin, and orbital name
-    # partial_dos structure: [Energy, Ion1_S1_cols..., Ion1_S2_cols..., Ion2_S1...]
+    # --- Inner Helper Functions ---
     def get_raw_col(ion_idx, spin_idx, orb_name):
-        # spin_idx: 0 for spin1, 1 for spin2
-        # block start index in partial_dos (skipping energy col 0)
         block_len = n_cols_per_spin_ion
         start_idx = 1 + ion_idx * (2 * block_len) + spin_idx * block_len
-        
         if orb_name in raw_orb_names:
             rel_idx = raw_orb_names.index(orb_name)
             return partial_dos[:, start_idx + rel_idx]
         else:
             return np.zeros_like(energy)
 
-    # Helper to calculate derived column (e.g. 'p' total)
     def get_derived_col(ion_idx, spin_idx, out_orb_name):
-        # If it exists in raw, return it
         if out_orb_name in raw_orb_names:
             return get_raw_col(ion_idx, spin_idx, out_orb_name)
         
-        # Calculate Sum (e.g. p = px + py + pz)
-        # Find which group this orbital belongs to
         target_group = None
         for g_name, g_members in orb_groups.items():
             if out_orb_name == g_name:
@@ -1066,7 +1041,6 @@ def dos_extractor(
                 break
         
         if target_group:
-            # Sum all members present in raw data
             sum_data = np.zeros_like(energy)
             found_any = False
             for member in target_group:
@@ -1074,48 +1048,76 @@ def dos_extractor(
                     sum_data += get_raw_col(ion_idx, spin_idx, member)
                     found_any = True
             return sum_data if found_any else np.zeros_like(energy)
-        
         return np.zeros_like(energy)
 
     # --- Build Columns ---
-    # We process Spin 1 then Spin 2
     spin_names = ["spin1", "spin2"]
     
     for s_idx, s_name in enumerate(spin_names):
-        # 1. Total DOS for this spin
-        # total_dos is [Energy, Up, Down] -> idx 1 is Up(Spin1), idx 2 is Down(Spin2)
+        # 1. System Total DOS
         tdos_col = total_dos[:, s_idx + 1]
         final_data_columns.append(tdos_col)
         final_headers.append(f"{s_name}_Total")
         
-        # Loop Ions
-        for i_idx, sym in enumerate(symbols):
-            prefix = f"{s_name}_{sym}{i_idx+1}"
+        # ---------------------------------------------------------
+        # Branch 1: LDOS = True (Per Ion)
+        # ---------------------------------------------------------
+        if ldos:
+            for i_idx, sym in enumerate(symbols):
+                prefix = f"{s_name}_{sym}{i_idx+1}"
+                
+                # Ion Total
+                ion_total = np.zeros_like(energy)
+                for raw_o in raw_orb_names:
+                    ion_total += get_raw_col(i_idx, s_idx, raw_o)
+                
+                final_data_columns.append(ion_total)
+                final_headers.append(f"{prefix}_Total")
+                
+                # Ion Orbitals
+                for orb in output_orb_order:
+                    data_col = get_derived_col(i_idx, s_idx, orb)
+                    final_data_columns.append(data_col)
+                    final_headers.append(f"{prefix}_{orb}")
+
+        # ---------------------------------------------------------
+        # Branch 2: LDOS = False (Per Element) [NEW]
+        # ---------------------------------------------------------
+        else:
+            # Get unique elements preserving order (e.g. Fe, O)
+            unique_elements = sorted(list(set(symbols)), key=symbols.index)
             
-            # 2. Ion Total (Sum of all raw orbitals for this ion/spin)
-            # Calculate ion total
-            ion_total = np.zeros_like(energy)
-            for raw_o in raw_orb_names:
-                ion_total += get_raw_col(i_idx, s_idx, raw_o)
-            
-            final_data_columns.append(ion_total)
-            final_headers.append(f"{prefix}_Total")
-            
-            # 3. Orbitals
-            for orb in output_orb_order:
-                data_col = get_derived_col(i_idx, s_idx, orb)
-                final_data_columns.append(data_col)
-                final_headers.append(f"{prefix}_{orb}")
+            for elem in unique_elements:
+                prefix = f"{s_name}_{elem}"
+                
+                # Identify indices of this element
+                # indices = [0, 1] for Fe, [2, 3, 4] for O
+                ion_indices = [i for i, s in enumerate(symbols) if s == elem]
+                
+                # Element Total (Sum of all orbitals for all ions of this element)
+                elem_total = np.zeros_like(energy)
+                for i_idx in ion_indices:
+                    for raw_o in raw_orb_names:
+                        elem_total += get_raw_col(i_idx, s_idx, raw_o)
+                
+                final_data_columns.append(elem_total)
+                final_headers.append(f"{prefix}_Total")
+                
+                # Element Orbitals (Sum specific orbital across all ions of this element)
+                for orb in output_orb_order:
+                    elem_orb_sum = np.zeros_like(energy)
+                    for i_idx in ion_indices:
+                        elem_orb_sum += get_derived_col(i_idx, s_idx, orb)
+                    
+                    final_data_columns.append(elem_orb_sum)
+                    final_headers.append(f"{prefix}_{orb}")
 
     # Combine
     final_array = np.column_stack(final_data_columns)
     
     # 5. Write Data
     if write_data:
-        # Create comment lines
-        # Line 1: Indices
         indices_line = "# " + " ".join([f"{i:>15d}" for i in range(len(final_headers))])
-        # Line 2: Headers
         headers_line = "# " + " ".join([f"{h:>15s}" for h in final_headers])
         
         with open(write_to, "w") as f:
@@ -1755,7 +1757,7 @@ The reasonable range is 0 ~ 4.
                                         database.atom_data[int(atomic_index[i])][4])
         incar["MAGMOM"] = magtag
     elif not mag and soc:
-        pass
+        incar["LSORBIT"] = ".TRUE."
     elif mag and soc:
         pass
     else:
