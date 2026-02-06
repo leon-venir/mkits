@@ -4,6 +4,7 @@ import spglib as spg
 import os
 import sys
 import logging
+import copy
 import xml.etree.ElementTree as ET
 from mkits import structure
 from mkits import functions
@@ -1572,6 +1573,140 @@ def vasp_single_atom_ground(
     
     """
     pass
+
+
+def vasp_gen_optshape(
+        shape="ab-c",
+        range=[-0.05, 0.05, 11],
+        **kwargs
+):
+    """
+    Generate shaped structures (lattice distortions) and use vasp_gen_input 
+    to generate input files.
+    
+    Structures are saved in 'wpath/model/' directory.
+    Calculations are generated in 'wpath/job_name/' directories.
+
+    Parameters:
+    -----------
+    shape: str 
+        Distortion mode (Volume is conserved):
+        "a-b"  : Fix c, vary a/b ratio. (a stretches, b compresses)
+        "b-c"  : Fix a, vary b/c ratio. (b stretches, c compresses)
+        "a-c"  : Fix b, vary a/c ratio. (a stretches, c compresses)
+        "ab-c" : Vary c vs a&b. (c stretches, a&b compress equally) - Typical for Tetragonal/Hexagonal c/a.
+        "bc-a" : Vary a vs b&c. (a stretches, b&c compress equally).
+        "ac-b" : Vary b vs a&c. (b stretches, a&c compress equally).
+
+    range: list
+        [min_strain, max_strain, steps]. 
+        Example: [-0.05, 0.05, 11]
+
+    **kwargs:
+        Passed to vasp_gen_input. 
+        'wpath': Working path root.
+        'poscar': Initial structure file path.
+    """
+    
+    # 1. Setup Directories
+    # Get working path from kwargs, default to current directory
+    wpath = kwargs.get("wpath", "./")
+    wpath = os.path.abspath(wpath) # Ensure absolute path for safety
+    
+    # Create the model directory to store all deformed POSCARs
+    model_dir = os.path.join(wpath, "model")
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
+
+    # 2. Parse Range & Load Structure
+    strain_min, strain_max, steps = range
+    strains = np.linspace(strain_min, strain_max, int(steps))
+
+    poscar_input = kwargs.get("poscar", "POSCAR")
+    
+    try:
+        ori_struct = structure.struct(poscar_input)
+    except Exception as e:
+        print(f"Error loading structure {poscar_input}: {e}")
+        return
+
+    print(f"Starting Shape Optimization Generation...")
+    print(f"Mode: {shape}, Range: {range}")
+    print(f"Structures will be saved to: {model_dir}")
+
+    # 3. Iterate through strains
+    for strain in strains:
+        current_struct = copy.deepcopy(ori_struct)
+        
+        # Strain factor F = 1 + delta
+        F = 1.0 + strain
+        
+        # --- Apply Distortion (Volume Conserving) ---
+        # Modify lattice6 directly, then update lattice9
+        if shape == "a-b":
+            current_struct.lattice6[0] *= F          
+            current_struct.lattice6[1] *= (1.0 / F)  
+        elif shape == "b-c":
+            current_struct.lattice6[1] *= F
+            current_struct.lattice6[2] *= (1.0 / F)
+        elif shape == "a-c":
+            current_struct.lattice6[0] *= F
+            current_struct.lattice6[2] *= (1.0 / F)
+        elif shape == "ab-c":
+            # c varies by F, a and b vary by 1/sqrt(F)
+            current_struct.lattice6[2] *= F
+            scale_perp = 1.0 / np.sqrt(F)
+            current_struct.lattice6[0] *= scale_perp
+            current_struct.lattice6[1] *= scale_perp
+        elif shape == "bc-a":
+            current_struct.lattice6[0] *= F
+            scale_perp = 1.0 / np.sqrt(F)
+            current_struct.lattice6[1] *= scale_perp
+            current_struct.lattice6[2] *= scale_perp
+        elif shape == "ac-b":
+            current_struct.lattice6[1] *= F
+            scale_perp = 1.0 / np.sqrt(F)
+            current_struct.lattice6[0] *= scale_perp
+            current_struct.lattice6[2] *= scale_perp
+        else:
+            print(f"Error: Unknown shape mode '{shape}'")
+            return
+
+        # Update Cartesian Lattice matrix
+        current_struct.lattice9 = functions.lattice_conversion(current_struct.lattice6)
+
+        # --- Generate Files ---
+        strain_label = f"{F:.3f}"
+        job_name = f"shape_{shape}_{strain_label}"
+        
+        # 1. Write the deformed POSCAR to wpath/model/
+        # Filename example: POSCAR_shape_ab-c_1.050
+        poscar_fname = f"POSCAR_{job_name}"
+        current_struct.write_struct(
+            fpath=model_dir, 
+            fname=poscar_fname, 
+            calculator="poscar"
+        )
+        
+        # 2. Call vasp_gen_input
+        # We assume vasp_gen_input handles wpath joining (wpath + wname)
+        print(f"  -> Generating job: {job_name}")
+        
+        step_kwargs = kwargs.copy()
+        
+        # Critical Update: Point 'poscar' to the file we just saved in the model directory
+        # Using absolute path ensures vasp_gen_input can find it regardless of where it's running
+        step_kwargs['poscar'] = os.path.join(model_dir, poscar_fname)
+        
+        # Set the sub-directory name for the calculation
+        step_kwargs['wname'] = job_name
+        
+        # Ensure wpath is passed correctly (though it's likely already in kwargs)
+        step_kwargs['wpath'] = wpath
+        
+        vasp_gen_input(**step_kwargs)
+
+    print(f"Done. {len(strains)} jobs generated in {wpath}.")
 
 
 def vasp_gen_input(
