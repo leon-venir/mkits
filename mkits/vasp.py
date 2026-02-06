@@ -950,172 +950,289 @@ def dos_extractor(
 ):
     """
     Extract DOS data from vasprun.xml.
+    Optimized for memory usage using iterative parsing (iterparse).
     
     Parameters:
     -----------
     ldos : bool
         If True: Output DOS for every single ion (e.g., Fe1_s, Fe2_s...).
         If False: Sum DOS by element type (e.g., Fe_s, O_s...).
-    
-    Output columns structure (if ldos=False):
-    Energy, 
-    Spin1_Total, Spin1_Elem1_Total, Spin1_Elem1_s..., Spin1_Elem2_Total...
     """
     
-    # 1. Read Data
-    efermi = read_vaspxml(xmlfile, "efermi")
-    total_dos = read_vaspxml(xmlfile, "totaldos")     
-    partial_dos = read_vaspxml(xmlfile, "partialdos") 
-    symbols = read_vaspxml(xmlfile, "symbol")         
-    raw_labels = read_vaspxml(xmlfile, "orbital")     
+    # --- 1. Initialization ---
+    efermi = 0.0
+    symbols = []
+    raw_labels = [] # Stores 's', 'px', 'py' etc. directly
     
-    if total_dos is None or len(total_dos) == 0:
+    # Data containers
+    total_dos_s1 = []
+    total_dos_s2 = []
+    
+    # partial_data dictionary: 
+    # If ldos=True: keys are (ion_idx_start_1, spin_idx) -> numpy array
+    # If ldos=False: keys are (element_str, spin_idx) -> numpy array
+    partial_data = {}
+    
+    # State tracking
+    section = None
+    current_ion = 0
+    
+    # --- 2. Iterative Parsing (Memory Efficient) ---
+    for event, elem in ET.iterparse(xmlfile, events=("start", "end")):
+        if event == "start":
+            if elem.tag == "array" and elem.get("name") == "atoms":
+                section = "atoms"
+            elif elem.tag == "total":
+                section = "total_dos"
+            elif elem.tag == "partial":
+                section = "partial_dos"
+            elif section == "partial_dos" and elem.tag == "set":
+                comment = elem.get("comment", "")
+                if "ion" in comment:
+                    try:
+                        current_ion = int(comment.split()[-1])
+                    except: pass
+        
+        elif event == "end":
+            # Parse Fermi Energy
+            if elem.tag == "i" and elem.get("name") == "efermi":
+                try: efermi = float(elem.text.strip())
+                except: pass
+            
+            # Parse Atom Symbols
+            elif section == "atoms" and elem.tag == "rc":
+                cols = elem.findall("c")
+                if cols:
+                    symbols.append(cols[0].text.strip())
+                elem.clear()
+            
+            elif section == "atoms" and elem.tag == "array":
+                section = None
+            
+            # Parse Total DOS
+            elif section == "total_dos" and elem.tag == "set":
+                comment = elem.get("comment", "")
+                if "spin 1" in comment:
+                    for r in elem.findall("r"):
+                        total_dos_s1.append([float(x) for x in r.text.split()])
+                elif "spin 2" in comment:
+                    for r in elem.findall("r"):
+                        total_dos_s2.append([float(x) for x in r.text.split()])
+                elem.clear()
+            
+            elif section == "total_dos" and elem.tag == "total":
+                section = None
+            
+            # Parse Partial DOS Labels (Orbitals)
+            elif section == "partial_dos" and elem.tag == "field":
+                label = elem.text.strip()
+                if "energy" not in label.lower():
+                    raw_labels.append(label)
+            
+            # Parse Partial DOS Data
+            elif section == "partial_dos" and elem.tag == "set":
+                comment = elem.get("comment", "")
+                if "spin" in comment:
+                    spin_idx = int(comment.split()[-1])
+                    
+                    # Parse data block
+                    block = []
+                    for r in elem.findall("r"):
+                        block.append([float(x) for x in r.text.split()])
+                    block = np.array(block)
+                    
+                    if ldos:
+                        # Key: (Ion Index, Spin)
+                        partial_data[(current_ion, spin_idx)] = block
+                    else:
+                        # Key: (Element Symbol, Spin)
+                        # Ensure current_ion is valid
+                        if 0 < current_ion <= len(symbols):
+                            elem_sym = symbols[current_ion - 1]
+                            key = (elem_sym, spin_idx)
+                            
+                            if key not in partial_data:
+                                partial_data[key] = block
+                            else:
+                                # Add orbitals (skip energy column 0)
+                                if partial_data[key].shape == block.shape:
+                                    partial_data[key][:, 1:] += block[:, 1:]
+                    
+                    elem.clear()
+                elif "ion" in comment:
+                    elem.clear()
+            
+            elif elem.tag == "partial":
+                section = None
+            
+            # Clear elements to free memory
+            if elem.tag in ["set", "r", "rc", "c", "i", "v", "field", "array", "varray"]:
+                elem.clear()
+
+    # --- 3. Post-Processing & Organization ---
+    
+    if not total_dos_s1:
         print("Error: No DOS data found.")
         return None
+        
+    # Convert lists to numpy arrays
+    total_dos_s1 = np.array(total_dos_s1)
+    if not total_dos_s2:
+        total_dos_s2 = total_dos_s1.copy()
+    else:
+        total_dos_s2 = np.array(total_dos_s2)
+        
+    energy = total_dos_s1[:, 0]
+    if shift_fermi:
+        energy -= efermi
 
-    # 2. Parse Orbital Structure
+    # Orbital definitions
     orb_groups = {
         's': ['s'],
         'p': ['p', 'px', 'py', 'pz'],
         'd': ['d', 'dxy', 'dyz', 'dz2', 'dxz', 'x2-y2'],
         'f': ['f', 'f-3', 'f-2', 'f-1', 'f0', 'f1', 'f2', 'f3']
     }
-    
-    # Identify which orbitals are present in the raw data
-    n_ions = len(symbols)
-    if n_ions > 0:
-        n_cols_per_spin_ion = len(raw_labels) // (2 * n_ions)
-        sample_labels = raw_labels[:n_cols_per_spin_ion]
-        raw_orb_names = [l.split('-')[1] for l in sample_labels]
-    else:
-        raw_orb_names = []
-        n_cols_per_spin_ion = 0
 
-    # 3. Define Output Columns Order (e.g., s, p, px, py...)
+    # Determine Output Order
     output_orb_order = []
     
-    if 's' in raw_orb_names: output_orb_order.append('s')
+    # Check s
+    if 's' in raw_labels: 
+        output_orb_order.append('s')
         
-    p_sub = [o for o in raw_orb_names if o in orb_groups['p']]
-    if p_sub:
-        if 'p' not in p_sub and len(p_sub) > 1: output_orb_order.append('p') 
-        p_sorted = sorted(p_sub, key=lambda x: ['p', 'px', 'py', 'pz'].index(x) if x in ['p', 'px', 'py', 'pz'] else 99)
-        output_orb_order.extend(p_sorted)
+    # Check p, d, f
+    for orb_type in ['p', 'd', 'f']:
+        # Find raw labels that belong to this group
+        sub = [o for o in raw_labels if o in orb_groups[orb_type]]
+        if sub:
+            # If sub-orbitals exist (e.g. px, py) but the total 'p' label doesn't, add 'p' header for sum
+            if orb_type not in sub and len(sub) > 1: 
+                output_orb_order.append(orb_type)
+            
+            # Sort sub-orbitals (e.g. px, py, pz)
+            if orb_type == 'p':
+                # Custom sort for p
+                order = ['p', 'px', 'py', 'pz']
+                sub = sorted(sub, key=lambda x: order.index(x) if x in order else 99)
+            
+            # Add existing sub-orbitals
+            output_orb_order.extend(sub)
 
-    d_sub = [o for o in raw_orb_names if o in orb_groups['d']]
-    if d_sub:
-        if 'd' not in d_sub and len(d_sub) > 1: output_orb_order.append('d')
-        output_orb_order.extend([o for o in raw_orb_names if o in d_sub])
-
-    f_sub = [o for o in raw_orb_names if o in orb_groups['f']]
-    if f_sub:
-        if 'f' not in f_sub and len(f_sub) > 1: output_orb_order.append('f')
-        output_orb_order.extend([o for o in raw_orb_names if o in f_sub])
-
-    # 4. Construct Data Array
-    energy = total_dos[:, 0]
-    if shift_fermi:
-        energy -= efermi
-        
-    final_data_columns = [energy]
-    final_headers = ["Energy"]
+    # --- 4. Helper Functions ---
     
-    # --- Inner Helper Functions ---
-    def get_raw_col(ion_idx, spin_idx, orb_name):
-        block_len = n_cols_per_spin_ion
-        start_idx = 1 + ion_idx * (2 * block_len) + spin_idx * block_len
-        if orb_name in raw_orb_names:
-            rel_idx = raw_orb_names.index(orb_name)
-            return partial_dos[:, start_idx + rel_idx]
+    def get_data(key, orb_name):
+        """
+        Retrieve specific orbital column from partial_data.
+        key: (Ion_Index, Spin) or (Element_Str, Spin)
+        orb_name: 's', 'px', etc.
+        """
+        # Handle Spin 2 missing -> Copy Spin 1
+        if key not in partial_data:
+            alt_key = (key[0], 1) # Try Spin 1
+            if alt_key in partial_data:
+                data = partial_data[alt_key]
+            else:
+                return np.zeros_like(energy)
         else:
-            return np.zeros_like(energy)
-
-    def get_derived_col(ion_idx, spin_idx, out_orb_name):
-        if out_orb_name in raw_orb_names:
-            return get_raw_col(ion_idx, spin_idx, out_orb_name)
+            data = partial_data[key]
+            
+        # Extract specific column
+        # data structure: [Energy, orb1, orb2, ...]
+        if orb_name in raw_labels:
+            idx = raw_labels.index(orb_name) + 1 # +1 to skip Energy col
+            return data[:, idx]
         
+        # Calculate Sum (e.g., 'p' = 'px' + 'py' + 'pz')
         target_group = None
         for g_name, g_members in orb_groups.items():
-            if out_orb_name == g_name:
+            if orb_name == g_name:
                 target_group = g_members
                 break
         
         if target_group:
-            sum_data = np.zeros_like(energy)
-            found_any = False
+            sum_col = np.zeros_like(energy)
+            found = False
             for member in target_group:
-                if member in raw_orb_names and member != out_orb_name:
-                    sum_data += get_raw_col(ion_idx, spin_idx, member)
-                    found_any = True
-            return sum_data if found_any else np.zeros_like(energy)
+                if member in raw_labels and member != orb_name:
+                    idx = raw_labels.index(member) + 1
+                    sum_col += data[:, idx]
+                    found = True
+            if found: 
+                return sum_col
+            
         return np.zeros_like(energy)
 
-    # --- Build Columns ---
+    # --- 5. Build Final Data Columns ---
+    
+    final_data_columns = [energy]
+    final_headers = ["Energy"]
     spin_names = ["spin1", "spin2"]
     
     for s_idx, s_name in enumerate(spin_names):
+        spin_num = s_idx + 1
+        
         # 1. System Total DOS
-        tdos_col = total_dos[:, s_idx + 1]
-        final_data_columns.append(tdos_col)
+        tdos = total_dos_s1[:, 1] if spin_num == 1 else total_dos_s2[:, 1]
+        final_data_columns.append(tdos)
         final_headers.append(f"{s_name}_Total")
         
-        # ---------------------------------------------------------
-        # Branch 1: LDOS = True (Per Ion)
-        # ---------------------------------------------------------
+        # 2. Partial DOS
         if ldos:
+            # Per Ion
             for i_idx, sym in enumerate(symbols):
-                prefix = f"{s_name}_{sym}{i_idx+1}"
+                ion_num = i_idx + 1
+                prefix = f"{s_name}_{sym}{ion_num}"
+                key = (ion_num, spin_num)
                 
-                # Ion Total
-                ion_total = np.zeros_like(energy)
-                for raw_o in raw_orb_names:
-                    ion_total += get_raw_col(i_idx, s_idx, raw_o)
+                # Ion Total (Sum of all resolved orbitals)
+                # Note: If key missing (Spin 2), check Spin 1
+                data_block = partial_data.get(key)
+                if data_block is None:
+                    data_block = partial_data.get((ion_num, 1)) # Fallback to Spin 1
                 
-                final_data_columns.append(ion_total)
+                if data_block is not None:
+                    ion_tot = np.sum(data_block[:, 1:], axis=1)
+                else:
+                    ion_tot = np.zeros_like(energy)
+                
+                final_data_columns.append(ion_tot)
                 final_headers.append(f"{prefix}_Total")
                 
                 # Ion Orbitals
                 for orb in output_orb_order:
-                    data_col = get_derived_col(i_idx, s_idx, orb)
-                    final_data_columns.append(data_col)
+                    final_data_columns.append(get_data(key, orb))
                     final_headers.append(f"{prefix}_{orb}")
-
-        # ---------------------------------------------------------
-        # Branch 2: LDOS = False (Per Element) [NEW]
-        # ---------------------------------------------------------
         else:
-            # Get unique elements preserving order (e.g. Fe, O)
+            # Per Element
             unique_elements = sorted(list(set(symbols)), key=symbols.index)
             
             for elem in unique_elements:
                 prefix = f"{s_name}_{elem}"
+                key = (elem, spin_num)
                 
-                # Identify indices of this element
-                # indices = [0, 1] for Fe, [2, 3, 4] for O
-                ion_indices = [i for i, s in enumerate(symbols) if s == elem]
+                # Element Total
+                data_block = partial_data.get(key)
+                if data_block is None:
+                    data_block = partial_data.get((elem, 1)) # Fallback to Spin 1
                 
-                # Element Total (Sum of all orbitals for all ions of this element)
-                elem_total = np.zeros_like(energy)
-                for i_idx in ion_indices:
-                    for raw_o in raw_orb_names:
-                        elem_total += get_raw_col(i_idx, s_idx, raw_o)
-                
-                final_data_columns.append(elem_total)
+                if data_block is not None:
+                    elem_tot = np.sum(data_block[:, 1:], axis=1)
+                else:
+                    elem_tot = np.zeros_like(energy)
+                    
+                final_data_columns.append(elem_tot)
                 final_headers.append(f"{prefix}_Total")
                 
-                # Element Orbitals (Sum specific orbital across all ions of this element)
+                # Element Orbitals
                 for orb in output_orb_order:
-                    elem_orb_sum = np.zeros_like(energy)
-                    for i_idx in ion_indices:
-                        elem_orb_sum += get_derived_col(i_idx, s_idx, orb)
-                    
-                    final_data_columns.append(elem_orb_sum)
+                    final_data_columns.append(get_data(key, orb))
                     final_headers.append(f"{prefix}_{orb}")
 
-    # Combine
+    # --- 6. Output ---
+    
     final_array = np.column_stack(final_data_columns)
     
-    # 5. Write Data
     if write_data:
         indices_line = "# " + " ".join([f"{i:>15d}" for i in range(len(final_headers))])
         headers_line = "# " + " ".join([f"{h:>15s}" for h in final_headers])
