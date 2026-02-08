@@ -581,6 +581,7 @@ def read_vaspxml(
         partialdos    -> numpy array [Energy, Ion1_Spin1, Ion1_Spin2, Ion2_Spin1...]
                          (If ISPIN=1, Spin2 columns are copies of Spin1)
         atominfo      -> list of strings ['Fe', 'Fe', 'O', ...] (Length = N_ions)
+        final_ene     -> float (Energy of the last calculation step)
 
     """
     tree = ET.parse(xml_file)
@@ -606,6 +607,19 @@ def read_vaspxml(
                 incar[i.attrib.get("name")] = i.text
         return incar
     
+    elif select_entry == "final_ene":
+        calculations = root.findall("calculation")
+        if not calculations:
+            return None
+        energy_block = calculations[-1].find("energy")
+        if energy_block is None:
+            return None
+        e_0 = energy_block.find("./i[@name='e_0_energy']")
+        if e_0 is not None:
+            return float(e_0.text.strip())
+        else:
+            return float(energy_block[-1].text.strip())
+
     # ==========================================
     # Added: symbol (Extract atom types list)
     # ==========================================
@@ -1709,6 +1723,121 @@ def vasp_gen_optshape(
     print(f"Done. {len(strains)} jobs generated in {wpath}.")
 
 
+def vasp_optshape_results(
+        shape="ab-c",
+        wpath="./",
+        plot=True,
+        write_best_struct=True,
+        poscar="POSCAR"
+):
+    """
+    DESCRIPTION:
+    ------------
+    Analyze the results of shape optimization.
+    Fits the Energy-Strain curve and finds the minimum.
+    
+    PARAMETERS:
+    -----------
+    shape: str
+        The distortion mode used in vasp_gen_optshape.
+    wpath: str
+        Working directory.
+    plot: bool
+        Whether to plot the results.
+    write_best_struct: bool
+        Whether to generate the POSCAR for the optimal strain.
+    poscar: str
+        Path to the original POSCAR used for generation.
+    """
+    try:
+        from scipy.optimize import curve_fit
+    except ImportError:
+        print("Scipy not found. Please install scipy for fitting.")
+        return
+
+    wpath = os.path.abspath(wpath)
+    
+    # 1. Collect Data
+    strains = []
+    energies = []
+    prefix = f"shape_{shape}_"
+    
+    if not os.path.exists(wpath):
+        print(f"Directory {wpath} not found.")
+        return
+
+    for item in os.listdir(wpath):
+        if os.path.isdir(os.path.join(wpath, item)) and item.startswith(prefix):
+            try:
+                f_str = item.replace(prefix, "")
+                F = float(f_str)
+                strain = F - 1.0
+                xml_file = os.path.join(wpath, item, "vasprun.xml")
+                if os.path.exists(xml_file):
+                    ene = read_vaspxml(xml_file, "final_ene")
+                    if ene is not None:
+                        strains.append(strain)
+                        energies.append(ene)
+            except ValueError:
+                continue
+    
+    if not strains:
+        print("No valid data found.")
+        return
+        
+    strains = np.array(strains)
+    energies = np.array(energies)
+    sorted_indices = np.argsort(strains)
+    strains = strains[sorted_indices]
+    energies = energies[sorted_indices]
+    
+    # 2. Fit (Polynomial 3rd order)
+    def poly3(x, a, b, c, d):
+        return a * x**3 + b * x**2 + c * x + d
+        
+    popt, pcov = curve_fit(poly3, strains, energies)
+    a, b, c, d = popt
+    delta = (2*b)**2 - 4*(3*a)*c
+    
+    if delta >= 0:
+        x1 = (-2*b + np.sqrt(delta)) / (6*a)
+        x2 = (-2*b - np.sqrt(delta)) / (6*a)
+        best_strain = x1 if (6*a*x1 + 2*b) > 0 else x2
+    else:
+        best_strain = strains[np.argmin(energies)]
+        
+    min_energy = poly3(best_strain, *popt)
+    best_F = 1.0 + best_strain
+    print(f"Optimal Strain: {best_strain:.5f}, Minimum Energy: {min_energy:.5f} eV")
+    
+    # 3. Plot
+    if plot:
+        plt.figure()
+        plt.plot(strains, energies, 'o', label='Data')
+        x_fit = np.linspace(min(strains), max(strains), 100)
+        y_fit = poly3(x_fit, *popt)
+        plt.plot(x_fit, y_fit, '-', label='Fit')
+        plt.plot(best_strain, min_energy, 'r*', markersize=10, label=f'Min ({best_strain:.3f})')
+        plt.xlabel('Strain'); plt.ylabel('Energy (eV)'); plt.legend()
+        plt.savefig(os.path.join(wpath, f"opt_{shape}.png")); plt.close()
+        
+    # 4. Write Structure
+    if write_best_struct:
+        try:
+            s = structure.struct(poscar)
+            F = best_F
+            if shape == "a-b": s.lattice6[0] *= F; s.lattice6[1] *= (1.0 / F)
+            elif shape == "b-c": s.lattice6[1] *= F; s.lattice6[2] *= (1.0 / F)
+            elif shape == "a-c": s.lattice6[0] *= F; s.lattice6[2] *= (1.0 / F)
+            elif shape == "ab-c": s.lattice6[2] *= F; sc = 1.0/np.sqrt(F); s.lattice6[0] *= sc; s.lattice6[1] *= sc
+            elif shape == "bc-a": s.lattice6[0] *= F; sc = 1.0/np.sqrt(F); s.lattice6[1] *= sc; s.lattice6[2] *= sc
+            elif shape == "ac-b": s.lattice6[1] *= F; sc = 1.0/np.sqrt(F); s.lattice6[0] *= sc; s.lattice6[2] *= sc
+            s.lattice9 = functions.lattice_conversion(s.lattice6)
+            s.write_struct(fpath=wpath, fname=f"POSCAR_opt_{shape}_best", calculator="poscar")
+        except Exception as e:
+            print(f"Error writing structure: {e}")
+
+
 def vasp_gen_input(
         dft="scf", 
         potpath="./", 
@@ -2597,4 +2726,3 @@ The reasonable range is 0 ~ 4.
     elif dft == "nvt":
         dft_aimd(aimd="nvt")
         
-

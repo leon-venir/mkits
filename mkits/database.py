@@ -399,6 +399,22 @@ incar_functionals = {
 }
 
 
+
+"""
+molecule data
+atomic number, x, y, z in angstrom
+"""
+mol_h2o = np.array(
+    [
+        [8, 0, 0, 0],
+        [1, 0, 0, 0],
+        [1, 0, 0, 0]
+    ]
+)
+
+
+
+
 """
 : Recommend PBE
 """
@@ -697,6 +713,9 @@ kpath_sg = {
     164: np.array([[0,0,0], [1,2,3]]),
     164+500: ["Gamma", ""]
 }
+
+
+
 
 
 """ :script """

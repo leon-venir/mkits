@@ -2,6 +2,7 @@
 import ase.io
 import ase.build
 import numpy as np
+import structure
 from mkits.globle import *
 import matplotlib.pyplot as plt
 from shapely.geometry import Point, Polygon
@@ -19,6 +20,17 @@ stack_struct       : stack two slab and generate a new heterojunction
 ngt_tiling         : a possible NGT ideal tiling canvas
 carbontube         : the builder of carbon nanotube.
 """
+
+
+class adsorpt_molecue(structure.struct):
+    """
+    Docstring for adsorpt_molecue
+    
+    :
+    """
+    pass
+
+
 
 
 def stack_struct(substrate, support, distance=1.7, vacuum=15):
