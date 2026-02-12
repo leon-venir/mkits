@@ -2,10 +2,14 @@
 import ase.io
 import ase.build
 import numpy as np
-import structure
-from mkits.globle import *
+from mkits import structure
+from mkits.functions import *
+from mkits import functions
 import matplotlib.pyplot as plt
 from shapely.geometry import Point, Polygon
+from mkits import database
+from mkits import functions
+import os
 
 
 """
@@ -24,14 +28,163 @@ carbontube         : the builder of carbon nanotube.
 
 class adsorpt_molecue(structure.struct):
     """
-    Docstring for adsorpt_molecue
+    Adsorpt molecules to the structure (center atom + neighbors).
+    Generates separate POSCAR files for each valid adsorption site.
     
-    :
+    :param inp: The path of input file
+    :param direction: The direction of the vacuum/adsorption. (+/- a, b, c)
+    :param center_coord: The FRACTIONAL coordinates [x, y, z] of the surface center point.
+    :param distance: The vertical bond length between the surface atom and the molecule anchor point.
+           (Unit: Angstroms)
+    :param lateral_radius: The LATERAL search radius to find atoms around center_coord.
+           if < 1.0: treated as fractional length
+           if >= 1.0: treated as Angstroms
+    :param direction_thickness: The tolerance in FRACTIONAL coordinates along the vacuum axis.
+    :param element: The adsorpt element (for record)
+    :param molecule: The adsorpt molecule name found in database.py
     """
-    pass
+    def __init__(
+            self, 
+            inp,
+            center_coord=[0.5, 0.5, 0.5], 
+            distance=0.05,           
+            lateral_radius=0.3,     
+            direction_thickness=0.03, 
+            element="O",
+            molecule="h2o",
+            write_to="./",
+            write_name="tio2",
+            calculator="poscar"
+    ):
+        super().__init__(inp)
+        self.center_coord = np.array(center_coord, dtype=float)
+        self.distance = float(distance)
+        self.lateral_radius = float(lateral_radius)
+        self.direction_thickness = float(direction_thickness)
+        self.element = element.split(",")
+        self.molecule = molecule
+        self.write_to = write_to
+        self.calculator = calculator
+        self.write_name = write_name
+        
+        self.ads_coords_list = [] # Store multiple adsorption sites
+        
+        self.__calc_ads_coords__()
+        self.__adsorpt__()
+
+    def __calc_ads_coords__(self):
+        """
+        Find atoms within lateral_radius of center_coord, 
+        filtered by direction_thickness.
+        """
+        _center_frac = self.center_coord
+
+        # element
+        _position = self.position[
+            (self.position[:, 0] == database.symbol_map[self.element[0]]) | 
+            (self.position[:, 0] == database.symbol_map[self.element[1]])
+        ]
+        _position = _position[np.abs(_position[:, 3]-_center_frac[2]) < self.direction_thickness]
+        _position = _position[np.linalg.norm(_position[:, 1:3]-_center_frac[:2], axis=1) < self.lateral_radius]
+        self.ads_coords_list = _position[:, 1:7]
+        #print(self.ads_coords_list)
+    
+    def __adsorpt__(self):
+        """
+        """
+        for ads_site_idx in range(len(self.ads_coords_list)):
+            _mol_coord = f"mol_{self.molecule}"
+
+            if hasattr(database, _mol_coord):
+                _mol_coord = getattr(database, _mol_coord)
+            else:
+                #print(f"错误: {_mol_coord} 未在 database.py 中定义")
+                exit()
+            #print(_mol_coord)
+            
+            _mol_element = [
+                database.atom_data[int(_)][1] for _ in _mol_coord[1:, 0]
+            ]
+            #print(_mol_element)
+            
+            _mol_coord = _mol_coord[1:, 1:4] + (self.ads_coords_list[ads_site_idx, 3:6]) + np.array([0, 0, self.distance])
+            #print(_mol_coord)
+
+            _cell = structure.struct(self.inp)
+
+            for i in range(len(_mol_element)):
+                _cell.add_atom(_mol_element[i], _mol_coord[i], is_frac=False)
+                #print("add: ", _mol_element[i], _mol_coord[i])
+            _cell.write_struct(
+                fpath=self.write_to, 
+                fname=f"{self.write_name}_{self.molecule}_ads_{ads_site_idx+1}", 
+                calculator=self.calculator
+            )
+            
+
+            
+            
 
 
+    #def __adsorpt__(self):
+"""
+        Iterate over each found adsorption site, creates a unique structure,
+        and writes it to a separate file.
+   
+        mol_name = "mol_" + self.molecule
+        if hasattr(database, mol_name):
+            mol_data = getattr(database, mol_name)
+        else:
+            functions.lexit(f"Molecule {self.molecule} not found in database.")
+        
+        # Backup original structure state
+        # We need deep copies because self.position is modified in place
+        import copy
+        original_position = self.position.copy()
+        original_total_atom = self.total_atom
+        
+        # Base filename handling
+        if os.path.isdir(self.write_to):
+            base_fpath = self.write_to
+            base_fname = f"POSCAR_{self.molecule}_ads"
+        else:
+            base_fpath = os.path.dirname(self.write_to)
+            if not base_fpath: base_fpath = "./"
+            base_fname = os.path.basename(self.write_to)
 
+        # Loop through EACH calculated adsorption site
+        for idx, ads_coord in enumerate(self.ads_coords_list):
+            # 1. Reset structure to clean slab
+            self.position = original_position.copy()
+            self.total_atom = original_total_atom
+            
+            # 2. Add molecule atoms
+            # IMPORTANT: Loop from range(1, len) to skip the center definition line [0,0,0,0]
+            for i in range(1, len(mol_data)):
+                atom_info = mol_data[i]
+                
+                # atom_info: [atomic_number, x, y, z]
+                atom_z_idx = int(atom_info[0])
+                
+                try:
+                    symbol = database.atom_data[atom_z_idx][1]
+                except KeyError:
+                    functions.lexit(f"Atomic index {atom_z_idx} not found in database.")
+                
+                atom_rel_pos = np.array(atom_info[1:])
+                
+                # Apply coordinates relative to the adsorption site
+                abs_pos = ads_coord + atom_rel_pos
+                
+                # Call existing add_atom
+                self.add_atom(symbol, abs_pos, is_frac=False)
+            
+            # 3. Write separate output file for this site
+            # Naming convention: POSCAR_h2o_ads_site_1, POSCAR_h2o_ads_site_2, etc.
+            site_fname = f"{base_fname}_site_{idx+1}"
+            self.write_struct(fpath=base_fpath, fname=site_fname, calculator=self.calculator)
+            # print(f"Generated: {os.path.join(base_fpath, site_fname)}")""
+"""
 
 def stack_struct(substrate, support, distance=1.7, vacuum=15):
     """ 

@@ -1772,7 +1772,7 @@ def vasp_optshape_results(
                 f_str = item.replace(prefix, "")
                 F = float(f_str)
                 strain = F - 1.0
-                xml_file = os.path.join(wpath, item, "vasprun.xml")
+                xml_file = os.path.join(wpath, item, "vasprun.xml_scf")
                 if os.path.exists(xml_file):
                     ene = read_vaspxml(xml_file, "final_ene")
                     if ene is not None:

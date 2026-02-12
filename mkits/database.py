@@ -402,16 +402,56 @@ incar_functionals = {
 
 """
 molecule data
+the first line is the central position of the molecule
 atomic number, x, y, z in angstrom
 """
 mol_h2o = np.array(
     [
+        [0, 0, 0, 0],   # central position
         [8, 0, 0, 0],
-        [1, 0, 0, 0],
+        [1, 0, -0.76913, 0.59479],
+        [1, 0, 0.76913,  0.59479]
+    ]
+)
+
+mol_h2 = np.array(
+    [
+        [0, 0, 0, 0],   # central position
+        [1, 0, -0.35913, 0],
+        [1, 0, 0.35913,  0]
+    ]
+)
+
+mol_oh = np.array(
+    [
+        [0, 0, 0, 0],   # central position
+        [8, 0, 0, 0],
+        [1, 0, 0.76913,  0.59479]
+    ]
+)
+
+mol_ooh = np.array(
+    [
+        [0, 0, 0, 0],   # central position
+        [8, 0, 0, 0],
+        [8, 0.86900, 1.07800, 0.52270],
+        [1, 1.67520, 1.39700, 1.21580]
+    ]
+)
+
+mol_h = np.array(
+    [
+        [0, 0, 0, 0],   # central position
         [1, 0, 0, 0]
     ]
 )
 
+mol_o = np.array(
+    [
+        [0, 0, 0, 0],   # central position
+        [1, 0, 0, 0]
+    ]
+)
 
 
 
