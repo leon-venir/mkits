@@ -10,6 +10,7 @@ from shapely.geometry import Point, Polygon
 from mkits import database
 from mkits import functions
 import os
+import copy
 
 
 """
@@ -26,100 +27,240 @@ carbontube         : the builder of carbon nanotube.
 """
 
 
+import numpy as np
+import os
+import copy
+
 class adsorpt_molecue(structure.struct):
     """
-    Adsorpt molecules to the structure (center atom + neighbors).
+    Adsorb molecules to the structure based on spatial coordinates.
     Generates separate POSCAR files for each valid adsorption site.
     
-    :param inp: The path of input file
-    :param direction: The direction of the vacuum/adsorption. (+/- a, b, c)
+    :param inp: The path of the input file.
+    :param direction: The direction of the adsorption. (e.g., "c" or "-c").
     :param center_coord: The FRACTIONAL coordinates [x, y, z] of the surface center point.
-    :param distance: The vertical bond length between the surface atom and the molecule anchor point.
-           (Unit: Angstroms)
-    :param lateral_radius: The LATERAL search radius to find atoms around center_coord.
-           if < 1.0: treated as fractional length
-           if >= 1.0: treated as Angstroms
+    :param distance: The vertical bond length between the surface atom and the molecule. (Unit: Angstroms)
+    :param lateral_radius: The LATERAL search radius to find atoms around the center_coord.
+           If < 1.0: Treated as a fractional length.
+           If >= 1.0: Treated as Cartesian distance in Angstroms.
     :param direction_thickness: The tolerance in FRACTIONAL coordinates along the vacuum axis.
-    :param element: The adsorpt element (for record)
-    :param molecule: The adsorpt molecule name found in database.py
+    :param element: The adsorption element (used for filtering surface atoms).
+    :param molecule: The adsorption molecule name defined in database.py.
+    :param write_to: Directory path to write the adsorbed structures.
+    :param write_name: Base prefix for the generated POSCAR files.
+    :param calculator: The output format (e.g., "poscar").
     """
     def __init__(
             self, 
             inp,
+            direction="c", 
             center_coord=[0.5, 0.5, 0.5], 
-            distance=0.05,           
-            lateral_radius=0.3,     
-            direction_thickness=0.03, 
+            distance=2.0,           
+            lateral_radius=2.0,     
+            direction_thickness=0.1, 
             element="O",
             molecule="h2o",
             write_to="./",
             write_name="tio2",
-            calculator="poscar"
+            calculator="poscar",
+            **kwargs
     ):
         super().__init__(inp)
+        self.direction = direction.strip().lower()
         self.center_coord = np.array(center_coord, dtype=float)
+        
         self.distance = float(distance)
         self.lateral_radius = float(lateral_radius)
         self.direction_thickness = float(direction_thickness)
-        self.element = element.split(",")
+        
+        # Handle single or multiple elements
+        if isinstance(element, str):
+            self.element = element.split(",")
+        else:
+            self.element = element
+            
         self.molecule = molecule
         self.write_to = write_to
-        self.calculator = calculator
         self.write_name = write_name
+        self.calculator = calculator
         
-        self.ads_coords_list = [] # Store multiple adsorption sites
+        self.ads_coords_list = [] 
         
+        self._parse_direction()
         self.__calc_ads_coords__()
         self.__adsorpt__()
+    
+    def _parse_direction(self):
+        """Parse the direction string to determine the axis index and the sign."""
+        d = self.direction
+        
+        if d.startswith("-"):
+            self.sign = -1.0
+            axis_char = d[1:]
+        elif d.startswith("+"):
+            self.sign = 1.0
+            axis_char = d[1:]
+        else:
+            self.sign = 1.0
+            axis_char = d
+            
+        if axis_char == "a":
+            self.normal_axis = 0
+            self.lateral_axes = [1, 2]
+        elif axis_char == "b":
+            self.normal_axis = 1
+            self.lateral_axes = [0, 2]
+        elif axis_char == "c":
+            self.normal_axis = 2
+            self.lateral_axes = [0, 1]
+        else:
+            print(f"Warning: Unknown direction '{self.direction}', defaulting to 'c'.")
+            self.normal_axis = 2
+            self.lateral_axes = [0, 1]
+            self.sign = 1.0
 
     def __calc_ads_coords__(self):
         """
-        Find atoms within lateral_radius of center_coord, 
-        filtered by direction_thickness.
+        Identify target surface atoms within the specified lateral_radius from 
+        the center_coord, filtered by the direction_thickness along the vacuum axis.
         """
-        _center_frac = self.center_coord
+        center_frac = self.center_coord
+        center_cart = functions.frac2cart(self.lattice9, center_frac)
+        
+        raw_vac_vec = self.lattice9[self.normal_axis]
+        vac_unit = (raw_vac_vec / np.linalg.norm(raw_vac_vec)) * self.sign
 
-        # element
-        _position = self.position[
-            (self.position[:, 0] == database.symbol_map[self.element[0]]) | 
-            (self.position[:, 0] == database.symbol_map[self.element[1]])
-        ]
-        _position = _position[np.abs(_position[:, 3]-_center_frac[2]) < self.direction_thickness]
-        _position = _position[np.linalg.norm(_position[:, 1:3]-_center_frac[:2], axis=1) < self.lateral_radius]
-        self.ads_coords_list = _position[:, 1:7]
-        #print(self.ads_coords_list)
-    
+        # Determine the absolute lateral search radius in Angstroms
+        if self.lateral_radius < 1.0:
+            vec_a_len = np.linalg.norm(self.lattice9[self.lateral_axes[0]])
+            vec_b_len = np.linalg.norm(self.lattice9[self.lateral_axes[1]])
+            avg_len = (vec_a_len + vec_b_len) / 2.0
+            real_search_radius = self.lateral_radius * avg_len
+        else:
+            real_search_radius = self.lateral_radius
+
+        search_sq = real_search_radius ** 2
+
+        # Define 3x3 shifts for Lateral Periodic Boundary Conditions (PBC)
+        shifts = []
+        for i in [-1, 0, 1]:
+            for j in [-1, 0, 1]:
+                vec = np.zeros(3)
+                vec[self.lateral_axes[0]] = i
+                vec[self.lateral_axes[1]] = j
+                cart_shift = np.dot(vec, self.lattice9)
+                shifts.append(cart_shift)
+
+        target_atoms_pos = []
+
+        # Iterate through all atoms (index 1 to total_atom, as index 0 is a buffer)
+        for i in range(1, self.total_atom + 1):
+            atom_frac = self.position[i, 1:4]
+            atom_cart = self.position[i, 4:7]
+            
+            # Filter by element type
+            atom_symbol_idx = int(self.position[i, 0])
+            try:
+                atom_symbol = database.atom_data[atom_symbol_idx][1]
+                if atom_symbol not in self.element:
+                    continue
+            except KeyError:
+                continue
+
+            # Filter 1: Direction Thickness (Fractional Check along the normal axis)
+            delta_frac = atom_frac[self.normal_axis] - center_frac[self.normal_axis]
+            delta_frac = delta_frac - np.round(delta_frac) # Wrap into [-0.5, 0.5] range for PBC
+            
+            if abs(delta_frac) > self.direction_thickness:
+                continue 
+
+            # Filter 2: Lateral Radius (Cartesian Check considering PBC)
+            is_within_radius = False
+            best_pos = None
+            min_lat_dist_sq = 1e9
+
+            for shift in shifts:
+                shifted_pos = atom_cart + shift
+                diff_vec = shifted_pos - center_cart
+                
+                # Decompose the distance vector into vertical and lateral components
+                h_diff = np.dot(diff_vec, vac_unit) 
+                lat_vec = diff_vec - h_diff * vac_unit 
+                lat_dist_sq = np.dot(lat_vec, lat_vec)
+                
+                if lat_dist_sq < search_sq:
+                    is_within_radius = True
+                    if lat_dist_sq < min_lat_dist_sq:
+                        min_lat_dist_sq = lat_dist_sq
+                        best_pos = shifted_pos
+            
+            if is_within_radius and best_pos is not None:
+                target_atoms_pos.append(best_pos)
+
+        # Calculate final adsorption sites
+        for pos in target_atoms_pos:
+            site = pos # The adsorption logic will handle the displacement in __adsorpt__
+            self.ads_coords_list.append(site)
+            
+        print(f"Total adsorption sites generated: {len(self.ads_coords_list)}")
+
     def __adsorpt__(self):
         """
+        Iterate over each identified adsorption site, attach the molecule,
+        and output a unique structure file.
         """
-        for ads_site_idx in range(len(self.ads_coords_list)):
-            _mol_coord = f"mol_{self.molecule}"
+        mol_name = "mol_" + self.molecule
+        if hasattr(database, mol_name):
+            mol_data = getattr(database, mol_name)
+        else:
+            functions.lexit(f"Molecule {self.molecule} not found in database.")
+        
+        # Backup the original structure state to avoid accumulation during iterations
+        original_position = self.position.copy()
+        original_total_atom = self.total_atom
+        
+        # Configure output paths
+        if os.path.isdir(self.write_to):
+            base_fpath = self.write_to
+        else:
+            base_fpath = os.path.dirname(self.write_to)
+            if not base_fpath: base_fpath = "./"
 
-            if hasattr(database, _mol_coord):
-                _mol_coord = getattr(database, _mol_coord)
+        # Loop through EACH calculated adsorption site
+        for idx, base_ads_coord in enumerate(self.ads_coords_list):
+            
+            # Reset structure to the original clean slab
+            self.position = original_position.copy()
+            self.total_atom = original_total_atom
+            
+            # Extract Cartesian coordinates of the molecule relative to its anchor (skip the definition line)
+            mol_xyz = np.array([row[1:4] for row in mol_data[1:]], dtype=float)
+            mol_elements = [database.atom_data[int(row[0])][1] for row in mol_data[1:]]
+
+            # Adjust molecule orientation and calculate the anchor displacement
+            if self.direction.startswith("-"):
+                # Rotate the molecule 180 degrees around the X-axis so it faces downwards (y = -y, z = -z)
+                mol_xyz[:, 1] = -mol_xyz[:, 1]
+                mol_xyz[:, 2] = -mol_xyz[:, 2]
+                
+                # Set displacement downwards along the vacuum axis
+                raw_vac_vec = self.lattice9[self.normal_axis]
+                vac_unit = raw_vac_vec / np.linalg.norm(raw_vac_vec)
+                displacement = -self.distance * vac_unit
             else:
-                #print(f"错误: {_mol_coord} 未在 database.py 中定义")
-                exit()
-            #print(_mol_coord)
-            
-            _mol_element = [
-                database.atom_data[int(_)][1] for _ in _mol_coord[1:, 0]
-            ]
-            #print(_mol_element)
-            
-            _mol_coord = _mol_coord[1:, 1:4] + (self.ads_coords_list[ads_site_idx, 3:6]) + np.array([0, 0, self.distance])
-            #print(_mol_coord)
+                # Default orientation (facing upwards)
+                raw_vac_vec = self.lattice9[self.normal_axis]
+                vac_unit = raw_vac_vec / np.linalg.norm(raw_vac_vec)
+                displacement = self.distance * vac_unit
 
-            _cell = structure.struct(self.inp)
-
-            for i in range(len(_mol_element)):
-                _cell.add_atom(_mol_element[i], _mol_coord[i], is_frac=False)
-                #print("add: ", _mol_element[i], _mol_coord[i])
-            _cell.write_struct(
-                fpath=self.write_to, 
-                fname=f"{self.write_name}_{self.molecule}_ads_{ads_site_idx+1}", 
-                calculator=self.calculator
-            )
+            # Apply coordinates relative to the adsorption site
+            for i, symbol in enumerate(mol_elements):
+                abs_pos = base_ads_coord + mol_xyz[i] + displacement
+                self.add_atom(symbol, abs_pos, is_frac=False)
+            
+            # Write separate output file for this specific site
+            site_fname = f"{self.write_name}_{self.molecule}_ads_{idx+1}"
+            self.write_struct(fpath=base_fpath, fname=site_fname, calculator=self.calculator)
             
 
             

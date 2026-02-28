@@ -449,7 +449,15 @@ mol_h = np.array(
 mol_o = np.array(
     [
         [0, 0, 0, 0],   # central position
-        [1, 0, 0, 0]
+        [8, 0, 0, 0]
+    ]
+)
+
+mol_o2 = np.array(
+    [
+        [0, 0, 0, 0],   # central position
+        [8, 0, -0.61913, 0],
+        [8, 0, 0.61913,  0]
     ]
 )
 
