@@ -198,7 +198,7 @@ incar_tag = [
     # vdw
     "IVDW",
     # optic
-    "LOPTICS", "CSHIFT"
+    "LOPTICS", "CSHIFT", "LPEAD"
 ]
 
 
