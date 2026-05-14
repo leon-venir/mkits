@@ -976,24 +976,6 @@ class struct(object):
             return np.linalg.inv(self.lattice9).T * 2 * np.pi
 
 
-    def supercell(self, super_matrix=[2, 2, 1]):
-        """
-        DESCRIPTION:
-        -----------
-        Write 
-
-        PARAMETERS:
-        -----------
-        super_matrix: list
-            supercell matrix
-        
-        UPDATE:
-        -------
-        """
-        _newlattice = self.lattice6[:3]*np.array(super_matrix)
-        self.lattice6 = np.hstack((_newlattice, self.lattice6[3:]))
-
-
     def add_atom(self, atomic_symbo, position, is_frac=True):
         """
 
@@ -1115,13 +1097,93 @@ class struct(object):
 
         # 添加一行全 0 的行
         _expanded_positions.insert(0, np.zeros(10))
-
         self.position = np.array(_expanded_positions, dtype=object)
-
+    
         _newlattice = self.lattice6[:3]*np.array(super_matrix)
         self.lattice6 = np.hstack((_newlattice, self.lattice6[3:]))
         self.lattice9 = functions.lattice_conversion(self.lattice6)
 
+        self.position[1:, 4:7] = functions.frac2cart(
+            self.lattice9,
+            self.position[1:, 1:4]
+        )
+
+        self.sort_atoms()
+
+    
+    def transit_axis(
+            self,
+            new_axis = np.array([
+                [1, 0, 0],
+                [0, 1, 0],
+                [0, 0, 1]
+            ])
+    ):
+        """
+        DESCRIPTION:
+        -----------
+        Change the axis to new axis. Then update the fractional coordinates in self.position.
+        If there are any atoms outside of the new crystal surrounded by the new axis, delete the atoms.
+
+        PARAMETERS:
+        -----------
+        new_axis: 3x3 numpy array in angstrom
+        
+        UPDATE:
+        -------
+        self.lattice9, self.lattice6, self.position, self.total_atom
+        """
+        
+        # 1. Get Cartesian coordinates of all atoms (skip buffer row at index 0)
+        cart_pos = self.position[1:, 4:7].astype(float)
+        
+        # 2. Convert Cartesian coordinates to fractional coordinates under the new axis
+        new_lattice9 = np.array(
+            new_axis, 
+            dtype=float
+        )
+        new_frac_pos = functions.cart2frac(
+            new_lattice9, 
+            cart_pos
+        )
+        
+        # 3. Calculate the fractional tolerance corresponding to 0.05 Angstrom
+        # Fractional tolerance = Angstrom tolerance / interplanar spacing
+        # Interplanar spacing relates to the norm of column vectors of the inverse matrix
+        tol_angstrom = 0.01
+        inv_new_lattice = np.linalg.inv(new_lattice9)
+        recip_lengths = np.linalg.norm(inv_new_lattice, axis=0) 
+        frac_tols = tol_angstrom * recip_lengths                
+        
+        # 4. Check if atoms are inside the new cell (0.0 - tol <= x <= 1.0 + tol)
+        # Broadcast comparison between (N, 3) new_frac_pos and (3,) frac_tols
+        inside_mask = np.all(
+            (new_frac_pos >= -frac_tols) & (new_frac_pos <= 1.0 + frac_tols),
+            axis=1
+        )
+        
+        # 5. Clip boundary atoms back into the [0, 1] range to avoid floating point issues
+        new_frac_pos[inside_mask] = np.clip(new_frac_pos[inside_mask], 0.0, 1.0)
+        
+        # 6. Update self.position (keep only atoms inside the new cell)
+        # Preserve the buffer row
+        buffer_row = self.position[0:1, :]
+        
+        # Extract rows of kept atoms
+        kept_atoms_rows = self.position[1:][inside_mask].copy()
+        
+        # Update fractional coordinates of kept atoms
+        kept_atoms_rows[:, 1:4] = new_frac_pos[inside_mask]
+        
+        # Reconstruct self.position
+        self.position = np.vstack((buffer_row, kept_atoms_rows))
+        
+        # 7. Update other global attributes
+        self.lattice9 = new_lattice9
+        self.lattice6 = functions.lattice_conversion(self.lattice9)
+        self.total_atom = len(kept_atoms_rows)
+        
+        # Sort the remaining atoms
         self.sort_atoms()
 
 

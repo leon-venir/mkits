@@ -176,7 +176,7 @@ qe_rism_key = [
 incar_tag = [
     "ENCUT", "PREC", "ALGO", "ISMEAR", "SIGMA", "ISTART", "NELM", "LWAVE", 
     "LREAL", "AMIX", "NFREE", "BMIX", "NCORE", "NELECT", "IOPTCELL", "LAECHG",
-    "LELF", "TIME", "LCHARG", "AMIN",
+    "LELF", "TIME", "LCHARG", "AMIN", "POTIM",
     # dos band
     "ICHARG", "EMIN", "EMAX", "NEDOS", "LORBIT",
     # DFT+U
@@ -495,23 +495,23 @@ atom_data = [
     [ 10, "Ne",  "Neon",      20.1797], # 10
     [ 11, "Na",  "Sodium",    22.98976928], # 11
     [ 12, "Mg",  "Magnesium", 24.3050], # 12
-    [ 13, "Al",  "Aluminium", 26.9815386], # 13
+    [ 13, "Al",  "Aluminium", 26.9815386, 0], # 13
     [ 14, "Si",  "Silicon",   28.0855], # 14
     [ 15, "P",   "Phosphorus", 30.973762], # 15
     [ 16, "S",   "Sulfur",    32.065, 0], # 16
     [ 17, "Cl",  "Chlorine", 35.453, 0], # 17
-    [ 18, "Ar",  "Argon", 39.948], # 18
+    [ 18, "Ar",  "Argon", 39.948, 0], # 18
     [ 19, "K",   "Potassium", 39.0983], # 19
     [ 20, "Ca",  "Calcium", 40.078], # 20
     [ 21, "Sc",  "Scandium", 44.955912], # 21
     [ 22, "Ti",  "Titanium", 47.867, 0.6], # 22
     [ 23, "V",   "Vanadium", 50.9415, 1], # 23
-    [ 24, "Cr",  "Chromium", 51.9961, 3], # 24
+    [ 24, "Cr",  "Chromium", 51.9961, -2], # 24
     [ 25, "Mn",  "Manganese", 54.938045, 3], # 25
-    [ 26, "Fe",  "Iron", 55.845, 5], # 26
+    [ 26, "Fe",  "Iron", 55.845, 3], # 26
     [ 27, "Co",  "Cobalt", 58.933195, 3], # 27
-    [ 28, "Ni",  "Nickel", 58.6934, 2], # 28
-    [ 29, "Cu",  "Copper", 63.546, 1], # 29
+    [ 28, "Ni",  "Nickel", 58.6934, 1], # 28
+    [ 29, "Cu",  "Copper", 63.546, 0], # 29
     [ 30, "Zn",  "Zinc", 65.38], # 30
     [ 31, "Ga",  "Gallium", 69.723], # 31
     [ 32, "Ge",  "Germanium", 72.64], # 32
