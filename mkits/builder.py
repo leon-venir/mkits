@@ -1,63 +1,115 @@
-# Strcuture builder
-import ase.io
-import ase.build
-import numpy as np
-from mkits import structure
-from mkits.functions import *
-from mkits import functions
-import matplotlib.pyplot as plt
-from shapely.geometry import Point, Polygon
-from mkits import database
-from mkits import functions
-import os
-import copy
+# -*- coding: utf-8 -*-
+"""Structure building: slab/heterostructure stacking, molecule adsorption,
+and NGT-style quasi-crystal tiling canvases.
 
-
-"""
 Class
 -----
-canvas             : generate an ideal tiling canvas.
+adsorpt_molecue    : adsorb a molecule onto a slab surface at detected sites.
+canvas             : build a 2D quasi-crystal tiling canvas and export a slab.
 
 Functions
 ---------
-refine_struct      : refine the structures
-stack_struct       : stack two slab and generate a new heterojunction 
-ngt_tiling         : a possible NGT ideal tiling canvas
-carbontube         : the builder of carbon nanotube.
+stack_struct       : stack two slabs (substrate + support) and add vacuum.
+ngt_til, sigma_til, approx1_til, approx2_til, approx3_til, bigapp_til,
+hexapp_til, honeycomb_til
+                   : preset NGT/approximant tiling canvases.
 """
 
+import os
 
 import numpy as np
-import os
-import copy
 
+from mkits import database
+from mkits import functions
+from mkits import structure
+
+
+# ================================================================== #
+# heterostructure stacking
+# ================================================================== #
+def stack_struct(substrate, support, distance=1.7, vacuum=15):
+    """
+    Stack `support` on top of `substrate` along the c-axis and add a
+    vacuum gap above -- the mkits.structure equivalent of the original
+    ase.build/ase.io-based interface builder (ase.build.add_vacuum +
+    ase.Atoms concatenation).
+
+    Assumes both structures already share compatible in-plane (a, b)
+    lattice vectors (eg after independent surface/supercell construction)
+    and a c-axis aligned along Cartesian z, the standard slab convention:
+    the combined cell keeps substrate's a/b vectors and rebuilds c as
+    [0, 0, top_of(support) + vacuum]. Neither assumption is checked.
+
+    :param substrate: bottom layer -- a structure file path (any
+        mkits.structure format) or an already-loaded mkits.structure.struct
+    :param support: layer stacked on top of substrate -- file path or
+        mkits.structure.struct
+    :param distance: vertical gap (angstrom) between substrate's top and
+        support's bottom
+    :param vacuum: vacuum thickness (angstrom) added above support's
+        (shifted) top
+
+    Return
+    ------
+    A new mkits.structure.struct: substrate's atoms followed by support's
+    (z-shifted) atoms, sharing one cell.
+    """
+    _substrate = substrate if isinstance(substrate, structure.struct) else structure.struct(substrate)
+    _support = support if isinstance(support, structure.struct) else structure.struct(support)
+
+    _substrate_top = _substrate.position[1:, 6].max()
+    _support_bottom = _support.position[1:, 6].min()
+    _shift = _substrate_top + distance - _support_bottom
+    _support_top = _support.position[1:, 6].max() + _shift
+
+    _interface = structure.struct("none")
+    _interface.calculator = _substrate.calculator
+    _interface.title = "interface"
+    _interface.lattice9 = _substrate.lattice9.copy()
+    _interface.lattice9[2] = [0.0, 0.0, _support_top + vacuum]
+    _interface.lattice6 = functions.lattice_conversion(_interface.lattice9)
+
+    for _i in range(1, _substrate.total_atom + 1):
+        _symbol = database.atom_data[int(_substrate.position[_i, 0])][1]
+        _interface.add_atom(
+            _symbol, _substrate.position[_i, 4:7], is_frac=False, magmom=_substrate.position[_i, 10]
+        )
+    for _i in range(1, _support.total_atom + 1):
+        _symbol = database.atom_data[int(_support.position[_i, 0])][1]
+        _shifted_cart = _support.position[_i, 4:7] + np.array([0.0, 0.0, _shift])
+        _interface.add_atom(_symbol, _shifted_cart, is_frac=False, magmom=_support.position[_i, 10])
+
+    return _interface
+
+
+# ================================================================== #
+# molecule adsorption
+# ================================================================== #
 class adsorpt_molecue(structure.struct):
     """
-    Adsorb molecules to the structure based on spatial coordinates.
-    Generates separate POSCAR files for each valid adsorption site.
-    
-    :param inp: The path of the input file.
-    :param direction: The direction of the adsorption. (e.g., "c" or "-c").
-    :param center_coord: The FRACTIONAL coordinates [x, y, z] of the surface center point.
-    :param distance: The vertical bond length between the surface atom and the molecule. (Unit: Angstroms)
-    :param lateral_radius: The LATERAL search radius to find atoms around the center_coord.
-           If < 1.0: Treated as a fractional length.
-           If >= 1.0: Treated as Cartesian distance in Angstroms.
-    :param direction_thickness: The tolerance in FRACTIONAL coordinates along the vacuum axis.
-    :param element: The adsorption element (used for filtering surface atoms).
-    :param molecule: The adsorption molecule name defined in database.py.
-    :param write_to: Directory path to write the adsorbed structures.
-    :param write_name: Base prefix for the generated POSCAR files.
-    :param calculator: The output format (e.g., "poscar").
+    Adsorb a molecule onto a slab surface at detected adsorption sites,
+    writing one output structure file per site.
+
+    Detects surface atoms of `element` within `lateral_radius` of
+    `center_coord` (periodic lateral images considered) and within
+    `direction_thickness` of it along the surface normal, then places
+    `molecule` (from mkits.database's mol_* tables) `distance` above (or
+    below, for a "-a"/"-b"/"-c" direction) each detected site.
+
+    Attributes
+    ----------
+    ads_coords_list: list of (3,) arrays
+        Cartesian coordinates of the detected adsorption sites.
     """
+
     def __init__(
-            self, 
+            self,
             inp,
-            direction="c", 
-            center_coord=[0.5, 0.5, 0.5], 
-            distance=2.0,           
-            lateral_radius=2.0,     
-            direction_thickness=0.1, 
+            direction="c",
+            center_coord=[0.5, 0.5, 0.5],
+            distance=2.0,
+            lateral_radius=2.0,
+            direction_thickness=0.1,
             element="O",
             molecule="h2o",
             write_to="./",
@@ -65,313 +117,203 @@ class adsorpt_molecue(structure.struct):
             calculator="poscar",
             **kwargs
     ):
+        """
+        :param inp: path to the input structure file (any mkits.structure format)
+        :param direction: surface normal axis and sign, eg "c" or "-c"
+        :param center_coord: fractional coordinates of the surface search center
+        :param distance: vertical bond length (angstrom) between the surface and the molecule
+        :param lateral_radius: lateral search radius around center_coord --
+            a fractional length if < 1.0, a Cartesian distance (angstrom) if >= 1.0
+        :param direction_thickness: fractional-coordinate tolerance along the surface normal
+        :param element: element symbol(s) to search for as adsorption sites ("O" or "O,N")
+        :param molecule: molecule name, matching one of mkits.database's
+            mol_* tables (eg "h2o" -> database.mol_h2o)
+        :param write_to: output directory
+        :param write_name: output filename prefix
+        :param calculator: output format, passed through to write_struct
+        """
         super().__init__(inp)
         self.direction = direction.strip().lower()
         self.center_coord = np.array(center_coord, dtype=float)
-        
+
         self.distance = float(distance)
         self.lateral_radius = float(lateral_radius)
         self.direction_thickness = float(direction_thickness)
-        
-        # Handle single or multiple elements
-        if isinstance(element, str):
-            self.element = element.split(",")
-        else:
-            self.element = element
-            
+
+        self.element = element.split(",") if isinstance(element, str) else element
+
         self.molecule = molecule
         self.write_to = write_to
         self.write_name = write_name
         self.calculator = calculator
-        
-        self.ads_coords_list = [] 
-        
-        self._parse_direction()
-        self.__calc_ads_coords__()
-        self.__adsorpt__()
-    
-    def _parse_direction(self):
-        """Parse the direction string to determine the axis index and the sign."""
-        d = self.direction
-        
-        if d.startswith("-"):
+
+        self.ads_coords_list = []
+
+        self.__parse_direction()
+        self.__calc_ads_coords()
+        self.__adsorpt()
+
+    def __parse_direction(self):
+        """Parse self.direction into self.normal_axis/self.lateral_axes/self.sign."""
+        _direction = self.direction
+        if _direction.startswith("-"):
             self.sign = -1.0
-            axis_char = d[1:]
-        elif d.startswith("+"):
+            _axis = _direction[1:]
+        elif _direction.startswith("+"):
             self.sign = 1.0
-            axis_char = d[1:]
+            _axis = _direction[1:]
         else:
             self.sign = 1.0
-            axis_char = d
-            
-        if axis_char == "a":
-            self.normal_axis = 0
-            self.lateral_axes = [1, 2]
-        elif axis_char == "b":
-            self.normal_axis = 1
-            self.lateral_axes = [0, 2]
-        elif axis_char == "c":
-            self.normal_axis = 2
-            self.lateral_axes = [0, 1]
-        else:
-            print(f"Warning: Unknown direction '{self.direction}', defaulting to 'c'.")
-            self.normal_axis = 2
-            self.lateral_axes = [0, 1]
+            _axis = _direction
+
+        _axis_map = {"a": (0, [1, 2]), "b": (1, [0, 2]), "c": (2, [0, 1])}
+        if _axis not in _axis_map:
+            functions.write2log("Unknown direction '%s', defaulting to 'c'." % self.direction)
+            _axis = "c"
             self.sign = 1.0
+        self.normal_axis, self.lateral_axes = _axis_map[_axis]
 
-    def __calc_ads_coords__(self):
+    def __calc_ads_coords(self):
         """
-        Identify target surface atoms within the specified lateral_radius from 
-        the center_coord, filtered by the direction_thickness along the vacuum axis.
+        Find surface atoms of `element` within `lateral_radius` of
+        `center_coord` (periodic lateral images included) and within
+        `direction_thickness` along the surface normal; populates
+        self.ads_coords_list with their Cartesian positions.
         """
-        center_frac = self.center_coord
-        center_cart = functions.frac2cart(self.lattice9, center_frac)
-        
-        raw_vac_vec = self.lattice9[self.normal_axis]
-        vac_unit = (raw_vac_vec / np.linalg.norm(raw_vac_vec)) * self.sign
+        _center_frac = self.center_coord
+        _center_cart = functions.frac2cart(self.lattice9, _center_frac)
 
-        # Determine the absolute lateral search radius in Angstroms
+        _raw_vac_vec = self.lattice9[self.normal_axis]
+        _vac_unit = (_raw_vac_vec / np.linalg.norm(_raw_vac_vec)) * self.sign
+
         if self.lateral_radius < 1.0:
-            vec_a_len = np.linalg.norm(self.lattice9[self.lateral_axes[0]])
-            vec_b_len = np.linalg.norm(self.lattice9[self.lateral_axes[1]])
-            avg_len = (vec_a_len + vec_b_len) / 2.0
-            real_search_radius = self.lateral_radius * avg_len
+            _len_a = np.linalg.norm(self.lattice9[self.lateral_axes[0]])
+            _len_b = np.linalg.norm(self.lattice9[self.lateral_axes[1]])
+            _search_radius = self.lateral_radius * (_len_a + _len_b) / 2.0
         else:
-            real_search_radius = self.lateral_radius
+            _search_radius = self.lateral_radius
+        _search_sq = _search_radius ** 2
 
-        search_sq = real_search_radius ** 2
+        _shifts = []
+        for _i in [-1, 0, 1]:
+            for _j in [-1, 0, 1]:
+                _vec = np.zeros(3)
+                _vec[self.lateral_axes[0]] = _i
+                _vec[self.lateral_axes[1]] = _j
+                _shifts.append(np.dot(_vec, self.lattice9))
 
-        # Define 3x3 shifts for Lateral Periodic Boundary Conditions (PBC)
-        shifts = []
-        for i in [-1, 0, 1]:
-            for j in [-1, 0, 1]:
-                vec = np.zeros(3)
-                vec[self.lateral_axes[0]] = i
-                vec[self.lateral_axes[1]] = j
-                cart_shift = np.dot(vec, self.lattice9)
-                shifts.append(cart_shift)
+        self.ads_coords_list = []
+        for _i in range(1, self.total_atom + 1):
+            _atom_frac = self.position[_i, 1:4]
+            _atom_cart = self.position[_i, 4:7]
 
-        target_atoms_pos = []
-
-        # Iterate through all atoms (index 1 to total_atom, as index 0 is a buffer)
-        for i in range(1, self.total_atom + 1):
-            atom_frac = self.position[i, 1:4]
-            atom_cart = self.position[i, 4:7]
-            
-            # Filter by element type
-            atom_symbol_idx = int(self.position[i, 0])
-            try:
-                atom_symbol = database.atom_data[atom_symbol_idx][1]
-                if atom_symbol not in self.element:
-                    continue
-            except KeyError:
+            _symbol = database.atom_data[int(self.position[_i, 0])][1]
+            if _symbol not in self.element:
                 continue
 
-            # Filter 1: Direction Thickness (Fractional Check along the normal axis)
-            delta_frac = atom_frac[self.normal_axis] - center_frac[self.normal_axis]
-            delta_frac = delta_frac - np.round(delta_frac) # Wrap into [-0.5, 0.5] range for PBC
-            
-            if abs(delta_frac) > self.direction_thickness:
-                continue 
+            _delta_frac = _atom_frac[self.normal_axis] - _center_frac[self.normal_axis]
+            _delta_frac -= np.round(_delta_frac)
+            if abs(_delta_frac) > self.direction_thickness:
+                continue
 
-            # Filter 2: Lateral Radius (Cartesian Check considering PBC)
-            is_within_radius = False
-            best_pos = None
-            min_lat_dist_sq = 1e9
+            _best_pos = None
+            _min_lat_dist_sq = np.inf
+            for _shift in _shifts:
+                _shifted_pos = _atom_cart + _shift
+                _diff = _shifted_pos - _center_cart
+                _h_diff = np.dot(_diff, _vac_unit)
+                _lat_vec = _diff - _h_diff * _vac_unit
+                _lat_dist_sq = np.dot(_lat_vec, _lat_vec)
+                if _lat_dist_sq < _search_sq and _lat_dist_sq < _min_lat_dist_sq:
+                    _min_lat_dist_sq = _lat_dist_sq
+                    _best_pos = _shifted_pos
 
-            for shift in shifts:
-                shifted_pos = atom_cart + shift
-                diff_vec = shifted_pos - center_cart
-                
-                # Decompose the distance vector into vertical and lateral components
-                h_diff = np.dot(diff_vec, vac_unit) 
-                lat_vec = diff_vec - h_diff * vac_unit 
-                lat_dist_sq = np.dot(lat_vec, lat_vec)
-                
-                if lat_dist_sq < search_sq:
-                    is_within_radius = True
-                    if lat_dist_sq < min_lat_dist_sq:
-                        min_lat_dist_sq = lat_dist_sq
-                        best_pos = shifted_pos
-            
-            if is_within_radius and best_pos is not None:
-                target_atoms_pos.append(best_pos)
+            if _best_pos is not None:
+                self.ads_coords_list.append(_best_pos)
 
-        # Calculate final adsorption sites
-        for pos in target_atoms_pos:
-            site = pos # The adsorption logic will handle the displacement in __adsorpt__
-            self.ads_coords_list.append(site)
-            
-        print(f"Total adsorption sites generated: {len(self.ads_coords_list)}")
+        functions.write2log("Total adsorption sites generated: %d" % len(self.ads_coords_list))
 
-    def __adsorpt__(self):
+    def __adsorpt(self):
         """
-        Iterate over each identified adsorption site, attach the molecule,
-        and output a unique structure file.
+        For each detected adsorption site, attach `molecule` and write a
+        separate output structure file; self.position/self.total_atom are
+        restored to the clean slab once every site has been written.
         """
-        mol_name = "mol_" + self.molecule
-        if hasattr(database, mol_name):
-            mol_data = getattr(database, mol_name)
-        else:
-            functions.lexit(f"Molecule {self.molecule} not found in database.")
-        
-        # Backup the original structure state to avoid accumulation during iterations
-        original_position = self.position.copy()
-        original_total_atom = self.total_atom
-        
-        # Configure output paths
+        _mol_name = "mol_" + self.molecule
+        if not hasattr(database, _mol_name):
+            raise functions.MkitsError("Molecule %s not found in mkits.database." % self.molecule)
+        _mol_data = getattr(database, _mol_name)
+
+        _original_position = self.position.copy()
+        _original_total_atom = self.total_atom
+
         if os.path.isdir(self.write_to):
-            base_fpath = self.write_to
+            _base_fpath = self.write_to
         else:
-            base_fpath = os.path.dirname(self.write_to)
-            if not base_fpath: base_fpath = "./"
+            _base_fpath = os.path.dirname(self.write_to) or "./"
 
-        # Loop through EACH calculated adsorption site
-        for idx, base_ads_coord in enumerate(self.ads_coords_list):
-            
-            # Reset structure to the original clean slab
-            self.position = original_position.copy()
-            self.total_atom = original_total_atom
-            
-            # Extract Cartesian coordinates of the molecule relative to its anchor (skip the definition line)
-            mol_xyz = np.array([row[1:4] for row in mol_data[1:]], dtype=float)
-            mol_elements = [database.atom_data[int(row[0])][1] for row in mol_data[1:]]
+        _mol_xyz = np.array([_row[1:4] for _row in _mol_data[1:]], dtype=float)
+        _mol_elements = [database.atom_data[int(_row[0])][1] for _row in _mol_data[1:]]
 
-            # Adjust molecule orientation and calculate the anchor displacement
+        _raw_vac_vec = self.lattice9[self.normal_axis]
+        _vac_unit = _raw_vac_vec / np.linalg.norm(_raw_vac_vec)
+
+        for _idx, _base_ads_coord in enumerate(self.ads_coords_list):
+            self.position = _original_position.copy()
+            self.total_atom = _original_total_atom
+
             if self.direction.startswith("-"):
-                # Rotate the molecule 180 degrees around the X-axis so it faces downwards (y = -y, z = -z)
-                mol_xyz[:, 1] = -mol_xyz[:, 1]
-                mol_xyz[:, 2] = -mol_xyz[:, 2]
-                
-                # Set displacement downwards along the vacuum axis
-                raw_vac_vec = self.lattice9[self.normal_axis]
-                vac_unit = raw_vac_vec / np.linalg.norm(raw_vac_vec)
-                displacement = -self.distance * vac_unit
+                # face downwards: mirror the molecule across x, displace down
+                _oriented_xyz = _mol_xyz * np.array([1.0, -1.0, -1.0])
+                _displacement = -self.distance * _vac_unit
             else:
-                # Default orientation (facing upwards)
-                raw_vac_vec = self.lattice9[self.normal_axis]
-                vac_unit = raw_vac_vec / np.linalg.norm(raw_vac_vec)
-                displacement = self.distance * vac_unit
+                _oriented_xyz = _mol_xyz
+                _displacement = self.distance * _vac_unit
 
-            # Apply coordinates relative to the adsorption site
-            for i, symbol in enumerate(mol_elements):
-                abs_pos = base_ads_coord + mol_xyz[i] + displacement
-                self.add_atom(symbol, abs_pos, is_frac=False)
-            
-            # Write separate output file for this specific site
-            site_fname = f"{self.write_name}_{self.molecule}_ads_{idx+1}"
-            self.write_struct(fpath=base_fpath, fname=site_fname, calculator=self.calculator)
-            
+            for _i, _symbol in enumerate(_mol_elements):
+                _abs_pos = _base_ads_coord + _oriented_xyz[_i] + _displacement
+                self.add_atom(_symbol, _abs_pos, is_frac=False)
 
-            
-            
+            _site_fname = "%s_%s_ads_%d" % (self.write_name, self.molecule, _idx + 1)
+            self.write_struct(fpath=_base_fpath, fname=_site_fname, calculator=self.calculator)
+
+        self.position = _original_position.copy()
+        self.total_atom = _original_total_atom
 
 
-    #def __adsorpt__(self):
-"""
-        Iterate over each found adsorption site, creates a unique structure,
-        and writes it to a separate file.
-   
-        mol_name = "mol_" + self.molecule
-        if hasattr(database, mol_name):
-            mol_data = getattr(database, mol_name)
-        else:
-            functions.lexit(f"Molecule {self.molecule} not found in database.")
-        
-        # Backup original structure state
-        # We need deep copies because self.position is modified in place
-        import copy
-        original_position = self.position.copy()
-        original_total_atom = self.total_atom
-        
-        # Base filename handling
-        if os.path.isdir(self.write_to):
-            base_fpath = self.write_to
-            base_fname = f"POSCAR_{self.molecule}_ads"
-        else:
-            base_fpath = os.path.dirname(self.write_to)
-            if not base_fpath: base_fpath = "./"
-            base_fname = os.path.basename(self.write_to)
-
-        # Loop through EACH calculated adsorption site
-        for idx, ads_coord in enumerate(self.ads_coords_list):
-            # 1. Reset structure to clean slab
-            self.position = original_position.copy()
-            self.total_atom = original_total_atom
-            
-            # 2. Add molecule atoms
-            # IMPORTANT: Loop from range(1, len) to skip the center definition line [0,0,0,0]
-            for i in range(1, len(mol_data)):
-                atom_info = mol_data[i]
-                
-                # atom_info: [atomic_number, x, y, z]
-                atom_z_idx = int(atom_info[0])
-                
-                try:
-                    symbol = database.atom_data[atom_z_idx][1]
-                except KeyError:
-                    functions.lexit(f"Atomic index {atom_z_idx} not found in database.")
-                
-                atom_rel_pos = np.array(atom_info[1:])
-                
-                # Apply coordinates relative to the adsorption site
-                abs_pos = ads_coord + atom_rel_pos
-                
-                # Call existing add_atom
-                self.add_atom(symbol, abs_pos, is_frac=False)
-            
-            # 3. Write separate output file for this site
-            # Naming convention: POSCAR_h2o_ads_site_1, POSCAR_h2o_ads_site_2, etc.
-            site_fname = f"{base_fname}_site_{idx+1}"
-            self.write_struct(fpath=base_fpath, fname=site_fname, calculator=self.calculator)
-            # print(f"Generated: {os.path.join(base_fpath, site_fname)}")""
-"""
-
-def stack_struct(substrate, support, distance=1.7, vacuum=15):
-    """ 
-    """
-    zmin = support.positions[:, 2].min()
-    zmax = substrate.positions[:, 2].max()
-    support.positions += (0, 0, zmax - zmin + distance)
-    c = support.positions[:, 2].max()
-    interface = substrate + support
-    interface.set_cell([interface.get_cell()[0].tolist(),
-                        interface.get_cell()[1].tolist(), 
-                        [0, 0, c]])
-    ase.build.add_vacuum(interface, vacuum)
-    return interface
-
+# ================================================================== #
+# NGT-style quasi-crystal tiling canvas
+# ================================================================== #
 class canvas(object):
     """
+    A 2D tiling canvas built by attaching polygon patterns (square,
+    triangle, rhombus, ...) edge-to-edge, used to construct NGT-style
+    quasi-crystal approximant tilings (see ngt_til, sigma_til, ... below),
+    which build_crystal then truncates and exports as a periodic slab.
 
+    Attributes
+    ----------
+    coord: (n, 3) numpy array
+        Atom coordinates (2D tiling plane in x/y; z used for buckling).
+    atom: (n,) numpy array
+        Element symbols, same order as coord.
+    edge_coordinates: (m, 6) numpy array
+        [x0, y0, z0, x1, y1, z1] per open edge, available for add_pattern.
+    truncated_edge: (k, 2) numpy array
+        The polygon boundary set by truncate(), used by build_crystal.
+    export_value: dict
+        Populated by export_val()/build_crystal() for external inspection.
     """
 
-    def __init__(self, center_pattern) -> None:
+    def __init__(self, center_pattern):
         """
-        Parameters
-        ----------
-        pattern
-            square_pos = np.loadtxt("./square.xyz", 
-                                    skiprows=2, 
-                                    usecols=[1,2,3])
-            square_atom = np.loadtxt("./square.xyz", 
-                                     skiprows=2, 
-                                     usecols=[0], 
-                                     dtype='str')
-            pattern_square = {
-                "corner": 4,
-                "coord": square_pos,
-                "atoms": square_atom
-            }
-
-        Attributes
-        ----------
-        self.position
-            coordinates of the atom position
-        self.atom
-        self.edge_index
-        self.edge_coordinates: array
-            1x6 array  
+        :param center_pattern: dict with "corner" (int), "coord" (Nx3
+            array), "atoms" (N array of element symbols) -- the starting
+            polygon pattern, eg a square/triangle/rhombus unit read from
+            an xyz file:
+                square_pos = np.loadtxt("square.xyz", skiprows=2, usecols=[1, 2, 3])
+                square_atom = np.loadtxt("square.xyz", skiprows=2, usecols=[0], dtype="str")
+                pattern_square = {"corner": 4, "coord": square_pos, "atoms": square_atom}
         """
         self.coord = center_pattern["coord"]
         self.atom = center_pattern["atoms"]
@@ -382,522 +324,368 @@ class canvas(object):
         self.pattern_index = np.array([0])
         self.pattern_center = np.zeros(3)
         self.edge_coordinates = np.zeros(6)
-        pos_head_tail = np.vstack((self.coord[:center_pattern["corner"]], 
-                                   self.coord[0]))
-        for i in range(int(center_pattern["corner"])):
+        _pos_head_tail = np.vstack((self.coord[:center_pattern["corner"]], self.coord[0]))
+        for _i in range(int(center_pattern["corner"])):
             self.edge_max += 1
             self.edge_list = np.append(self.edge_list, self.edge_max)
-            self.edge_coordinates = np.vstack((self.edge_coordinates, 
-                                               np.hstack((pos_head_tail[i], pos_head_tail[i+1]))))
+            self.edge_coordinates = np.vstack((
+                self.edge_coordinates, np.hstack((_pos_head_tail[_i], _pos_head_tail[_i + 1]))
+            ))
             self.flip = np.append(self.flip, 0)
         self.truncated = False
         self.truncated_edge = np.zeros(2)
         self.export_value = {}
-        
+
     def add_pattern(self, pattern, edge_index):
         """
-        Parameters
-        ----------
-        pattern: class
-            pattern to add
-        edge_index: int
-            The position where adding the pattern
-        reverse: bool
-            Whether reverse the pattern or not
-        clockwise: bool
-            rotate in clockwise
+        Attach `pattern` to the open edge at `edge_index`, mirroring/
+        rotating it so its first edge matches that edge's direction, then
+        appends its atoms and registers its own open edges.
+
+        :param pattern: dict, same shape as canvas()'s center_pattern
+        :param edge_index: index into self.edge_coordinates to attach to
         """
-        edge_num = pattern["corner"]
-        edge_init_position = self.edge_coordinates[edge_index]
-        
-        flip = self.flip[edge_index]
-        if not flip:
-            flip = 1
-        else:
-            flip = 0
-        
-        # determine derection
-        if flip:
-            reverse = True
-            if edge_init_position[1] <= edge_init_position[4]:
-                clockwise = True
-            else:
-                clockwise = False
-        else:
-            reverse = False
-            if edge_init_position[1] <= edge_init_position[4]:
-                clockwise = False
-            else:
-                clockwise = True
+        _edge_num = pattern["corner"]
+        _edge_init_position = self.edge_coordinates[edge_index]
 
-        if reverse:
-            vr = np.array([[-1, 0, 0],
-                           [0, 1, 0],
-                           [0, 0, 1]])
-            coord = (vr @ pattern["coord"].T).T
-        else:
-            coord = pattern["coord"]
+        _flip = self.flip[edge_index]
+        _flip = 0 if _flip else 1
 
-        # rotation
-        vector_init = (coord[1]-coord[0])[0:2]
-        vector_fina = edge_init_position[3:5]-edge_init_position[0:2]
-        angle = vector_angle(vector_init, vector_fina, "rad")
-        if clockwise:
-            vx = np.array([[np.cos(angle), np.sin(angle), 0],
-                           [-np.sin(angle), np.cos(angle), 0],
-                           [0,0,1]])
+        if _flip:
+            _reverse = True
+            _clockwise = _edge_init_position[1] <= _edge_init_position[4]
         else:
-            vx = np.array([[np.cos(angle), -np.sin(angle), 0],
-                           [np.sin(angle), np.cos(angle), 0],
-                           [0,0,1]])
-        coord_rotated = (vx @ coord.T).T
+            _reverse = False
+            _clockwise = not (_edge_init_position[1] <= _edge_init_position[4])
 
-        # translation
-        coord_translated = coord_rotated + np.append(edge_init_position[0:2], 0)
-        self.coord = np.vstack((self.coord, coord_translated))
+        if _reverse:
+            _vr = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, 1]])
+            _coord = (_vr @ pattern["coord"].T).T
+        else:
+            _coord = pattern["coord"]
+
+        _vector_init = (_coord[1] - _coord[0])[0:2]
+        _vector_fina = _edge_init_position[3:5] - _edge_init_position[0:2]
+        _angle = functions.vector_angle(_vector_init, _vector_fina, "rad")
+        if _clockwise:
+            _vx = np.array([[np.cos(_angle), np.sin(_angle), 0],
+                            [-np.sin(_angle), np.cos(_angle), 0],
+                            [0, 0, 1]])
+        else:
+            _vx = np.array([[np.cos(_angle), -np.sin(_angle), 0],
+                            [np.sin(_angle), np.cos(_angle), 0],
+                            [0, 0, 1]])
+        _coord_rotated = (_vx @ _coord.T).T
+
+        _coord_translated = _coord_rotated + np.append(_edge_init_position[0:2], 0)
+        self.coord = np.vstack((self.coord, _coord_translated))
         self.atom = np.hstack((self.atom, pattern["atoms"]))
 
-        pos_head_tail = np.vstack((coord_translated[0:edge_num], 
-                                   coord_translated[0]))
+        _pos_head_tail = np.vstack((_coord_translated[0:_edge_num], _coord_translated[0]))
         self.edge_used = np.append(self.edge_used, edge_index)
 
-        for i in range(int(pattern["corner"])):
+        for _i in range(int(pattern["corner"])):
             self.edge_max += 1
             self.edge_list = np.append(self.edge_list, self.edge_max)
-            self.edge_coordinates = np.vstack((self.edge_coordinates,
-                                               np.hstack((pos_head_tail[i], 
-                                                          pos_head_tail[i+1]))))
-            self.flip = np.append(self.flip, flip)
-        
-        # pattern index
-        self.pattern_index = np.append(self.pattern_index, 
-                                       self.pattern_index[-1]+1)
-        self.pattern_center = np.vstack((self.pattern_center,
-                                         np.average(coord_translated[:pattern["corner"]], 
-                                                    axis=0)))
+            self.edge_coordinates = np.vstack((
+                self.edge_coordinates, np.hstack((_pos_head_tail[_i], _pos_head_tail[_i + 1]))
+            ))
+            self.flip = np.append(self.flip, _flip)
 
-    def plot_canvas(self, 
+        self.pattern_index = np.append(self.pattern_index, self.pattern_index[-1] + 1)
+        self.pattern_center = np.vstack((
+            self.pattern_center, np.average(_coord_translated[:pattern["corner"]], axis=0)
+        ))
+
+    def plot_canvas(self,
                     show_pattern_index=0,
                     show_edge_index=True,
                     save_fig="none",
                     fig_size="none"):
         """
-        Parameters
-        ----------
-        show_pattern_index
-            optional [-1, 0, 1]
-            0 : don't show the indices
-            1 : show the indices in positive sequence
-            -1: show the indices in inverted sequence
-        fig_size:
-            plot the figure with specific size. eg: [20,20]
-        save_fig:
-            if provide, save the figure by provided name.
-        """
-        fig = plt.figure(figsize=[10,10])
-        if fig_size != "none":
-            fig = plt.figure(figsize=fig_size)
+        Visualize the tiling: open edges as arrows, optional edge/pattern
+        index labels, and the truncation boundary if truncate() was called.
 
-        for i in range(len(self.edge_coordinates) - 1):
-            if i+1 in self.edge_used:
+        :param show_pattern_index: 0 -> don't show, 1 -> ascending order,
+            -1 -> descending order
+        :param fig_size: eg [20, 20]
+        :param save_fig: if given, save the figure under this filename
+        """
+        import matplotlib.pyplot as plt
+
+        plt.figure(figsize=[10, 10])
+        if fig_size != "none":
+            plt.figure(figsize=fig_size)
+
+        for _i in range(len(self.edge_coordinates) - 1):
+            if _i + 1 in self.edge_used:
                 continue
-            else:
-                plt.arrow(self.edge_coordinates[i+1, 0],
-                          self.edge_coordinates[i+1, 1], 
-                          self.edge_coordinates[i+1, 3] - self.edge_coordinates[i+1, 0],
-                          self.edge_coordinates[i+1, 4] - self.edge_coordinates[i+1, 1],
-                          width = 0.1)
-                if show_edge_index:
-                    plt.text((self.edge_coordinates[i+1, 3] + self.edge_coordinates[i+1, 0])/2,
-                            (self.edge_coordinates[i+1, 4] + self.edge_coordinates[i+1, 1])/2,
-                            str(self.edge_list[i+1]))
+            plt.arrow(
+                self.edge_coordinates[_i + 1, 0], self.edge_coordinates[_i + 1, 1],
+                self.edge_coordinates[_i + 1, 3] - self.edge_coordinates[_i + 1, 0],
+                self.edge_coordinates[_i + 1, 4] - self.edge_coordinates[_i + 1, 1],
+                width=0.1
+            )
+            if show_edge_index:
+                plt.text(
+                    (self.edge_coordinates[_i + 1, 3] + self.edge_coordinates[_i + 1, 0]) / 2,
+                    (self.edge_coordinates[_i + 1, 4] + self.edge_coordinates[_i + 1, 1]) / 2,
+                    str(self.edge_list[_i + 1])
+                )
         plt.axis("equal")
+
         if self.truncated:
-            plt.plot(self.truncated_edge[:, 0], 
-                     self.truncated_edge[:, 1], 
-                     "--", 
-                     color="tab:red", 
-                     linewidth=2.0)
-            for i in range(len(self.truncated_edge)-1):
-                plt.text(self.truncated_edge[i, 0],
-                         self.truncated_edge[i, 1],
-                         str(i),
-                         color="tab:red",
-                         fontsize=18)
-                
-        if show_pattern_index == 0:
-            pass
-        elif show_pattern_index == 1 or show_pattern_index == -1:
-            for i in range(1, len(self.pattern_index)):
-                plt.text(self.pattern_center[i, 0],
-                         self.pattern_center[i, 1],
-                         str(self.pattern_index[i * show_pattern_index]),
-                         color="tab:red",
-                         fontsize=16)
-                
+            plt.plot(self.truncated_edge[:, 0], self.truncated_edge[:, 1],
+                     "--", color="tab:red", linewidth=2.0)
+            for _i in range(len(self.truncated_edge) - 1):
+                plt.text(self.truncated_edge[_i, 0], self.truncated_edge[_i, 1],
+                         str(_i), color="tab:red", fontsize=18)
+
+        if show_pattern_index in (1, -1):
+            for _i in range(1, len(self.pattern_index)):
+                plt.text(
+                    self.pattern_center[_i, 0], self.pattern_center[_i, 1],
+                    str(self.pattern_index[_i * show_pattern_index]),
+                    color="tab:red", fontsize=16
+                )
+
         if save_fig != "none":
             plt.savefig(save_fig)
 
     def savexyz(self, out):
-        """
-        """
+        """Write self.coord/self.atom as a plain xyz file."""
         with open(out, "w", newline="\n") as f:
-            f.write("%d\n" % len(self.coord))
-            f.write("\n")
-            for i in range(len(self.coord)):
-                f.write("%s%23.15f%23.15f%23.15f\n" % ("{:<2}".format(self.atom[i]), 
-                                                     self.coord[i, 0],
-                                                     self.coord[i, 1],
-                                                     self.coord[i, 2]))
+            f.write("%d\n\n" % len(self.coord))
+            for _i in range(len(self.coord)):
+                f.write("%s%23.15f%23.15f%23.15f\n" % (
+                    "{:<2}".format(self.atom[_i]), self.coord[_i, 0], self.coord[_i, 1], self.coord[_i, 2]
+                ))
 
     def points_in_polygon(self, polygon):
-        """ 
-        """
-        atom_to_del = []
-        polygon = Polygon(polygon)
-        for i in range(1, len(self.atom)):
-            points = Point(self.coord[i, 0:2])
-            if not points.within(polygon):
-                atom_to_del.append(i)
-        self.atom = np.delete(self.atom, list(set(atom_to_del)))
-        self.coord = np.delete(self.coord, list(set(atom_to_del)), axis=0)
-    
+        """Drop every atom (from index 1 onward) outside the given 2D polygon."""
+        from shapely.geometry import Point, Polygon
+
+        _polygon = Polygon(polygon)
+        _atom_to_del = []
+        for _i in range(1, len(self.atom)):
+            if not Point(self.coord[_i, 0:2]).within(_polygon):
+                _atom_to_del.append(_i)
+        self.atom = np.delete(self.atom, list(set(_atom_to_del)))
+        self.coord = np.delete(self.coord, list(set(_atom_to_del)), axis=0)
+
     def truncate(self, method, inpara):
-        """ 
-        Truncate the tiling with different methods
+        """
+        Truncate the tiling boundary, keeping only atoms inside it.
 
-        Parameters
-        ----------
-        method: str
-            The way to truncate the tiling. Option [cube, plane]
-            cube: Truncate with planes parallel to axis
-                  specify xmin, xmax, ymin, ymax as a list
-                  eg: inpara = [xmin, xmax, ymin, ymax]
-            edge: Get the vertex from edge number and the head[0]/tail[1]
-                  and offset
-                  eg: inpara = ([1,2,3], 
-                                [0,1,0], 
-                                [-0.1, -0.1, 0.1])
-            midp: Get the vertex from the midpoint of given edge
-                  eg: inpara = (
-                  [1,2,3],
-                  [-0.01, -0.01, -0.01]
-                  )
-
+        :param method: "cube" (inpara = [xmin, xmax, ymin, ymax]), "edge"
+            (inpara = (edge_indices, [0|1 per edge: head/tail], offsetx,
+            offsety)), or "midp" (inpara = (edge_indices, offsetx,
+            offsety), using each edge's midpoint)
         """
         self.truncated = True
         if method == "midp":
-            truncated_edge = np.zeros(2)
-            offsetx = np.zeros(1)
-            offsety = np.zeros(1)
-            for i in range(len(inpara[0])):
-                edge_points = np.average(self.edge_coordinates[inpara[0][i]].reshape((-1,3)),
-                                         axis=0)
-                
-                truncated_edge = np.vstack((truncated_edge, edge_points[0:2]))
-                offsetx = np.append(offsetx, inpara[1][i])
-                offsety = np.append(offsety, inpara[2][i])
-            
-            truncated_edge = truncated_edge + (np.vstack((offsetx, offsety))).T
-            self.points_in_polygon(truncated_edge[1:])
-            self.truncated_edge = np.vstack((truncated_edge[1:], 
-                                             truncated_edge[1]))
+            _truncated_edge = np.zeros(2)
+            _offsetx = np.zeros(1)
+            _offsety = np.zeros(1)
+            for _i in range(len(inpara[0])):
+                _edge_points = np.average(self.edge_coordinates[inpara[0][_i]].reshape((-1, 3)), axis=0)
+                _truncated_edge = np.vstack((_truncated_edge, _edge_points[0:2]))
+                _offsetx = np.append(_offsetx, inpara[1][_i])
+                _offsety = np.append(_offsety, inpara[2][_i])
+
+            _truncated_edge = _truncated_edge + (np.vstack((_offsetx, _offsety))).T
+            self.points_in_polygon(_truncated_edge[1:])
+            self.truncated_edge = np.vstack((_truncated_edge[1:], _truncated_edge[1]))
 
         elif method == "cube":
-            xmin, xmax, ymin, ymax = inpara
-            truncated_edge = np.array([[xmin, ymin],
-                                       [xmax, ymin],
-                                       [xmax, ymax],
-                                       [xmin, ymax]])
-            self.points_in_polygon(truncated_edge)
-            # truncated edge
-            truncated_edge = np.vstack((truncated_edge, truncated_edge[0]))
-            self.truncated_edge = truncated_edge
+            _xmin, _xmax, _ymin, _ymax = inpara
+            _truncated_edge = np.array([
+                [_xmin, _ymin], [_xmax, _ymin], [_xmax, _ymax], [_xmin, _ymax]
+            ])
+            self.points_in_polygon(_truncated_edge)
+            self.truncated_edge = np.vstack((_truncated_edge, _truncated_edge[0]))
 
         elif method == "edge":
-            truncated_edge = np.zeros(2)
-            offsetx = np.zeros(1)
-            offsety = np.zeros(1)
-            for i in range(len(inpara[0])):
-                if inpara[1][i] == 0:
-                    edge_points = self.edge_coordinates[inpara[0][i]][0:2]
-                elif inpara[1][i] == 1:
-                    edge_points = self.edge_coordinates[inpara[0][i]][3:5]
-                truncated_edge = np.vstack((truncated_edge, edge_points))
-                offsetx = np.append(offsetx, inpara[2][i])
-                offsety = np.append(offsety, inpara[3][i])
-            
-            truncated_edge = truncated_edge + (np.vstack((offsetx, offsety))).T
-            self.points_in_polygon(truncated_edge[1:])
-            self.truncated_edge = np.vstack((truncated_edge[1:], 
-                                             truncated_edge[1]))
-    
+            _truncated_edge = np.zeros(2)
+            _offsetx = np.zeros(1)
+            _offsety = np.zeros(1)
+            for _i in range(len(inpara[0])):
+                if inpara[1][_i] == 0:
+                    _edge_points = self.edge_coordinates[inpara[0][_i]][0:2]
+                elif inpara[1][_i] == 1:
+                    _edge_points = self.edge_coordinates[inpara[0][_i]][3:5]
+                _truncated_edge = np.vstack((_truncated_edge, _edge_points))
+                _offsetx = np.append(_offsetx, inpara[2][_i])
+                _offsety = np.append(_offsety, inpara[3][_i])
+
+            _truncated_edge = _truncated_edge + (np.vstack((_offsetx, _offsety))).T
+            self.points_in_polygon(_truncated_edge[1:])
+            self.truncated_edge = np.vstack((_truncated_edge[1:], _truncated_edge[1]))
+        else:
+            raise functions.MkitsError("Unknown truncate method: %s (expected cube, edge, or midp)." % method)
+
     def get_edge_point(self, edge, initend):
         """
+        NOTE: relies on functions.trans_reflection_xy, which is not
+        implemented anywhere in mkits yet -- this method (and
+        reflection_transform, which calls it) is ported from the original
+        but is not currently usable.
         """
-        edge_point_coord = np.zeros(2)
-        for i in range(len(edge)):
-            if initend[i] == 0:
-                edge_point_coord = np.vstack((edge_point_coord, 
-                                              self.edge_coordinates[0:2]))
-            elif initend[i] == 1:
-                edge_point_coord = np.vstack((edge_point_coord, 
-                                              self.edge_coordinates[3:5]))
+        _edge_point_coord = np.zeros(2)
+        for _i in range(len(edge)):
+            if initend[_i] == 0:
+                _edge_point_coord = np.vstack((_edge_point_coord, self.edge_coordinates[0:2]))
+            elif initend[_i] == 1:
+                _edge_point_coord = np.vstack((_edge_point_coord, self.edge_coordinates[3:5]))
             else:
-                print("0 represents initial point, 1 represents end point")
-                exit()
-        return edge_point_coord
-    
+                raise functions.MkitsError("initend entries must be 0 (initial point) or 1 (end point).")
+        return _edge_point_coord
+
     def reflection_transform(self, edge, initend):
-        """ 
-        Parameters
-        ----------
-        """
-        edge_points_coord = self.get_edge_point(edge, initend)
-        edge_coordinates_reflected = trans_reflection_xy(self.edge_coordinates, 
-                                                         "2ps", 
-                                                         tuple(edge_points_coord))
-        coord_reflected = trans_reflection_xy(self.coord, 
-                                              "2ps", 
-                                              tuple(edge_points_coord))
+        """See get_edge_point's note -- not currently usable."""
+        _edge_points_coord = self.get_edge_point(edge, initend)
+        _edge_coordinates_reflected = functions.trans_reflection_xy(
+            self.edge_coordinates, "2ps", tuple(_edge_points_coord)
+        )
+        _coord_reflected = functions.trans_reflection_xy(
+            self.coord, "2ps", tuple(_edge_points_coord)
+        )
         self.atom = np.hstack((self.atom, self.atom))
-        self.edge_coordinates = np.vstack((self.edge_coordinates, 
-                                           edge_coordinates_reflected))
-        self.coord = np.vstack((self.coord, coord_reflected))
-    
-    def build_crystal(self, out, vacuum, a_index, b_index, fmt="vasp", 
+        self.edge_coordinates = np.vstack((self.edge_coordinates, _edge_coordinates_reflected))
+        self.coord = np.vstack((self.coord, _coord_reflected))
+
+    def build_crystal(self, out, vacuum, a_index, b_index, fmt="vasp",
                       sort=True, scale_a=1.0, scale_b=1.0):
         """
-        Parameters
-        ----------
-        out: str
-            The name of output file
-        vacuum: float
-        a_index: int from 1
-        b_index: int from 1
-        fmt: str
-            option [vasp]            
+        Cut a periodic 2D slab out of the tiling along the a_index/b_index
+        edges of the truncation boundary and export it as a
+        mkits.structure struct (c-axis is pure vacuum spacing, not a real
+        periodic direction).
+
+        :param out: output file path (directory + filename)
+        :param vacuum: c-axis cell height (angstrom) -- vacuum spacing,
+            since the tiling itself is 2D
+        :param a_index, b_index: (start, end) truncated_edge point
+            indices defining the a/b lattice vectors -- must share the
+            same start point
+        :param fmt: output format, currently only "vasp" (POSCAR) is supported
         """
-        vector_a = self.truncated_edge[a_index[1], 0:2] - self.truncated_edge[a_index[0], 0:2]
-        vector_b = self.truncated_edge[b_index[1], 0:2] - self.truncated_edge[b_index[0], 0:2]
-        lattice_a = np.linalg.norm(vector_a)
-        lattice_b = np.linalg.norm(vector_b)
+        _vector_a = self.truncated_edge[a_index[1], 0:2] - self.truncated_edge[a_index[0], 0:2]
+        _vector_b = self.truncated_edge[b_index[1], 0:2] - self.truncated_edge[b_index[0], 0:2]
 
         if a_index[0] != b_index[0]:
-            print("Lattice a and b must start from the same point.")
-            exit()
-        angle = vector_angle(vector_a, np.array([1,0]), "rad")
+            raise functions.MkitsError("Lattice a and b must start from the same point.")
+        _angle = functions.vector_angle(_vector_a, np.array([1, 0]), "rad")
 
-        # translation
+        # translate so a_index[0] sits at the origin
         self.coord = self.coord - np.append(self.truncated_edge[a_index[0]], 0)
 
-        if vector_a[1] > 0:
-            vx = np.array([[np.cos(angle), np.sin(angle), 0],
-                           [-np.sin(angle), np.cos(angle), 0],
-                           [0,0,1]])
+        if _vector_a[1] > 0:
+            _vx = np.array([[np.cos(_angle), np.sin(_angle), 0],
+                            [-np.sin(_angle), np.cos(_angle), 0],
+                            [0, 0, 1]])
         else:
-            vx = np.array([[np.cos(angle), -np.sin(angle), 0],
-                           [np.sin(angle), np.cos(angle), 0],
-                           [0,0,1]])
-        self.coord = (vx @ self.coord.T).T
+            _vx = np.array([[np.cos(_angle), -np.sin(_angle), 0],
+                            [np.sin(_angle), np.cos(_angle), 0],
+                            [0, 0, 1]])
+        self.coord = (_vx @ self.coord.T).T
 
-        vector_a = np.append(vector_a, 0)
-        vector_b = np.append(vector_b, 0)
-        vector_a = (vx @ vector_a.T).T
-        vector_b = (vx @ vector_b.T).T
+        _vector_a = (_vx @ np.append(_vector_a, 0).T).T
+        _vector_b = (_vx @ np.append(_vector_b, 0).T).T
 
-        # delete too close pairs in periodic crystals
-        toocloseatom = []
-        # in a-direction
-        for i in range(len(self.atom)):
-            if abs(self.coord[i, 0]) < 1:
-                for j in range(len(self.atom)):
-                    if np.linalg.norm(self.coord[i] + np.array(vector_a - self.coord[j])) < 1:
-                        toocloseatom.append(j)
-        # in b-direction
-        for i in range(len(self.atom)):
-            if abs(self.coord[i, 1]) < 1:
-                for j in range(len(self.atom)):
-                    if np.linalg.norm(self.coord[i] + np.array(vector_b - self.coord[j])) < 1:
-                        toocloseatom.append(j)
-        self.atom = np.delete(self.atom, list(set(toocloseatom)))
-        self.coord = np.delete(self.coord, list(set(toocloseatom)), axis=0)
+        # drop periodic-image duplicates at the a/b cell boundaries
+        _too_close = []
+        for _i in range(len(self.atom)):
+            if abs(self.coord[_i, 0]) < 1:
+                for _j in range(len(self.atom)):
+                    if np.linalg.norm(self.coord[_i] + (_vector_a - self.coord[_j])) < 1:
+                        _too_close.append(_j)
+        for _i in range(len(self.atom)):
+            if abs(self.coord[_i, 1]) < 1:
+                for _j in range(len(self.atom)):
+                    if np.linalg.norm(self.coord[_i] + (_vector_b - self.coord[_j])) < 1:
+                        _too_close.append(_j)
+        self.atom = np.delete(self.atom, list(set(_too_close)))
+        self.coord = np.delete(self.coord, list(set(_too_close)), axis=0)
 
-        # sort the atoms
         if sort:
             self.sort_atom()
 
-        # scaled lattice
-        # self.coord = 
+        _crystal = structure.struct("none")
+        _crystal.title = "canvas_tiling"
+        _crystal.lattice9 = np.array([_vector_a.tolist(), _vector_b.tolist(), [0.0, 0.0, vacuum]])
+        _crystal.lattice6 = functions.lattice_conversion(_crystal.lattice9)
+        for _i in range(len(self.atom)):
+            _crystal.add_atom(str(self.atom[_i]), self.coord[_i], is_frac=False)
 
-        # ase atoms
-        cell = ase.Atoms(self.atom, 
-                         positions=self.coord.tolist(), 
-                         #cell=[lattice_a, lattice_b, vacuum],
-                         cell=[vector_a.tolist(), vector_b.tolist(), [0, 0, vacuum]],
-                         pbc=[1,1,0])
-        
-        self.export_value["crystal_lattice_a"] = vector_a
-        self.export_value["crystal_lattice_b"] = vector_b
-        
-        ase.io.write(out, cell, format=fmt)
-    
+        self.export_value["crystal_lattice_a"] = _vector_a
+        self.export_value["crystal_lattice_b"] = _vector_b
+
+        _calculator = {"vasp": "poscar"}.get(fmt)
+        if _calculator is None:
+            raise functions.MkitsError("Unsupported build_crystal output format: %s (expected 'vasp')." % fmt)
+        _fpath, _fname = os.path.split(out)
+        _crystal.write_struct(fpath=_fpath or ".", fname=_fname, calculator=_calculator)
+
     def sort_atom(self):
-        """ """
-        atom_index = np.array([symbol_map[_] for _ in self.atom])
-        atom_index = np.argsort(atom_index)
-        self.atom = np.array(self.atom)[atom_index]
-        self.coord = self.coord[atom_index]
-        
+        """Sort self.atom/self.coord by atomic number."""
+        _atom_index = np.array([database.symbol_map[_a] for _a in self.atom])
+        _order = np.argsort(_atom_index)
+        self.atom = np.array(self.atom)[_order]
+        self.coord = self.coord[_order]
+
     def export_val(self):
-        """ 
-        """
+        """Return self.export_value (atom/coord/edge, plus the crystal lattice vectors after build_crystal)."""
         self.export_value["atom"] = self.atom
         self.export_value["coord"] = self.coord
         self.export_value["edge"] = self.edge_coordinates
         return self.export_value
-    
+
     def del_neighbor(self, threshold=1):
-        """ 
-        """
-        toocloseatompairs = [[-1,-1]]
-        for i in range(len(self.coord)):
-            for j in range(len(self.coord)):
-                if i != j:
-                    dis = np.linalg.norm(self.coord[j] - self.coord[i])
-                    if dis < threshold and self.atom[i] == self.atom[j]:
-                        toocloseatompairs += [[i, j]]
+        """Merge atom pairs of the same element closer than `threshold` into their midpoint."""
+        _too_close_pairs = [[-1, -1]]
+        for _i in range(len(self.coord)):
+            for _j in range(len(self.coord)):
+                if _i != _j:
+                    _dis = np.linalg.norm(self.coord[_j] - self.coord[_i])
+                    if _dis < threshold and self.atom[_i] == self.atom[_j]:
+                        _too_close_pairs += [[_i, _j]]
 
-        # delete reversed elements
-        seen = set()
-        toocloseatompairs = [x for x in toocloseatompairs \
-                             if tuple(x[::-1]) not in seen and not seen.add(tuple(x))]
+        _seen = set()
+        _too_close_pairs = [
+            _x for _x in _too_close_pairs
+            if tuple(_x[::-1]) not in _seen and not _seen.add(tuple(_x))
+        ]
 
-        new_atom = np.array(["x"])
-        new_coord = np.zeros(3)
-        old_atom_index = []
-        for pair in toocloseatompairs:
-            i, j = pair
-            if self.atom[i] != self.atom[j]:
-                print("The atoms in this pair %d is different" % i)
-                exit()
-            old_atom_index.append(i)
-            old_atom_index.append(j)
-            new_atom = np.append(new_atom, self.atom[i])
-            new_coord = np.vstack((new_coord, (self.coord[i]+self.coord[j])/2))
+        _new_atom = np.array(["x"])
+        _new_coord = np.zeros(3)
+        _old_atom_index = []
+        for _i, _j in _too_close_pairs:
+            if self.atom[_i] != self.atom[_j]:
+                raise functions.MkitsError("Atoms in pair %d/%d have different elements." % (_i, _j))
+            _old_atom_index += [_i, _j]
+            _new_atom = np.append(_new_atom, self.atom[_i])
+            _new_coord = np.vstack((_new_coord, (self.coord[_i] + self.coord[_j]) / 2))
 
-        self.atom = np.delete(self.atom, list(set(old_atom_index)))
-        self.coord = np.delete(self.coord, list(set(old_atom_index)), axis=0)
+        self.atom = np.delete(self.atom, list(set(_old_atom_index)))
+        self.coord = np.delete(self.coord, list(set(_old_atom_index)), axis=0)
 
-        for i in range(1, len(new_coord)):
-            putatom = True
-            for j in self.coord:
-                if np.linalg.norm(new_coord[i]-j) < threshold:
-                    putatom = False
-                else:
-                    continue
-            if putatom:
-                self.atom = np.hstack((self.atom, new_atom[i]))
-                self.coord = np.vstack((self.coord, new_coord[i]))
+        for _i in range(1, len(_new_coord)):
+            _put_atom = all(
+                np.linalg.norm(
+                    _new_coord[_i] - _j
+                ) >= threshold for _j in self.coord
+            )
+            if _put_atom:
+                self.atom = np.hstack((self.atom, _new_atom[_i]))
+                self.coord = np.vstack((self.coord, _new_coord[_i]))
 
 
-def carbontube(m:int=5, n:int=5, l:int=1, out:str="out", fmt:str="xyz", **kwargs):
-    """
-    A scripts to build carbon nano tube
-
-    Properties -----
-    fmt: str vasp xyz
-
-    Output --------- 
-
-    """
-
-    # bond length
-    cc_bond = 1.42165
-    thick = cc_bond * np.sqrt(3)
-
-    # parameters
-    radium = 0
-    vacuum = 15
-    coor_tran = 0
-
-    if fmt == "xyz":
-        pass
-    elif fmt == "vasp":
-        print(kwargs)
-        try: 
-            vacuum  = float(kwargs["vacuum"])
-        except:
-            print("No vacuum specified, use 15 angstrom. If you want other value, specify with vaccum=15")
-            exit()
-
-    if m == n:
-        """ """
-        alpha = (np.pi/m)
-        gamma = np.arctan((np.sin(alpha/2))/(1/2+np.cos(alpha/2)))
-        beta = alpha-2*gamma
-        radium = cc_bond / 2 / np.sin(gamma)
-        coor_tran = vacuum/2 + radium
-
-        
-        cood_alpha = 0
-        cood_xy = np.array([[coor_tran,coor_tran+radium,thick/2]])
-        for i in range(m):
-            # 1st point
-            cood_alpha += 2*gamma
-            x = np.sin(cood_alpha) * radium
-            y = np.cos(cood_alpha) * radium
-            cood_xy = np.vstack((cood_xy, np.array([[x,y,thick/2]])))
-            # 2nd point
-            cood_alpha += beta
-            x = np.sin(cood_alpha) * radium
-            y = np.cos(cood_alpha) * radium
-            cood_xy = np.vstack((cood_xy, np.array([[x,y,0]])))
-            # 3rd point
-            cood_alpha += 2*gamma
-            x = np.sin(cood_alpha) * radium
-            y = np.cos(cood_alpha) * radium
-            cood_xy = np.vstack((cood_xy, np.array([[x,y,0]])))
-            # 4th point
-            cood_alpha += beta
-            x = np.sin(cood_alpha) * radium
-            y = np.cos(cood_alpha) * radium
-            cood_xy = np.vstack((cood_xy, np.array([[x,y,thick/2]])))
-    
-    # add l
-    if l > 1:
-        for i in range(1, l):
-            cood_xy = np.vstack((cood_xy, cood_xy+np.array([0,0,thick*i])))
-
-
-
-    # write to file
-    with open("./tube_m%dn%dl%d.%s" % (m, n, l, fmt), "w", newline="\n") as f:
-        if fmt == "vasp":
-            lattice = np.array([[vacuum + 2*radium + 0.0001, 0, 0],
-                                [0, vacuum + 2*radium + 0.0001, 0],
-                                [0, 0, thick]])
-            f.write("tube_m%dn%dl%d\n" % (m, n, l))
-            f.write("1.000\n")
-            np.savetxt(f, lattice, fmt="%20.15f%20.15f%20.15f")
-            f.write("C\n")
-            f.write("%d\n" % len(cood_xy[1:,:]))
-            f.write("Cartesian\n")
-            np.savetxt(f, cood_xy[1:,:] + np.array([coor_tran, coor_tran, 0]), fmt="%20.15f")
-        elif fmt == "xyz":
-            f.write("%d\n" % len(cood_xy[1:]))
-            f.write("tube_m%dn%dl%d\n" % (m, n, l))
-            for i in range(1, len(cood_xy)):
-                f.write("%s%20.15f%20.15f%20.15f\n" % ("C", cood_xy[i][0], cood_xy[i][1], cood_xy[i][2]))
-        else:
-            pass
-
-
+# ================================================================== #
+# preset NGT / approximant tiling canvases
+# ================================================================== #
 def ngt_til(pattern_square, pattern_triangle, pattern_rhombus):
-    """
-    Parameters
-    ----------
-    """
+    """A possible NGT ideal tiling canvas."""
     ngt_tiling = canvas(pattern_square)
     ngt_tiling.add_pattern(pattern_triangle, 1)
     ngt_tiling.add_pattern(pattern_triangle, 2)
@@ -1330,10 +1118,7 @@ def ngt_til(pattern_square, pattern_triangle, pattern_rhombus):
 
 
 def sigma_til(pattern_square, pattern_triangle, pattern_rhombus):
-    """
-    Parameters
-    ----------
-    """
+    """A sigma-approximant tiling canvas."""
     sigma = canvas(pattern_triangle)
     sigma.add_pattern(pattern_triangle, 3)
     sigma.add_pattern(pattern_square, 2)
@@ -1348,10 +1133,7 @@ def sigma_til(pattern_square, pattern_triangle, pattern_rhombus):
 
 
 def approx1_til(pattern_square, pattern_triangle, pattern_rhombus):
-    """
-    Parameters
-    ----------
-    """
+    """A first-approximant tiling canvas."""
     approx1 = canvas(pattern_triangle)
     approx1.add_pattern(pattern_square, 2)
     approx1.add_pattern(pattern_square, 3)
@@ -1378,10 +1160,7 @@ def approx1_til(pattern_square, pattern_triangle, pattern_rhombus):
 
 
 def approx2_til(pattern_square, pattern_triangle, pattern_rhombus):
-    """
-    Parameters
-    ----------
-    """
+    """A second-approximant tiling canvas."""
     approx2 = canvas(pattern_square)
 
     approx2.add_pattern(pattern_triangle, 1)
@@ -1416,10 +1195,7 @@ def approx2_til(pattern_square, pattern_triangle, pattern_rhombus):
 
 
 def approx3_til(pattern_square, pattern_triangle, pattern_rhombus):
-    """
-    Parameters
-    ----------
-    """
+    """A third-approximant tiling canvas."""
     approx3 = canvas(pattern_square)
     approx3.add_pattern(pattern_triangle, 1)
     approx3.add_pattern(pattern_triangle, 2)
@@ -1453,10 +1229,7 @@ def approx3_til(pattern_square, pattern_triangle, pattern_rhombus):
 
 
 def bigapp_til(pattern_square, pattern_triangle, pattern_rhombus):
-    """
-    Parameters
-    ----------
-    """
+    """A larger approximant tiling canvas."""
     bigapprox = canvas(pattern_square)
     bigapprox.add_pattern(pattern_triangle, 1)
     bigapprox.add_pattern(pattern_triangle, 2)
@@ -1544,10 +1317,7 @@ def bigapp_til(pattern_square, pattern_triangle, pattern_rhombus):
 
 
 def hexapp_til(pattern_square, pattern_triangle, pattern_rhombus):
-    """
-    Parameters
-    ----------
-    """
+    """A hexagonal-approximant tiling canvas."""
     hexapprox = canvas(pattern_rhombus)
     hexapprox.add_pattern(pattern_triangle, 1)
     hexapprox.add_pattern(pattern_triangle, 2)
@@ -1596,9 +1366,8 @@ def hexapp_til(pattern_square, pattern_triangle, pattern_rhombus):
     return hexapprox
 
 
-def honeycomb_til(pattern_square, pattern_triangle, pattern_rhombus):
-    """ 
-    """
+def honeycomb_til(pattern_triangle):
+    """A honeycomb approximant tiling canvas."""
     honeycomb = canvas(center_pattern=pattern_triangle)
     honeycomb.add_pattern(pattern_triangle, 1)
     honeycomb.add_pattern(pattern_triangle, 5)
