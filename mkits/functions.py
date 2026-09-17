@@ -1,305 +1,71 @@
-# -*- coding: utf-8 -*
+# -*- coding: utf-8 -*-
+"""General-purpose utilities shared across mkits modules.
 
-import numpy as np
-import matplotlib.pyplot as plt
-import spglib as spg
+mkits is used as an imported library (Jupyter, a future web backend, and
+eventually a CLI), so it must never call sys.exit() itself -- that would
+be fatal to a long-running host process (eg a web worker). Error
+conditions raise MkitsError instead; whichever front-end wraps mkits
+decides what to do with it (print a traceback, return an HTTP error,
+convert to a CLI exit code, ...). Likewise, this module only obtains a
+logger -- it never calls logging.basicConfig(), since configuring
+handlers/output location is the host application's decision, not a
+library's.
+"""
+
 import os
-import sys
 import math
 import logging
-from mkits.database import *
+
+import numpy as np
 
 
-"""
-Class
------
-
-Functions
----------
-parse_inputfile:
-
-rmspace:
-    Remove [space,tab] characters in strings.
-vector_angle:
-    Calculate the angle between two vectors.
-vector_angle_cclockwise:
-    Calculate the angle between two vectors conterclockwise.
-listcross:
-    Get the crossing product of two lists.
-lexit:
-    Log an error message and exit.
-write2log:
-    Log every action and record it.
-"""
-
-def find_lines_with_keyword(file_path, 
-                            keyword, 
-                            returnall=True):
-    with open(file_path, 'r', encoding='utf-8') as f:
-        for line_number, line in enumerate(f, 1): 
-            if keyword in line:
-                yield line_number, line.strip()
-                if returnall:
-                    continue
-                else:
-                    break
+logger = logging.getLogger(__name__)
 
 
-def list_count_elements(listinp, elements):
-    _count = 0
-    for i in listinp:
-        if elements == i:
-            _count += 1
-    return _count
+class MkitsError(Exception):
+    """Raised for user-facing input/parsing errors across mkits."""
 
 
-def extractband(recp_lattice,
-                klist,
-                eigenvalue,
-                thresholdfactor=5):
+def write2log(message):
+    """Log an informational message."""
+    logger.info(message)
+
+
+def rmspace(string):
+    """Remove all space characters from a string."""
+    return "".join(c for c in string if c != " ")
+
+
+def listcross(list1, list2):
     """
-    DESCRIPTION:
-    ------------
-    Extract bandstructure from qeout file.
+    Expand list1 by repeating each entry according to the counts in list2.
+    len(list1) must equal len(list2).
 
-    RETURNS:
-    --------
-    A gnuplot data.
-    """
-
-    klist = frac2cart(
-        recp_lattice,
-        klist
-    )
-    # klist
-    kvector = np.array([0])
-    highpoint = np.array([0])
-    threshhold = np.linalg.norm(klist[1] - klist[0])
-    for i in range(1, len(klist)):
-        
-        _ = np.linalg.norm(klist[i] - klist[i-1])
-        if _ < threshhold * thresholdfactor:
-            kvector = np.append(kvector, _+kvector[-1])
-        else:
-            kvector = np.append(kvector, kvector[-1])
-            highpoint = np.append(highpoint, kvector[-1])
-    highpoint = np.append(highpoint, kvector[-1])
-    kvector = kvector.reshape((len(klist), 1))
-    # gen 
-    lines = ["# " 
-             + "".join([str( "%10.6f" % _) for _ in highpoint.tolist()])
-             + " \n"]
-
-    for i in eigenvalue.T:
-
-        lines += convert_high2writeablelist(
-            convert_array2strlist(
-                np.hstack((kvector, i.reshape((len(klist), 1))))
-            )
-        )
-        lines += ["\n", "\n"]
-        
-    return lines
-
-
-def loadlines(lines, col, dtype=float):
-    """
-    DESCRIPTION:
-    ------------
-
-    PARAMETERS:
-    -----------
-    
-    RETURN:
+    Example
     -------
+    listcross(["Ge", "Te"], [2, 5])
+        -> ["Ge", "Ge", "Te", "Te", "Te", "Te", "Te"]
     """
-    data = np.array(lines[0].split())[col]
-    if len(lines) > 1:
-        for i in range(1, len(lines)):
-            data = np.vstack((data, (np.array(lines[i].split())[col])))
-    return np.array(data, dtype=dtype)
-
-def gen_centerklist():
-    """
-    DESCRIPTION:
-    ------------
-    Generate a gamma-mode klist with diff weight.
-
-    PARAMETERS:
-    -----------
-    start
-        3 numpy array, 
-    
-    RETURN:
-    -------
-
-    """
-
-
-def gen_lineklist(start, end, num, weight=1.0):
-    """
-    DESCRIPTION:
-    ------------
-    Generate a line-mode klist with same weight.
-
-    PARAMETERS:
-    -----------
-    start
-        3 numpy array, 
-    
-    RETURN:
-    -------
-    [[0.0, 0.0, 0.0, 1.0],
-     [0.0, 0.0, 0.1, 1.0],
-     [0.0, 0.0, 0.2, 1.0],
-    ]
-    """
-    start = np.append(start, weight)
-    end = np.append(end, weight)
-    return np.linspace(start, end, num)
-
-
-def write_runsh(runsh, cmd):
-    """Write shell run script."""
-    with open(runsh, "w", newline="\n") as f:
-        f.write(cmd)
-    os.chmod(runsh, 0o775)
-
-
-def dict2lines(
-        dicts, 
-        assign_sym="="
-):
-    """ 
-    Convert dictionary to writeable string list.
-    """
-    lines = []
-    for item in dicts.keys():
-        if dicts[item] == "":
-            lines.append(item+"\n")
-        else:
-            lines.append(
-                item +
-                assign_sym +
-                str(dicts[item]) +
-                "\n"
-            )
-    return lines
-
-
-def parser_inputpara(inputstring):
-    """
-    PARAMETERS:
-    ----------- 
-    inputstring: str
-        The input parameters are seperated by ",", 
-        and key and attribution are seperated by ":"
-    RETURN:
-    -------
-    dictionary
-    """
-    input_dict = {}
-
-    # get the separator
-    if "," in inputstring: 
-        separator_outkey = ","
-    elif ";" in inputstring: 
-        separator_outkey = ";"
-    else: separator_outkey = " "
-
-    # delete the redundant separator
-    if inputstring[0] == separator_outkey:
-        inputstring = inputstring[1:]
-    if inputstring[-1] == separator_outkey:
-        inputstring = inputstring[:-1]
-
-    # get the assignment symbol
-    if ":" in inputstring: 
-        separator_inkey = ":"
-    elif "=" in inputstring: 
-        separator_inkey = "="
-        
+    if not isinstance(list1, list) or not isinstance(list2, (list, np.ndarray)):
+        raise MkitsError("The input lists are not list type.")
     try:
-        for inp in inputstring.split(separator_outkey):
-            inp_key_para = inp.split(separator_inkey)
-            input_dict[inp_key_para[0]] = inp_key_para[1]
-    except:
-        lexit("Error: make sure the string like input parameters with following format: key1:para1,key2:para2")
-
-    return input_dict
-
-
-def write_lines(fpath, lines, mode):
-    """
-    DESCRIPTION:
-    ------------
-    Write lines to file.
-
-    PARAMETERS:
-    -----------
-    fpath: str
-        Absolute path the file to write.
-    lines: list
-        A string list.
-    """
-    with open(fpath, mode) as f:
-        f.writelines(lines)
-
-
-def round_even_odd(num, even_odd):
-    """
-    DESCRIPTION:
-    ------------
-    Round input varieties to nearest even number or odd number.
-    num              3.5         2.5         2.9
-    num/2            1.75        1.25        1.45
-    math.modf(num/2) (0.75, 1)   (0.25, 1)   (0.45, 1)
-
-    PARAMETERS:
-    -----------
-    num: float or int
-        Input value.
-    even_odd: int
-        0 for even, 1 for odd, -1 for round only
-
-    RETURNS:
-    --------
-        int             
-    """
-    if even_odd == 0:
-        return int(num)+1 if math.modf(num/2)[0] >= 0.5 else int(num)
-    elif even_odd ==1:
-        num -= 1
-        return int(num)+2 if math.modf(num/2)[0] >= 0.5 else int(num)+1
-    elif even_odd == -1:
-        return round(num)
-    else:
-        lexit("Error in even_odd, pls use [0 for even, 1 for odd, -1 for round only]")
+        num_list = [int(i) for i in list2]
+    except ValueError:
+        raise MkitsError("Wrong numeric list.")
+    crosslist = []
+    for i in range(len(num_list)):
+        crosslist += [list1[i]] * num_list[i]
+    return crosslist
 
 
 def hstack_append_list(list1, list2):
     """
-    DESCRIPTION:
-    -----------
-    Append list2 to list1 in the horizontal direction.
+    Append list2 to list1 column-wise, ie horizontally stack two nested lists.
 
-    PARAMETERS:
-    -----------
-    inp:
-        A numpy array.
-    fmt:
-        Python format 
-
-list1
-    [["1","2"],        [["8", "9"]             [["1","2","8","9"],
-     ["3","4"],    +    ["10","11"]]    ->      ["3","4","10","11"],
+    list1                  list2               result
+    [["1","2"],        +  [["8", "9"],    ->  [["1","2","8","9"],
+     ["3","4"],             ["10","11"]]        ["3","4","10","11"],
      ["5","7"]]                                 ["5","7"]]
-    :param list1 and list2
-
-
-    RETURNS:
-    --------
-        A string-like list terminated with \\n
     """
     if isinstance(list1[0], list) and isinstance(list2[0], list):
         if len(list1) >= len(list2):
@@ -311,415 +77,345 @@ list1
             for i in range(len(list1), len(list2)):
                 list1.append(list2[i])
     else:
-        print("Input is not a list")
+        raise MkitsError("Input is not a nested list.")
     return list1
 
 
 def convert_high2writeablelist(inp, endstr="\n"):
-    """
-    DESCRIPTION:
-    -----------
-    Convert a list to writeable one-dimension string-like list.
-
-    PARAMETERS:
-    -----------
-    inp:
-        A numpy array.
-    endstr:
-        Terminated string. 
-    RETURNS:
-    --------
-        A list suiteable for the writelines function.
-    """
-    if type(inp) == list:
+    """Flatten a 2D array of strings into a list of joined, newline-terminated lines."""
+    if isinstance(inp, list):
         inp = np.array(inp)
-    _list = []
 
     if inp.ndim == 1:
         inp = inp.reshape(1, len(inp))
-    elif inp.ndim == 2:
-        pass
-    else:
-        lexit("Error, functions.py convert_array2strlist not support array higher than 2 dim.")
+    elif inp.ndim != 2:
+        raise MkitsError("convert_high2writeablelist does not support arrays with more than 2 dimensions.")
 
-    for i in range(inp.shape[0]):
-        _ = ""
-        for j in range(inp.shape[1]):
-            _ += inp[i, j]
-        _list.append(_+endstr)
-    return(_list)
+    return ["".join(inp[i, :]) + endstr for i in range(inp.shape[0])]
 
 
-def convert_array2strlist(inp, 
-                          fmt="{:20.10f}"):
-    """
-    DESCRIPTION:
-    -----------
-    Convert an array or a list to writeable string list.
-
-    PARAMETERS:
-    -----------
-    inp:
-        A numpy array.
-    fmt:
-        Python format 
-    RETURNS:
-    --------
-        A string-like list terminated with \\n
-    """
-    if type(inp) == list:
+def convert_array2strlist(inp, fmt="{:20.10f}"):
+    """Convert a numeric array or list into a nested list of formatted strings."""
+    if isinstance(inp, list):
         inp = np.array(inp)
-    _list = []
 
     if inp.ndim == 1:
         inp = inp.reshape(1, len(inp))
-    elif inp.ndim == 2:
-        pass
-    else:
-        lexit("Error, functions.py convert_array2strlist not support array higher than 2 dim.")
-    for i in range(inp.shape[0]):
-        _ = []
-        for j in range(inp.shape[1]):
-            _.append(fmt.format(inp[i, j]))
-        _list.append(_)
-    return(_list)
+    elif inp.ndim != 2:
+        raise MkitsError("convert_array2strlist does not support arrays with more than 2 dimensions.")
+
+    return [[fmt.format(inp[i, j]) for j in range(inp.shape[1])] for i in range(inp.shape[0])]
 
 
-def parse_inputfile(lines, 
-                    comment_sym="#", 
-                    assign_sym="=", 
-                    seprate_sym=","):
+def parser_inputpara(inputstring):
     """
-    DESCRIPTION:
-    -----------
-    Parse 
+    Parse a compact "key:value,key:value" (or "key=value key=value") string
+    into a dictionary.
 
-    PARAMETERS:
-    -----------
-    inp:str
-        the name of input file
-    style: str
-        option [keywords, block] 
-    comment_sym: str
-        comment symbol, default #
-    assign_sym: str
-        value assigned symbol
-    
+    Parameters
+    ----------
+    inputstring: str
+        Key-value pairs separated by "," (or ";" / " "), with the key and
+        the value separated by ":" (or "=").
+
     Returns
     -------
-    dictionary
+    dict
+    """
+    input_dict = {}
+
+    if "," in inputstring:
+        separator_outkey = ","
+    elif ";" in inputstring:
+        separator_outkey = ";"
+    else:
+        separator_outkey = " "
+
+    if inputstring and inputstring[0] == separator_outkey:
+        inputstring = inputstring[1:]
+    if inputstring and inputstring[-1] == separator_outkey:
+        inputstring = inputstring[:-1]
+
+    if ":" in inputstring:
+        separator_inkey = ":"
+    elif "=" in inputstring:
+        separator_inkey = "="
+    else:
+        raise MkitsError("Cannot find a key-value separator (':' or '=') in the input string.")
+
+    try:
+        for item in inputstring.split(separator_outkey):
+            key, value = item.split(separator_inkey)
+            input_dict[key] = value
+    except ValueError:
+        raise MkitsError("Error: make sure the input parameter string follows: key1:para1,key2:para2")
+
+    return input_dict
+
+
+def apply_dynrange(struct_obj, dynrange_str):
+    """
+    Parse a "xmin=..,xmax=..,fix=O,move=Ti"-style range string and apply it
+    to `struct_obj` via its add_dyn method. Shared by mkits.vasp and
+    mkits.qe so both accept the same selective-dynamics / atom-constraint
+    syntax.
+    """
+    _range = parser_inputpara(dynrange_str)
+    _fix = _range.pop("fix", "none")
+    _move = _range.pop("move", "none")
+    _bounds = {"xmin": -1e8, "xmax": 1e8, "ymin": -1e8, "ymax": 1e8, "zmin": -1e8, "zmax": 1e8}
+    _bounds.update({_k: float(_v) for _k, _v in _range.items()})
+    struct_obj.add_dyn(fix=_fix, move=_move, **_bounds)
+
+
+def write_runsh(runsh, cmd):
+    """Write a shell run script and make it executable."""
+    with open(runsh, "w", newline="\n") as f:
+        f.write(cmd)
+    os.chmod(runsh, 0o775)
+
+
+def round_even_odd(num, even_odd):
+    """
+    Round a number to the nearest even integer, nearest odd integer, or
+    just the nearest integer.
+
+    Parameters
+    ----------
+    num: float or int
+    even_odd: int
+        0 -> nearest even, 1 -> nearest odd, -1 -> plain round.
+
+    Returns
+    -------
+    int
+    """
+    if even_odd == 0:
+        return int(num) + 1 if math.modf(num / 2)[0] >= 0.5 else int(num)
+    elif even_odd == 1:
+        num -= 1
+        return int(num) + 2 if math.modf(num / 2)[0] >= 0.5 else int(num) + 1
+    elif even_odd == -1:
+        return round(num)
+    else:
+        raise MkitsError("Error in even_odd, use one of [0 (even), 1 (odd), -1 (round only)].")
+
+
+def parse_inputfile(lines, comment_sym="#", assign_sym="=", seprate_sym=","):
+    """
+    Parse a list of "key<assign_sym>value" lines (eg a Fortran namelist body)
+    into a dictionary, stripping comments and expanding multiple
+    assignments per line.
+
+    Parameters
+    ----------
+    lines: list of str
+    comment_sym: str
+        Comment marker; everything after it on a line is discarded.
+    assign_sym: str
+        Key/value separator.
+    seprate_sym: str
+        Separator between multiple assignments on the same line.
+
+    Returns
+    -------
+    dict
     """
     keywords = {}
-    # delete comments and \n
+
     for i in range(len(lines)):
         lines[i] = lines[i].strip()
-        try:
-            harshsym_index = lines[i].index(comment_sym)
-            lines[i] = lines[i][:harshsym_index]
-        except:
-            continue
-    # expand several keys on the same line
+        if comment_sym in lines[i]:
+            lines[i] = lines[i][:lines[i].index(comment_sym)]
+
     newlines = []
-    for i in range(len(lines)):
-        if seprate_sym in lines[i]:
-            newlines += lines[i].split(seprate_sym)
+    for line in lines:
+        if seprate_sym in line:
+            newlines += line.split(seprate_sym)
         else:
-            newlines.append(lines[i])
-    # delete blank line and find the keys - values
-    for i in range(len(newlines)):
-        if newlines[i] == "\n":
+            newlines.append(line)
+
+    for line in newlines:
+        if not line or assign_sym not in line:
             continue
-        else:
-            try:
-                assign_sym_index = newlines[i].index(assign_sym)
-                key = newlines[i][:assign_sym_index].strip()
-                value = newlines[i][assign_sym_index+1:].strip()
-                keywords[key] = value
-            except:
-                continue
+        assign_sym_index = line.index(assign_sym)
+        key = line[:assign_sym_index].strip()
+        value = line[assign_sym_index + 1:].strip()
+        if key:
+            keywords[key] = value
+
     return keywords
+
+
+def lattice_conversion(give_lattice):
+    """
+    Convert between a 3x3 Cartesian lattice matrix and 6 lattice parameters.
+
+    Mode 1: 3x3 matrix -> [a, b, c, alpha, beta, gamma]
+    Mode 2: [a, b, c, alpha, beta, gamma] -> 3x3 matrix
+            (standard convention: a along x, b in the xy-plane)
+
+    Parameters
+    ----------
+    give_lattice: (3, 3) or (6,) array-like
+
+    Returns
+    -------
+    numpy array
+    """
+    give_lattice = np.array(give_lattice, dtype=float)
+
+    if give_lattice.shape == (3, 3):
+        lengths = np.linalg.norm(give_lattice, axis=1)
+        a, b, c = lengths[0], lengths[1], lengths[2]
+
+        cos_alpha = np.clip(np.dot(give_lattice[1], give_lattice[2]) / (b * c), -1.0, 1.0)
+        cos_beta = np.clip(np.dot(give_lattice[0], give_lattice[2]) / (a * c), -1.0, 1.0)
+        cos_gamma = np.clip(np.dot(give_lattice[0], give_lattice[1]) / (a * b), -1.0, 1.0)
+
+        alpha = np.degrees(np.arccos(cos_alpha))
+        beta = np.degrees(np.arccos(cos_beta))
+        gamma = np.degrees(np.arccos(cos_gamma))
+
+        return np.array([a, b, c, alpha, beta, gamma])
+
+    elif give_lattice.size == 6:
+        params = give_lattice.flatten()
+        a, b, c = params[0], params[1], params[2]
+        alpha, beta, gamma = np.radians(params[3:6])
+
+        # standard convention: a along x-axis, b in the xy-plane
+        val = (np.cos(alpha) - np.cos(beta) * np.cos(gamma)) / np.sin(gamma)
+        v_a = [a, 0.0, 0.0]
+        v_b = [b * np.cos(gamma), b * np.sin(gamma), 0.0]
+        cz = np.sqrt(max(1.0 - np.cos(beta) ** 2 - val ** 2, 0.0))
+        v_c = [c * np.cos(beta), c * val, c * cz]
+
+        return np.array([v_a, v_b, v_c])
+
+    else:
+        raise MkitsError("Lattice must be a 3x3 matrix or a 6-parameter array.")
 
 
 def frac2cart(cart_lattice, fraction_pos):
     """
-    DESCRIPTION
-    -----------
-    Convert fractional coordinates to cartisian coordinates.
-    Performs the linear transformation: r_cart = frac_pos * lattice_matrix
-    r = u*a + v*b + w*c
+    Convert fractional coordinates to Cartesian coordinates.
+    r_cart = frac_pos @ lattice_matrix (lattice vectors stored as rows).
 
-    PARAMETERS
+    Parameters
     ----------
-    cart_lattice : 3x3 numpy array
-        The lattice vectors stored as rows:
-        [[ax, ay, az], 
-         [bx, by, bz], 
-         [cx, cy, cz]]
-    fraction_pos : (3,) or (n, 3) numpy array/list
-        Fractional coordinates.
-    
-    RETURNS
+    cart_lattice: (3, 3) array-like
+    fraction_pos: (3,) or (n, 3) array-like
+
+    Returns
     -------
-    numpy array
-        Cartesian coordinates with the same shape as input fraction_pos.
+    numpy array with the same shape as fraction_pos.
     """
     lattice = np.array(cart_lattice, dtype=float)
     pos = np.array(fraction_pos, dtype=float)
-
     return pos @ lattice
 
 
 def cart2frac(lattice, cart_pos):
     """
-    DESCRIPTION
-    -----------
     Convert Cartesian coordinates to fractional coordinates.
-    Works for both single atom and multiple atoms.
-    
-    Mathematical formula: r_frac = r_cart * inverse(Lattice_Matrix)
+    r_frac = cart_pos @ inverse(lattice_matrix).
 
-    PARAMETERS
+    Parameters
     ----------
-    lattice : 3x3 numpy array or list of 6 params
-        The lattice matrix (row vectors) or [a, b, c, alpha, beta, gamma].
-    cart_pos : (3,) or (N, 3) numpy array
-        Cartesian coordinates.
-    
-    RETURNS
+    lattice: (3, 3) array-like or 6 lattice parameters
+    cart_pos: (3,) or (n, 3) array-like
+
+    Returns
     -------
-    numpy array
-        Fractional coordinates with the same shape as input cart_pos.
+    numpy array with the same shape as cart_pos.
     """
-    # 1. 处理晶格矩阵
     lattice = np.array(lattice, dtype=float)
-    
-    # 如果传入的是 6 个参数，先转换为 3x3 矩阵
+
     if lattice.shape == (6,) or lattice.size == 6:
         lattice = lattice_conversion(lattice)
-    
-    # 2. 计算逆矩阵
-    # 这是转换的核心：分数坐标 = 笛卡尔坐标 @ 晶格矩阵的逆
-    # 这一步只需要做一次，不需要在循环中重复做
+
     try:
         inv_lattice = np.linalg.inv(lattice)
     except np.linalg.LinAlgError:
-        raise ValueError("Lattice matrix is singular (Volume is zero). Check your lattice parameters.")
+        raise MkitsError("Lattice matrix is singular (zero volume), check the lattice parameters.")
 
-    # 3. 坐标转换 (矩阵乘法)
-    # np.asarray 确保输入是 array，@ 运算符自动处理 (3,) 和 (N, 3) 的情况
     return np.asarray(cart_pos) @ inv_lattice
-
-def cart2frac_single(lattice, cart_pos):
-    """
-    Just for legacy
-    
-    :param lattice: Description
-    :param cart_pos: Description
-    """
-    return cart2frac(lattice, cart_pos)
-
-
-def rmspace(string):
-    ns=""
-    for i in string:
-        if(not i == " "):
-            ns+=i
-    return ns
-
-
-def rmenter(string):
-    ns=""
-    for i in string:
-        if(not i == "\n"):
-            ns+=i
-    return ns
-def rmtab(string):
-    ns=""
-    for i in string:
-        if(not i == "\t"):
-            ns+=i
-    return ns
-def rmisspace(string):
-    ns=""
-    for i in string:
-        if(not i.isspace):
-            ns+=i
-    return ns
 
 
 def vector_angle(vector1, vector2, unit="deg"):
     """
-    Calculate the angle between two vectors.
+    Angle between two vectors, via arccos of their normalized dot product.
+
     Parameters
     ----------
-    vector1: array or list
-        The first vector
-    vector2: array or list
-        The second vector
-    unit:str
-        units, option [rad, deg]
+    vector1, vector2: array-like
+    unit: str
+        "deg" or "rad".
+
     Returns
     -------
+    float
     """
-    unit_vector1 = vector1 / np.linalg.norm(vector1)
-    unit_vector2 = vector2 / np.linalg.norm(vector2)
-    dot_product = np.dot(unit_vector1, unit_vector2)
-    angle = np.arccos(dot_product)
-    return np.rad2deg(angle) if unit == "deg" else angle
+    _unit1 = np.asarray(vector1, dtype=float) / np.linalg.norm(vector1)
+    _unit2 = np.asarray(vector2, dtype=float) / np.linalg.norm(vector2)
+    _angle = np.arccos(np.clip(np.dot(_unit1, _unit2), -1.0, 1.0))
+    return np.rad2deg(_angle) if unit == "deg" else _angle
 
 
 def vector_angle_cclockwise(vector1, vector2, unit="deg"):
     """
-    Calculate the angle between two vectors conterclockwise.
+    Counterclockwise angle (in [0, 2*pi) / [0, 360)) from vector2 to
+    vector1, via the difference of their atan2 angles -- unlike
+    vector_angle's undirected arccos-based angle (always in [0, pi]),
+    this is signed/directional and only defined for 2D vectors.
+
     Parameters
     ----------
-    vector1: array or list
-        The first vector
-    vector2: array or list
-        The second vector
-    unit:str
-        units, option [rad, deg]
+    vector1, vector2: (2,) array-like
+    unit: str
+        "deg" or "rad".
+
     Returns
     -------
+    float
     """
-    if isinstance(vector1, list) or isinstance(vector2, list):
-        pass
-    else:
-        vector1 = vector1.tolist()
-        vector2 = vector2.tolist()
-    if len(vector1) != 2 or len(vector2) != 2:
-        lexit("The lenght of the vector has to be 2!")
-    vector1 = np.arctan2(*vector1[::-1])
-    vector2 = np.arctan2(*vector2[::-1])
-    if unit == "deg":
-        return np.rad2deg((vector1 - vector2) % (2 * np.pi))
+    _v1 = list(vector1)
+    _v2 = list(vector2)
+    if len(_v1) != 2 or len(_v2) != 2:
+        raise MkitsError("vector_angle_cclockwise only supports 2D vectors.")
+
+    _angle1 = np.arctan2(_v1[1], _v1[0])
+    _angle2 = np.arctan2(_v2[1], _v2[0])
+    _angle = (_angle1 - _angle2) % (2 * np.pi)
+    return np.rad2deg(_angle) if unit == "deg" else _angle
 
 
-def lattice_conversion(give_lattice):
+def group_atoms_by_symbol(symbols, positions):
     """
-    Convert lattice parameters between 3x3 matrix and 6 parameters.
-    
-    Mode 1: 3x3 Matrix -> [a, b, c, alpha, beta, gamma]
-    Mode 2: [a, b, c, alpha, beta, gamma] -> 3x3 Matrix
-            (Standard convention: a // x, b in xy plane)
-    
+    Group atoms by element symbol in alphabetical order (NOT atomic-number
+    order -- matches how mkits.builder's layered-structure generator sorts
+    a POSCAR species block when it has no mkits.database.symbol_map
+    ordering to follow), reordering `positions`'s rows to match.
+
     Parameters
     ----------
-    give_lattice : np.ndarray
-        Either (3, 3) matrix or (6,) vector.
-    
+    symbols: (n,) array-like of str
+    positions: (n, k) array-like
+        Rows reordered to match the grouped symbols.
+
     Returns
     -------
-    np.ndarray
+    (symbols_sorted, positions_sorted, unique_symbols, counts)
+        symbols_sorted: (n,) grouped symbols
+        positions_sorted: (n, k) positions reordered to match
+        unique_symbols, counts: (n_unique,) alphabetically sorted
     """
-    give_lattice = np.array(give_lattice, dtype=float)
+    _symbols = np.asarray(symbols)
+    _sort_idx = _symbols.argsort()
+    _symbols_sorted = _symbols[_sort_idx]
+    _positions_sorted = np.asarray(positions)[_sort_idx]
 
-    # Mode 1: Cartesian Matrix (3x3) -> Parameters (6)
-    if give_lattice.shape == (3, 3):
-        # 1. Calculate lengths (norms)
-        # axis=1 means norm along the row vector
-        lengths = np.linalg.norm(give_lattice, axis=1)
-        a, b, c = lengths[0], lengths[1], lengths[2]
-        
-        # 2. Calculate angles
-        # alpha: angle between b (row 1) and c (row 2)
-        # beta:  angle between a (row 0) and c (row 2)
-        # gamma: angle between a (row 0) and b (row 1)
-        
-        # Use dot product: u . v = |u||v|cos(theta)
-        # Clip values to [-1, 1] to avoid numerical errors (e.g. 1.000000002) causing NaN in arccos
-        
-        cos_alpha = np.dot(give_lattice[1], give_lattice[2]) / (b * c)
-        cos_beta  = np.dot(give_lattice[0], give_lattice[2]) / (a * c)
-        cos_gamma = np.dot(give_lattice[0], give_lattice[1]) / (a * b)
-        
-        # Clip to ensure valid arccos range
-        cos_alpha = np.clip(cos_alpha, -1.0, 1.0)
-        cos_beta  = np.clip(cos_beta,  -1.0, 1.0)
-        cos_gamma = np.clip(cos_gamma, -1.0, 1.0)
-
-        alpha = np.degrees(np.arccos(cos_alpha))
-        beta  = np.degrees(np.arccos(cos_beta))
-        gamma = np.degrees(np.arccos(cos_gamma))
-        
-        return np.array([a, b, c, alpha, beta, gamma])
-
-    # Mode 2: Parameters (6) -> Cartesian Matrix (3x3)
-    elif give_lattice.size == 6:
-        # Flatten input in case shape is (6, 1) or similar
-        params = give_lattice.flatten()
-        a, b, c = params[0], params[1], params[2]
-        alpha, beta, gamma = np.radians(params[3:6])
-        
-        # Standard Convention:
-        # a is along x-axis
-        # b is in xy-plane
-        
-        # 1. Vector a
-        # a = (a, 0, 0)
-        
-        # 2. Vector b
-        # b_x = b * cos(gamma)
-        # b_y = b * sin(gamma)
-        
-        # 3. Vector c
-        # c_x = c * cos(beta)
-        # c_y derived from: b.c = b*c*cos(alpha)
-        # c_z derived from: c^2 = cx^2 + cy^2 + cz^2
-        
-        val = (np.cos(alpha) - np.cos(beta) * np.cos(gamma)) / np.sin(gamma)
-        
-        # Construct matrix rows
-        # Row 1: a vector
-        v_a = [a, 0.0, 0.0]
-        
-        # Row 2: b vector
-        v_b = [b * np.cos(gamma), b * np.sin(gamma), 0.0]
-        
-        # Row 3: c vector
-        cz = np.sqrt(1 - np.cos(beta)**2 - val**2)
-        v_c = [c * np.cos(beta), 
-               c * val, 
-               c * cz]
-        
-        return np.array([v_a, v_b, v_c])
-
-    else:
-        # 简单的错误处理，为了兼容你原来的代码风格，可以保留 lexit 或 raise
-        raise ValueError("Lattice must be 3x3 matrix or 6 parameters array.")
-
-def listcross(list1, list2):
-    """
-    Get the crossing product of two lists. List2 must be a numeric type list 
-    and len(list1) = len(list2)
-
-    Example:
-        listcross(['Ge', 'Te'], np.array([2.0, 5.0]))
-        listcross(['Ge', 'Te'], [2.0, 5.0])
-        output: ['Ge', 'Ge', 'Te', 'Te', 'Te', 'Te', 'Te']
-    """
-    if (type(list1) != list or type(list2) != list) and type(list2) != np.ndarray:
-        lexit("The input lists are not list type.")
-    try:
-        num_list = [int(i) for i in list2]
-    except:
-        lexit("Wrong numeric list")
-    crosslist = []
-    for i in range(len(num_list)):
-        crosslist += [list1[i]] * num_list[i]
-    return crosslist
-
-
-# logging
-logging.basicConfig(level=logging.DEBUG,
-                    filename='output.log',
-                    datefmt='%Y/%m/%d %H:%M:%S',
-                    format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-def lexit(message, code=1):
-    """Log an error message and exit."""
-    logger.error(message)
-    sys.exit(code)
-def write2log(message):
-    """Log every action and record it."""
-    logger.info(message)
+    _unique_symbols = np.array(sorted(set(_symbols_sorted.tolist())))
+    _counts = np.array([np.count_nonzero(_symbols_sorted == _s) for _s in _unique_symbols])
+    return _symbols_sorted, _positions_sorted, _unique_symbols, _counts
