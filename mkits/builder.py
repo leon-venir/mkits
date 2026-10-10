@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Structure building: slab/heterostructure stacking, molecule adsorption,
-and NGT-style quasi-crystal tiling canvases.
+"""Structure building: slab/heterostructure stacking, layered-compound
+chain enumeration, molecule adsorption, and NGT-style quasi-crystal
+tiling canvases.
 
 Class
 -----
@@ -10,12 +11,20 @@ canvas             : build a 2D quasi-crystal tiling canvas and export a slab.
 Functions
 ---------
 stack_struct       : stack two slabs (substrate + support) and add vacuum.
+get_node_type, gen_nodes_frac, randomization_block, struct_write_abs,
+struct_write, gen_struct_fix_block
+                   : layered-compound structure generation (a trigonal
+                     node grid populated by rings of "block" units), from
+                     the pre-rewrite mkits.structgen module.
 ngt_til, sigma_til, approx1_til, approx2_til, approx3_til, bigapp_til,
 hexapp_til, honeycomb_til
                    : preset NGT/approximant tiling canvases.
 """
 
+import itertools as it
+import json
 import os
+from pathlib import Path
 
 import numpy as np
 
@@ -80,6 +89,270 @@ def stack_struct(substrate, support, distance=1.7, vacuum=15):
         _interface.add_atom(_symbol, _shifted_cart, is_frac=False, magmom=_support.position[_i, 10])
 
     return _interface
+
+
+# ================================================================== #
+# layered-compound structure generation
+# ------------------------------------------------------------ #
+# A trigonal grid of "nodes" arranged in a ring is populated by a chain of
+# "blocks" (eg Bi-Bi, Te-Bi-Te), each block contributing a fixed sequence
+# of elements stacked along c; randomization_block enumerates every
+# rotation/reflection-inequivalent chain, and struct_write/struct_write_abs
+# turn one chain into an actual structure.
+# ================================================================== #
+def get_node_type(node_type):
+    """Fractional (a, b) node positions for one triangular-lattice repeat unit, by node_type."""
+    if node_type == "trigonal":
+        return np.array([
+            [0.333333333, 0.666666667, 0],
+            [0.666666667, 0.333333333, 0],
+            [2, 2, 2],
+        ])
+    raise functions.MkitsError("Unknown node_type: %s (expected 'trigonal')." % node_type)
+
+
+def gen_nodes_frac(grid_num, node_type):
+    """
+    Tile get_node_type(node_type)'s single-repeat-unit node positions
+    across `grid_num` total nodes.
+
+    Return
+    ------
+    (3, grid_num) array: rows are frac_a, frac_b, frac_c (c row is a
+    placeholder, 2, until the caller overwrites it with real bond-derived
+    fractional heights).
+    """
+    _node_chains_single = get_node_type(node_type)
+    _grid_per_node = _node_chains_single.shape[1]
+    _node_num = int(grid_num / _grid_per_node)
+    _node_chains = _node_chains_single
+    for _ in range(1, _node_num):
+        _node_chains = np.hstack((_node_chains, _node_chains_single))
+    return _node_chains
+
+
+def randomization_block(node_num, block_num):
+    """
+    Enumerate all inequivalent cyclic "chains" of `node_num` blocks drawn
+    (with replacement) from `block_num`, up to rotation and reflection,
+    then keep only chains whose block-count sum is a multiple of 3 (the
+    trigonal node grid's periodicity requirement).
+
+    A chain that is a single block type repeated across every node is
+    also dropped, for node_num in (3, 6, 9), when that block type is
+    3, 9.01, or 9.02 -- these are already-known trivial structures.
+
+    :param node_num: int, number of nodes in the ring
+    :param block_num: iterable of block-type codes (floats, eg 2.001,
+        5.002, ... -- see gen_struct_fix_block)
+
+    Return
+    ------
+    list of tuples: each an accepted, inequivalent chain of block-type codes.
+    """
+    _combinations = list(it.combinations_with_replacement(block_num, node_num))
+    _results = []
+    for _i in range(len(_combinations)):
+        _tmp = list(it.permutations(_combinations[_i], len(_combinations[_i])))
+        _tmp = list(set(_tmp)) + ["d"]
+        for _j in range(len(_tmp) - 1):
+            if _tmp[_j][::-1] in _tmp[_j + 1:]:
+                _tmp[_j] = "d"
+            _translation = _tmp[_j] + _tmp[_j]
+            for _k in range(1, len(_tmp[_j])):
+                if _tmp[_j] == "d":
+                    break
+                if _translation[_k:_k + len(_tmp[_j])] in _tmp[_j + 1:]:
+                    _tmp[_j] = "d"
+                    break
+            if node_num in (3, 6, 9) and _tmp[_j] != "d":
+                if len(set(_tmp[_j])) == 1 and _tmp[_j][0] in (3, 9.01, 9.02):
+                    _tmp[_j] = "d"
+        _results += [_t for _t in _tmp if _t != "d"]
+
+    _valid = [round(sum(_chain) % 3) for _chain in _results]
+    _keep = [_i for _i, _val in enumerate(_valid) if _val == 0]
+    return [_results[_i] for _i in _keep]
+
+
+def _build_layered_struct(atoms_chain, frac_pos, lattice):
+    """
+    Shared tail of struct_write/struct_write_abs: group `atoms_chain`'s
+    symbols alphabetically (functions.group_atoms_by_symbol), look up one
+    atomic number per unique symbol, and bulk-build a
+    mkits.structure.struct from `frac_pos` (reordered to match) and
+    `lattice`. The alphabetical grouping doesn't survive into the
+    returned struct's atom order -- struct.sort_atoms() (called at the
+    end) re-sorts by atomic number, mkits' standard convention -- so this
+    only matters if a caller inspects `frac_pos`'s grouping before that
+    point.
+    """
+    _symbols, _frac, _unique, _counts = functions.group_atoms_by_symbol(
+        np.array(atoms_chain), np.asarray(frac_pos)
+    )
+    _z_unique = np.array([database.symbol_map[_s] for _s in _unique])
+    _z = np.repeat(_z_unique, _counts).reshape(-1, 1)
+
+    _lattice = np.asarray(lattice, dtype=float)
+    _cart = functions.frac2cart(_lattice, _frac)
+    _magmom = np.array([[database.atom_data[int(_zi)][4]] for _zi in _z.flatten()])
+
+    _struct = structure.struct("none")
+    _struct.lattice9 = _lattice
+    _struct.lattice6 = functions.lattice_conversion(_lattice)
+    _struct.total_atom = len(_symbols)
+    _struct.position = np.vstack((
+        np.zeros((1, 11)),
+        np.hstack((_z, _frac, _cart, np.ones((_struct.total_atom, 3)), _magmom))
+    ))
+    _struct.sort_atoms()
+    return _struct
+
+
+def struct_write_abs(chain, block_num_type, block_bond_c_axis, node_type):
+    """
+    Build a layered structure from an explicit chain of blocks, placing
+    atoms along c using each block's own measured bond lengths
+    (block_bond_c_axis) rather than a fixed bond:slab ratio (see
+    struct_write for that simpler alternative).
+
+    :param chain: sequence of block-type codes (a cyclic ring)
+    :param block_num_type: {block_code: [element symbols]}
+    :param block_bond_c_axis: {block_code: [c-axis bond lengths, angstrom]}
+    :param node_type: passed through to gen_nodes_frac
+
+    Return
+    ------
+    mkits.structure.struct
+    """
+    _chain_plus = chain + [chain[0]]
+    _atoms_chain = []
+    for _c in chain:
+        _atoms_chain += block_num_type[_c][:-2]
+
+    _z_diff = []
+    for _i in range(len(chain)):
+        _z_diff += block_bond_c_axis[chain[_i]][:-2]
+        _z_diff.append(
+            block_bond_c_axis[chain[_i]][-1] if _chain_plus[_i + 1] > 2.1
+            else block_bond_c_axis[chain[_i]][-2]
+        )
+
+    _z_abs = [0] + [np.sum(_z_diff[:_i + 1]) for _i in range(len(_z_diff))]
+    _z = _z_abs[-1]
+    _pos_frac_z = np.array(_z_abs[:-1]) / _z
+
+    _total_grid = round(sum(chain))
+    _grid_pos = gen_nodes_frac(_total_grid, node_type)
+    _grid_pos[2, :] = _pos_frac_z
+
+    _lattice = np.array([
+        [4.3005422627252692, 0.0, 0.0],
+        [-2.1502711314087866, 3.7243788496048982, 0.0],
+        [0.0, 0.0, _z],
+    ])
+    return _build_layered_struct(_atoms_chain, _grid_pos.T, _lattice)
+
+
+def struct_write(chain, block_num_type, node_type):
+    """
+    Build a layered structure from a chain of blocks, placing atoms
+    along c with a fixed bond:slab-gap ratio of 4:5 per node (a
+    simplified alternative to struct_write_abs, for when no measured
+    per-block bond length data is available).
+
+    :param chain: sequence of block-type codes, eg (2.01, 5.0, 2.01)
+    :param block_num_type: {block_code: [element symbols]}
+    :param node_type: passed through to gen_nodes_frac
+
+    Return
+    ------
+    mkits.structure.struct
+    """
+    _total_grid = round(sum(chain))
+    _grid_pos = gen_nodes_frac(_total_grid, node_type)
+    _atoms_chain = block_num_type[chain[0]]
+    for _i in range(1, len(chain)):
+        _atoms_chain = block_num_type[chain[_i]] + _atoms_chain
+
+    _z_cord_idx = [int(_c) for _c in chain]
+    _split_per = 1.0 / (4 * (sum(_z_cord_idx) - len(_z_cord_idx)) + 5 * len(_z_cord_idx))
+    _z_cord = [0]
+    for _i in range(len(_z_cord_idx)):
+        _z_cord.append(_z_cord[-1] + _split_per * 5)
+        for _ in range(_z_cord_idx[_i] - 1):
+            _z_cord.append(_z_cord[-1] + _split_per * 4)
+    _grid_pos[2, :] = np.array(_z_cord[1:])
+
+    _z = 29.2422161102 / 60 * (4 * (sum(_z_cord_idx) - len(_z_cord_idx)) + 5 * len(_z_cord_idx))
+    _lattice = np.array([
+        [4.3005422627252692, 0.0, 0.0],
+        [-2.1502711314087866, 3.7243788496048982, 0.0],
+        [0.0, 0.0, _z],
+    ])
+    return _build_layered_struct(_atoms_chain, _grid_pos.T, _lattice)
+
+
+def gen_struct_fix_block(node_num, node_type, block_type, bond_abs_c=False):
+    """
+    Enumerate every inequivalent chain of `block_type` blocks around a
+    `node_num`-node ring (randomization_block) and write one structure
+    file per chain under "./layered/chains<node_num>/", plus a
+    "chains<node_num>.data" summary (chain list + block definitions).
+
+    NOTE: when `bond_abs_c` is given (a non-empty {block_code: [c-axis
+    bond lengths]} dict, not just True/False despite the name), the
+    caller-supplied `block_type` element mapping is silently replaced by
+    a hardcoded Sb/Te/Ge block dictionary -- ported as-is from the
+    original, which never generalized this path beyond its own test case.
+
+    :param node_num: "2,3,..." -- comma-separated ring sizes to generate
+        (only the first is actually used, ported as-is)
+    :param node_type: passed through to randomization_block/gen_nodes_frac
+    :param block_type: comma-separated block definitions, eg
+        "Bi-Bi,Te-Bi-Te" -- each dash-joined element sequence becomes one
+        block type, keyed internally by its atom count (+ a tiny unique
+        float offset, since two different blocks can share an atom count)
+    :param bond_abs_c: False -> struct_write (fixed 4:5 bond:slab ratio);
+        a {block_code: [bond lengths]} dict -> struct_write_abs (see NOTE)
+    """
+    _node_num = [int(_n) for _n in node_num.split(",")]
+    _block_type = block_type.split(",")
+    _block_num = [float(_b.count("-")) + 1 for _b in _block_type]
+    _block_num = np.array(_block_num) + np.linspace(0.001, 0.001 * len(_block_num), len(_block_num))
+    _block_num_type = {_block_num[_i]: _block_type[_i].split("-") for _i in range(len(_block_num))}
+
+    _chains = randomization_block(_node_num[0], _block_num)
+
+    _outdir = "./layered/chains%s/" % str(_node_num[0])
+    try:
+        Path(_outdir).mkdir(parents=True, exist_ok=True)
+    except OSError:
+        raise functions.MkitsError("Cannot create layered folder %s." % _outdir)
+
+    for _chain in _chains:
+        if bond_abs_c:
+            _block_num_type = {
+                2.001: ["Sb", "Sb", "Sb", "Te"],
+                5.002: ["Te", "Sb", "Te", "Sb", "Te", "Sb", "Te"],
+                7.003: ["Te", "Sb", "Te", "Ge", "Te", "Sb", "Te", "Sb", "Te"],
+                9.004: ["Te", "Sb", "Te", "Ge", "Te", "Ge", "Te", "Sb", "Te", "Sb", "Te"],
+                9.005: ["Te", "Ge", "Te", "Sb", "Te", "Sb", "Te", "Ge", "Te", "Sb", "Te"],
+            }
+            _poscar = struct_write_abs(list(_chain), _block_num_type, bond_abs_c, node_type)
+        else:
+            _poscar = struct_write(_chain, _block_num_type, node_type)
+
+        _fname = "struct_node%s_block%s.vasp" % (
+            str(_node_num[0]), "_".join(str(_c) for _c in _chain)
+        )
+        _poscar = _poscar.get_primitive_cell()
+        _poscar.write_struct(fpath=_outdir, fname=_fname, calculator="poscar")
+
+    with open("%schains%s.data" % (_outdir, str(_node_num[0])), "w", newline="\n") as f:
+        f.write("Total structures: %d\n" % len(_chains))
+        f.write("========== Chains ==========\n%s\n" % str(_chains))
+        f.write("========== Blocks ==========\n%s\n" % json.dumps(_block_num_type))
 
 
 # ================================================================== #
